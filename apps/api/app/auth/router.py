@@ -7,7 +7,7 @@ from app.auth.schemas import (
     TokenResponse,
     UserResponse,
 )
-from app.auth.service import authenticate, get_user_by_id, make_token_response, register
+from app.auth.service import authenticate, make_token_response, register
 from app.core.database import get_db
 from app.core.dependencies import get_current_user
 from app.auth.models import User
