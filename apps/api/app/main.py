@@ -5,6 +5,15 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.routing import APIRoute
 
+# Import all model modules FIRST so SQLAlchemy can resolve relationship strings
+# before any router (which imports models) triggers mapper configuration.
+import app.auth.models  # noqa: F401
+import app.organizations.models  # noqa: F401
+import app.employees.models  # noqa: F401
+import app.channel_assignments.models  # noqa: F401
+import app.documents.models  # noqa: F401
+
+from app.auth.router import router as auth_router
 from app.core.config import settings
 from app.health.router import router as health_router
 
@@ -40,3 +49,4 @@ app.add_middleware(
 )
 
 app.include_router(health_router)
+app.include_router(auth_router)

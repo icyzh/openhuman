@@ -2,14 +2,9 @@
 
 ## Current State
 
-Domain-driven skeleton exists with empty stubs. Files with real content:
-- `app/main.py` — FastAPI app, only health router registered
-- `app/core/config.py` — minimal settings
-- `app/health/` — working health endpoint
-- `alembic/env.py` — Alembic configured but `target_metadata = None`
-- `pyproject.toml` — deps: fastapi, pydantic-settings, sqlalchemy[asyncio], alembic
+Phase 1 complete. All ORM models exist, database is connected, Alembic wired.
 
-Everything else (`app/auth/`, `app/organizations/`, `app/employees/`, `app/core/database.py`, `app/core/security.py`, `app/core/dependencies.py`, etc.) is empty files.
+Still empty stubs (to be filled in Phase 2+): `app/core/security.py`, `app/core/dependencies.py`, `app/auth/service.py`, `app/auth/router.py`, `app/auth/schemas.py`, `app/organizations/`, `app/employees/`, `app/channel_assignments/`, `app/documents/`, `app/memory/`.
 
 ## Architecture
 
@@ -213,6 +208,27 @@ uv run python -c "from app.core.database import engine; print('OK')"
 
 ## Phase 2: Auth
 
+### Frontend Coordination
+
+The frontend `auth-client.ts` (`apps/web/lib/auth-client.ts`) is currently a stub:
+```typescript
+export const authClient = {
+  getSession: async () => ({ data: null as { user?: unknown } | null }),
+};
+```
+
+Our backend provides real JWT auth. The frontend will need to:
+1. Call `POST /api/auth/register` or `POST /api/auth/login` → store the returned JWT
+2. Send `Authorization: Bearer <token>` on every request via `apiFetch()`
+3. Call `GET /api/auth/me` on page load to restore the session
+4. Redirect unauthenticated users to the marketing/signup page
+
+Our contract:
+- **Register**: `POST /api/auth/register` body `{email, password, name}` → `{access_token, token_type: "bearer"}`
+- **Login**: `POST /api/auth/login` body `{email, password}` → `{access_token, token_type: "bearer"}`
+- **Current user**: `GET /api/auth/me` header `Authorization: Bearer <token>` → `{id, email, name, is_active, created_at}`
+- **Errors**: 401 on invalid/missing token, 409 on duplicate email
+
 ### Goal
 User registration, login, JWT sessions, auth dependency.
 
@@ -236,12 +252,14 @@ Use `passlib.context.CryptContext` for bcrypt. Use `python-jose` for JWT. Use `c
 
 ### 2b. Dependencies — `app/core/dependencies.py`
 
+`get_db` lives in `app/core/database.py` (where it belongs — it's a database concern). `dependencies.py` adds auth:
+
 ```python
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.database import get_db  # re-export
+from app.core.database import get_db
 from app.core.security import decode_access_token
 
 async def get_current_user(
