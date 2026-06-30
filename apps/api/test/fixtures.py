@@ -29,11 +29,27 @@ import app.channel_assignments.models  # noqa: F401
 import app.documents.models  # noqa: F401
 import app.employees.models  # noqa: F401  — Employee
 import app.organizations.models  # noqa: F401  — Organization
+import os
+
 from app.auth.models import User
+from app.core.config import settings
 from app.core.database import Base
+from app.core.security import encrypt_token
 from app.employees.models import Employee
 from app.employees.templates import TEMPLATES, EmployeeTemplate
 from app.organizations.models import Organization
+
+# ---------------------------------------------------------------------------
+# Ensure an encryption key is available for test token storage.
+# In production this MUST be set explicitly.  For test tools we use a
+# deterministic default so tokens survive across process invocations
+# (encrypted in one CLI run, decrypted in the next).
+# ---------------------------------------------------------------------------
+_TEST_FALLBACK_KEY = (
+    "6f70656e68756d616e2d746573742d6b65792d666f722d746f6b656e73212121"
+)  # "openhuman-test-key-for-tokens!!!" → 32 bytes / 64 hex chars
+if not settings.encryption_key:
+    settings.encryption_key = _TEST_FALLBACK_KEY
 
 if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncEngine
@@ -172,8 +188,14 @@ async def seed_data(session: AsyncSession) -> dict[str, UUID]:
 async def setup_test_db(db_path: str | Path = ":memory:") -> tuple[AsyncEngine, async_sessionmaker, dict[str, UUID]]:
     """One-shot: create engine, tables, seed data.
 
+    If the database already contains the seed employees, the existing data
+    is reused and the cached ``SEED_EMPLOYEE_IDS`` are returned.  This makes
+    repeated invocations against the same file-based database idempotent.
+
     Returns (engine, session_factory, employee_ids).
     """
+    global SEED_EMPLOYEE_IDS
+
     engine = _build_engine(str(db_path))
     await create_tables(engine)
 
@@ -181,7 +203,29 @@ async def setup_test_db(db_path: str | Path = ":memory:") -> tuple[AsyncEngine, 
         engine, class_=AsyncSession, expire_on_commit=False
     )
 
+    # If we already have cached IDs from a prior seeding, reuse them
+    if SEED_EMPLOYEE_IDS:
+        return engine, session_factory, SEED_EMPLOYEE_IDS
+
+    # Check whether seed data already exists in this DB
     async with session_factory() as session:
+        from sqlalchemy import select, func
+
+        count = await session.scalar(select(func.count()).select_from(Employee))
+        if count and count >= len(SEED_EMPLOYEES):
+            # Reconstruct the ID map from existing rows
+            result = await session.execute(
+                select(Employee).where(Employee.specialization.in_(
+                    [cfg["specialization"] for cfg in SEED_EMPLOYEES]
+                ))
+            )
+            employee_ids: dict[str, UUID] = {}
+            for emp in result.scalars().all():
+                employee_ids[emp.specialization] = emp.id
+            SEED_EMPLOYEE_IDS = employee_ids
+            return engine, session_factory, employee_ids
+
+        # Fresh seed
         employee_ids = await seed_data(session)
 
     return engine, session_factory, employee_ids
@@ -197,3 +241,55 @@ def print_banner() -> None:
         print(f"    Template : {template.name}")
         print(f"    Tools   : {', '.join(template.allowed_tools)}")
         print()
+
+
+# ---------------------------------------------------------------------------
+# Slack token helpers — for testing the token storage & OAuth flow
+# ---------------------------------------------------------------------------
+
+
+async def set_slack_token(
+    session_factory: async_sessionmaker,
+    employee_id: UUID,
+    token: str,
+) -> bool:
+    """Store an encrypted Slack bot token on a seed employee.
+
+    Returns ``True`` if the employee was found and updated.
+    """
+    async with session_factory() as session:
+        emp = await session.get(Employee, employee_id)
+        if emp is None:
+            return False
+        emp.slack_token_enc = encrypt_token(token)
+        await session.commit()
+    return True
+
+
+async def clear_slack_token(
+    session_factory: async_sessionmaker,
+    employee_id: UUID,
+) -> bool:
+    """Remove the Slack bot token from a seed employee.
+
+    Returns ``True`` if the employee was found.
+    """
+    async with session_factory() as session:
+        emp = await session.get(Employee, employee_id)
+        if emp is None:
+            return False
+        emp.slack_token_enc = None
+        await session.commit()
+    return True
+
+
+async def get_slack_token_status(
+    session_factory: async_sessionmaker,
+    employee_id: UUID,
+) -> bool:
+    """Return ``True`` if the employee has a Slack token stored."""
+    async with session_factory() as session:
+        emp = await session.get(Employee, employee_id)
+        if emp is None:
+            return False
+        return emp.slack_token_enc is not None

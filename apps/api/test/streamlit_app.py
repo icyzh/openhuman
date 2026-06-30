@@ -53,7 +53,14 @@ from langchain_core.messages import HumanMessage, ToolMessage
 
 from app.agent.build import build_graph
 from app.agent.tools import BUILT_IN_TOOLS
-from test.fixtures import SEED_EMPLOYEES, print_banner, setup_test_db
+from test.fixtures import (
+    SEED_EMPLOYEES,
+    clear_slack_token,
+    get_slack_token_status,
+    print_banner,
+    set_slack_token,
+    setup_test_db,
+)
 
 if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker
@@ -98,9 +105,10 @@ def _init_db():
     if "db_engine" in st.session_state:
         return
 
-    with st.spinner("Setting up test database …"):
+    db_path = os.getenv("TEST_DB_PATH", "/tmp/openhuman_test.db")
+    with st.spinner(f"Setting up test database ({db_path}) …"):
         engine, session_factory, employee_ids = _run_async(
-            setup_test_db(":memory:")
+            setup_test_db(db_path)
         )
 
     st.session_state.db_engine = engine
@@ -231,6 +239,78 @@ def _render_sidebar():
     )
     st.session_state.platform = platform
 
+    # --- Slack Bot Token -----------------------------------------------------
+    st.sidebar.header("🔌 Slack Bot Token")
+
+    if employee_id is not None:
+        session_factory = st.session_state.get("db_session_factory")
+        if session_factory is not None:
+            has_token = _run_async(get_slack_token_status(session_factory, employee_id))
+        else:
+            has_token = False
+
+        if has_token:
+            st.sidebar.success("✅ Bot token stored (encrypted)")
+        else:
+            st.sidebar.caption("❌ No bot token set")
+
+        # Manual token paste (existing manual flow)
+        with st.sidebar.expander("Paste bot token", expanded=not has_token):
+            slack_token_input = st.text_input(
+                "Bot token (xoxb-...)",
+                type="password",
+                placeholder="xoxb-...",
+                key="slack_token_input",
+            )
+            col1, col2 = st.columns(2)
+            if col1.button("💾 Store", use_container_width=True, key="store_slack_btn"):
+                if slack_token_input.strip() and session_factory is not None:
+                    ok = _run_async(
+                        set_slack_token(session_factory, employee_id, slack_token_input.strip())
+                    )
+                    if ok:
+                        st.success("Token stored!")
+                        st.rerun()
+                    else:
+                        st.error("Failed to store token.")
+                else:
+                    st.warning("Enter a token first.")
+
+            if col2.button("🗑️ Clear", use_container_width=True, key="clear_slack_btn"):
+                if session_factory is not None:
+                    _run_async(clear_slack_token(session_factory, employee_id))
+                    st.success("Token cleared.")
+                    st.rerun()
+
+        # OAuth install URL (new flow)
+        with st.sidebar.expander("Or use OAuth (Connect Slack)"):
+            api_base = os.getenv("API_BASE_URL", "http://localhost:8000")
+            org_id = None
+            if employee_id is not None and session_factory is not None:
+                async def _get_org_id():
+                    from app.employees.models import Employee
+                    async with session_factory() as session:
+                        emp = await session.get(Employee, employee_id)
+                        return emp.org_id if emp else None
+                org_id = _run_async(_get_org_id())
+
+            if org_id:
+                streamlit_url = os.getenv("STREAMLIT_URL", "http://localhost:8501")
+                install_url = (
+                    f"{api_base}/api/slack/install"
+                    f"?employee_id={employee_id}"
+                    f"&org_id={org_id}"
+                    f"&redirect_to={streamlit_url}"
+                )
+                st.write("Connect the currently selected employee to a Slack workspace:")
+                st.markdown(f"[🔌 **Connect Slack**]({install_url})")
+                st.caption(
+                    "Note: Ensure the API server is running, configured with the same database, "
+                    "and has SLACK_CLIENT_ID / SLACK_CLIENT_SECRET set in .env."
+                )
+            else:
+                st.caption("No organization found for the selected employee.")
+
     # --- Model info ----------------------------------------------------------
     st.sidebar.header("🔧 Configuration")
     st.sidebar.markdown(
@@ -302,6 +382,17 @@ def main():
         "Messages go through the full LangGraph pipeline: "
         "**input guardrail → prompt build → LLM + tools → output guardrail → format**."
     )
+
+    # Show Slack OAuth result if redirected back from callback
+    slack_result = st.query_params.get("slack")
+    if slack_result == "connected":
+        eid = st.query_params.get("employee_id", "unknown")
+        st.success(f"✅ Slack workspace connected! Token stored for employee `{eid}`.")
+        st.query_params.clear()
+    elif slack_result == "error":
+        reason = st.query_params.get("reason", "unknown error")
+        st.error(f"❌ Slack connection failed: {reason}")
+        st.query_params.clear()
 
     if employee_id is None:
         st.warning("No employee selected. Pick one from the sidebar.")

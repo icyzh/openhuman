@@ -1,10 +1,11 @@
 "use client";
 
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { useParams, useRouter } from "next/navigation";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
 import {
   ArrowLeftIcon,
+  ExternalLinkIcon,
   FileTextIcon,
   PlusIcon,
   Trash2Icon,
@@ -39,6 +40,13 @@ const STATUS_CONFIG: Record<
   idle: { label: "Idle", dotColor: "bg-amber-400" },
   offline: { label: "Idle", dotColor: "bg-muted-foreground/30" },
 };
+
+const API_URL =
+  process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+
+function slackInstallUrl(employeeId: string, orgId: string): string {
+  return `${API_URL}/api/slack/install?employee_id=${encodeURIComponent(employeeId)}&org_id=${encodeURIComponent(orgId)}`;
+}
 
 function formatFileSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
@@ -78,6 +86,34 @@ export default function EmployeeDetailPage() {
   );
   const updateEmployee = useEmployeesStore((s) => s.updateEmployee);
   const deleteEmployee = useEmployeesStore((s) => s.deleteEmployee);
+
+  const searchParams = useSearchParams();
+  const [slackBanner, setSlackBanner] = useState<
+    { ok: boolean; message: string } | null
+  >(null);
+
+  useEffect(() => {
+    const slack = searchParams.get("slack");
+    if (slack === "connected") {
+      setSlackBanner({
+        ok: true,
+        message: "Slack workspace connected successfully! 🎉",
+      });
+    } else if (slack === "error") {
+      const reason = searchParams.get("reason") || "unknown error";
+      setSlackBanner({
+        ok: false,
+        message: `Slack connection failed: ${reason}`,
+      });
+    }
+    // Clean the URL without a full page reload
+    if (slack) {
+      const next = new URL(window.location.href);
+      next.searchParams.delete("slack");
+      next.searchParams.delete("reason");
+      window.history.replaceState({}, "", next.toString());
+    }
+  }, [searchParams]);
 
   const [editingField, setEditingField] = useState<string | null>(null);
   const [draftValue, setDraftValue] = useState("");
@@ -161,6 +197,24 @@ export default function EmployeeDetailPage() {
           {confirmDelete ? "Click again to confirm" : "Delete"}
         </Button>
       </div>
+
+      {slackBanner && (
+        <div
+          className={`rounded-lg border px-4 py-3 text-sm font-medium ${
+            slackBanner.ok
+              ? "border-green-500/30 bg-green-500/10 text-green-700 dark:text-green-400"
+              : "border-red-500/30 bg-red-500/10 text-red-700 dark:text-red-400"
+          }`}
+        >
+          {slackBanner.message}
+          <button
+            className="ml-3 underline hover:no-underline"
+            onClick={() => setSlackBanner(null)}
+          >
+            Dismiss
+          </button>
+        </div>
+      )}
 
       <div className="flex flex-col gap-1">
         {editingField === "name" ? (
@@ -249,6 +303,18 @@ export default function EmployeeDetailPage() {
             <InfoRow label="Deployed" value={employee.deployedAt} />
             <InfoRow label="Discord" value={employee.discordTag ? `@${employee.discordTag}` : "—"} mono />
             <InfoRow label="Slack" value={employee.slackTag ? `@${employee.slackTag}` : "—"} mono />
+            <div className="flex items-center justify-between">
+              <span className="text-sm text-muted-foreground">
+                Slack Bot
+              </span>
+              <a
+                href={slackInstallUrl(employee.id, "demo-org")}
+                className="inline-flex items-center gap-1 text-sm font-medium text-primary hover:underline"
+              >
+                <ExternalLinkIcon className="size-3.5" />
+                Connect Slack
+              </a>
+            </div>
             <InfoRow label="Employee ID" value={employee.id} mono />
           </CardContent>
         </Card>
@@ -314,6 +380,25 @@ export default function EmployeeDetailPage() {
                     }
                   />
                 </div>
+              </div>
+
+              <div className="flex items-center justify-between rounded-lg border border-border bg-muted/30 px-4 py-3">
+                <div className="flex flex-col gap-0.5">
+                  <span className="text-sm font-medium text-foreground">
+                    Connect Slack Bot
+                  </span>
+                  <span className="text-xs text-muted-foreground">
+                    Install the Slack app to your workspace so this employee
+                    can respond to @mentions and DMs.
+                  </span>
+                </div>
+                <a
+                  href={slackInstallUrl(employee.id, "demo-org")}
+                  className="inline-flex shrink-0 items-center gap-1.5 rounded-md bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground hover:bg-primary/90"
+                >
+                  <ExternalLinkIcon className="size-3.5" />
+                  Connect
+                </a>
               </div>
 
               <Separator />

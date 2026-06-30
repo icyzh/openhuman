@@ -55,6 +55,14 @@ class Settings(BaseSettings):
     # Slack App Token (for socket mode)
     slack_app_token: str = ""
 
+    # Slack OAuth (for "Connect Slack" onboarding flow)
+    slack_client_id: str = ""
+    slack_client_secret: str = ""
+    slack_oauth_redirect_uri: str = ""
+
+    # Frontend URL (used for OAuth redirects back to the dashboard)
+    frontend_url: str = "http://localhost:3000"
+
     @model_validator(mode="after")
     def validate_production_secrets(self) -> "Settings":
         """Fail fast if production is configured with development-only secrets."""

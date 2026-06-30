@@ -52,7 +52,14 @@ from langchain_core.messages import HumanMessage  # noqa: E402
 
 from app.agent.build import build_graph  # noqa: E402
 from app.agent.tools import BUILT_IN_TOOLS  # noqa: E402
-from test.fixtures import SEED_EMPLOYEES, print_banner, setup_test_db  # noqa: E402
+from test.fixtures import (  # noqa: E402
+    SEED_EMPLOYEES,
+    clear_slack_token,
+    get_slack_token_status,
+    print_banner,
+    set_slack_token,
+    setup_test_db,
+)
 
 
 # Compiled once at module load
@@ -332,24 +339,243 @@ def main() -> None:
     parser.add_argument(
         "--db-path",
         type=str,
-        default=":memory:",
-        help="SQLite database path (default: :memory:)",
+        default="/tmp/openhuman_test.db",
+        help="SQLite database path (default: /tmp/openhuman_test.db). Use ':memory:' for ephemeral.",
     )
     parser.add_argument(
         "--list",
         action="store_true",
         help="Print seed employees and exit (no agent run)",
     )
+    parser.add_argument(
+        "--set-slack-token",
+        type=str,
+        default=None,
+        metavar="TOKEN",
+        help="Store an encrypted Slack bot token for the given employee (use with --employee-id). "
+             "The token is encrypted at rest with AES-256-GCM.",
+    )
+    parser.add_argument(
+        "--clear-slack-token",
+        action="store_true",
+        help="Remove the Slack bot token from the given employee (use with --employee-id).",
+    )
+    parser.add_argument(
+        "--slack-status",
+        action="store_true",
+        help="Print whether the given employee has a Slack token stored.",
+    )
+    parser.add_argument(
+        "--test-routing",
+        action="store_true",
+        help="Seed 3 employees sharing one Slack token with channel assignments, "
+             "then test channel→employee routing logic (no real Slack connection needed).",
+    )
 
     args = parser.parse_args()
 
+    # ---- List mode ----------------------------------------------------------
     if args.list:
         async def _list() -> None:
-            _e, _sf, _ids = await setup_test_db(":memory:")
+            _e, sf, _ids = await setup_test_db(args.db_path)
             print_banner()
+            # Show Slack token status for each employee
+            print("🔑 Slack token status:\n")
+            for cfg in SEED_EMPLOYEES:
+                eid = _ids.get(cfg["specialization"])
+                if eid:
+                    has = await get_slack_token_status(sf, eid)
+                    print(f"  {cfg['name']:<20s}  {'✅ token set' if has else '❌ no token'}")
+            print()
             await _e.dispose()
 
         asyncio.run(_list())
+        return
+
+    # ---- Slack token operations --------------------------------------------
+    if args.set_slack_token is not None or args.clear_slack_token or args.slack_status:
+        if not args.employee_id:
+            print("❌ --employee-id is required for Slack token operations.")
+            sys.exit(1)
+
+        employee_id = UUID(args.employee_id)
+        db_path = args.db_path
+
+        async def _slack_op() -> None:
+            engine, sf, ids = await setup_test_db(db_path)
+
+            if args.set_slack_token is not None:
+                ok = await set_slack_token(sf, employee_id, args.set_slack_token)
+                if ok:
+                    print(f"✅ Slack token stored (encrypted) for employee {employee_id}")
+                else:
+                    print(f"❌ Employee {employee_id} not found.")
+
+            elif args.clear_slack_token:
+                ok = await clear_slack_token(sf, employee_id)
+                if ok:
+                    print(f"🗑️  Slack token removed for employee {employee_id}")
+                else:
+                    print(f"❌ Employee {employee_id} not found.")
+
+            elif args.slack_status:
+                has = await get_slack_token_status(sf, employee_id)
+                print(f"🔑 Employee {employee_id}: {'✅ Slack token set' if has else '❌ no Slack token'}")
+
+            await engine.dispose()
+
+        asyncio.run(_slack_op())
+        return
+
+    # ---- Routing test -------------------------------------------------------
+    if args.test_routing:
+        async def _test_routing() -> None:
+            from sqlalchemy import select
+
+            from app.channel_assignments.models import ChannelAssignment
+
+            # Use an ephemeral DB so we don't pollute the persistent one
+            engine, sf, ids = await setup_test_db(":memory:")
+
+            # Give all 4 seed employees the SAME Slack token (simulating one workspace)
+            shared_token = "xoxb-shared-workspace-token"
+            for emp_id in ids.values():
+                await set_slack_token(sf, emp_id, shared_token)
+
+            # Create channel assignments:
+            #   Alex (HR)      → #hr-announcements
+            #   Blake (Sales)   → #deals, #sales-leads
+            #   Casey (Support) → #support, #bugs
+            #   Drew (General)  → NO assignments (unrestricted)
+            assignments = [
+                ("hr_specialist", "C001", "#hr-announcements"),
+                ("sales_rep", "C002", "#deals"),
+                ("sales_rep", "C003", "#sales-leads"),
+                ("support_agent", "C004", "#support"),
+                ("support_agent", "C005", "#bugs"),
+            ]
+            async with sf() as session:
+                for spec, channel_id, channel_name in assignments:
+                    session.add(ChannelAssignment(
+                        employee_id=ids[spec],
+                        platform="slack",
+                        channel_id=channel_id,
+                        channel_name=channel_name,
+                    ))
+                await session.commit()
+
+            emp_ids_list = list(ids.values())
+            emp_id_set = frozenset(emp_ids_list)
+
+            # Resolve helper — mirrors WorkspaceSlackBot._resolve_employee
+            async def resolve(channel_id: str | None) -> UUID | None:
+                async with sf() as session:
+                    if channel_id is not None:
+                        # 1. Explicit assignment
+                        ca = (await session.execute(
+                            select(ChannelAssignment).where(
+                                ChannelAssignment.platform == "slack",
+                                ChannelAssignment.channel_id == channel_id,
+                                ChannelAssignment.employee_id.in_(emp_id_set),
+                            )
+                        )).scalars().first()
+                        if ca is not None:
+                            return ca.employee_id
+
+                        # 2. Any assignments? → unassigned channel
+                        any_ca = (await session.execute(
+                            select(ChannelAssignment).where(
+                                ChannelAssignment.platform == "slack",
+                                ChannelAssignment.employee_id.in_(emp_id_set),
+                            ).limit(1)
+                        )).scalars().first()
+                        if any_ca is not None:
+                            return None
+
+                    # 3. Unrestricted fallback (or DM)
+                    rows = (await session.execute(
+                        select(ChannelAssignment.employee_id).where(
+                            ChannelAssignment.platform == "slack",
+                            ChannelAssignment.employee_id.in_(emp_id_set),
+                        ).distinct()
+                    )).all()
+                    assigned = {r[0] for r in rows}
+                    for eid in emp_ids_list:
+                        if eid not in assigned:
+                            return eid
+                    return emp_ids_list[0] if emp_ids_list else None
+
+            # Resolve employee name
+            spec_by_id = {v: k for k, v in ids.items()}
+            cfg_by_spec = {c["specialization"]: c for c in SEED_EMPLOYEES}
+
+            def describe(eid: UUID | None) -> str:
+                if eid is None:
+                    return "IGNORE (no one assigned)"
+                spec = spec_by_id.get(eid, "?")
+                name = cfg_by_spec.get(spec, {}).get("name", str(eid))
+                return f"{name} ({spec})"
+
+            # ── Test cases ────────────────────────────────────────────────
+            print()
+            print("═" * 60)
+            print("🧪 CHANNEL → EMPLOYEE ROUTING TEST")
+            print("═" * 60)
+            print()
+            print("Setup: 4 employees share token xoxb-shared-workspace-token")
+            print()
+            print("  Alex (HR)       → C001 (#hr-announcements)")
+            print("  Blake (Sales)    → C002 (#deals), C003 (#sales-leads)")
+            print("  Casey (Support)  → C004 (#support), C005 (#bugs)")
+            print("  Drew (General)   → UNRESTRICTED (no assignments)")
+            print()
+            print("─" * 60)
+
+            test_cases = [
+                ("C004", "Support channel → Casey (Support)"),
+                ("C002", "Deals channel → Blake (Sales)"),
+                ("C001", "HR channel → Alex (HR)"),
+                ("C999", "Unassigned channel (others restricted) → IGNORE"),
+                (None,   "DM → Drew (General, unrestricted)"),
+            ]
+
+            all_ok = True
+            for channel_id, description in test_cases:
+                result = await resolve(channel_id)
+                label = "DM" if channel_id is None else channel_id
+                who = describe(result)
+
+                # Expected results
+                if channel_id == "C004":
+                    expected_spec = "support_agent"
+                elif channel_id in ("C002", "C003"):
+                    expected_spec = "sales_rep"
+                elif channel_id == "C001":
+                    expected_spec = "hr_specialist"
+                elif channel_id == "C999":
+                    expected_spec = None
+                elif channel_id is None:
+                    expected_spec = "general"
+
+                ok = (result is None and expected_spec is None) or \
+                     (result is not None and spec_by_id.get(result) == expected_spec)
+
+                status = "✅" if ok else "❌ FAIL"
+                if not ok:
+                    all_ok = False
+
+                print(f"  {status}  {label:<20s} → {who}")
+                print(f"          {description}")
+
+            print("─" * 60)
+            if all_ok:
+                print("\n✅ All routing tests passed.\n")
+            else:
+                print("\n❌ Some routing tests FAILED.\n")
+
+            await engine.dispose()
+
+        asyncio.run(_test_routing())
         return
 
     if args.message:

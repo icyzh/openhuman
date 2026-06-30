@@ -19,6 +19,7 @@ from app.core.config import settings
 from app.documents.router import router as doc_router
 from app.employees.router import router as emp_router
 from app.gateway.manager import BotGatewayManager
+from app.gateway.slack_oauth import router as slack_oauth_router
 from app.health.router import router as health_router
 from app.memory.router import router as memory_router
 from app.organizations.router import router as org_router
@@ -69,4 +70,5 @@ app.include_router(ca_router)
 app.include_router(doc_router)
 app.include_router(agent_router)
 app.include_router(memory_router)
+app.include_router(slack_oauth_router)
 
