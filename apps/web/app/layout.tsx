@@ -1,17 +1,8 @@
 import type { Metadata } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
+import { hafferSans, hafferMono } from "@/lib/fonts";
 import { Providers } from "@/components/providers";
+import { cn } from "@/lib/utils";
 import "./globals.css";
-
-const geistSans = Geist({
-  variable: "--font-geist-sans",
-  subsets: ["latin"],
-});
-
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
-  subsets: ["latin"],
-});
 
 export const metadata: Metadata = {
   title: "OpenHuman",
@@ -26,9 +17,14 @@ export default function RootLayout({
   return (
     <html
       lang="en"
-      className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
+      className={cn(
+        "h-full",
+        "antialiased",
+        hafferSans.variable,
+        hafferMono.variable,
+      )}
     >
-      <body className="min-h-full flex flex-col">
+      <body className="min-h-full">
         <Providers>{children}</Providers>
       </body>
     </html>
