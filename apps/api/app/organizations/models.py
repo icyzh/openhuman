@@ -1,0 +1,44 @@
+from datetime import datetime
+from uuid import UUID
+
+from sqlalchemy import DateTime, ForeignKey, String, Uuid, func
+from sqlalchemy.orm import Mapped, mapped_column, relationship
+
+from app.core.database import Base
+
+
+class Organization(Base):
+    __tablename__ = "organizations"
+
+    id: Mapped[UUID] = mapped_column(
+        Uuid, primary_key=True, server_default=func.gen_random_uuid()
+    )
+    owner_id: Mapped[UUID] = mapped_column(
+        Uuid, ForeignKey("users.id"), nullable=False
+    )
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+
+    # Cognee IDs — populated in Phase 4 fork, nullable until then
+    cognee_tenant_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    cognee_tenant_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    cognee_system_user_id: Mapped[str | None] = mapped_column(
+        String(255), nullable=True
+    )
+    cognee_system_user_name: Mapped[str | None] = mapped_column(
+        String(255), nullable=True
+    )
+    cognee_dataset_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    cognee_dataset_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+    # Relationships
+    owner: Mapped["User"] = relationship("User", back_populates="organizations")
+    employees: Mapped[list["Employee"]] = relationship(
+        "Employee", back_populates="organization"
+    )
+    documents: Mapped[list["Document"]] = relationship(
+        "Document", back_populates="organization"
+    )
