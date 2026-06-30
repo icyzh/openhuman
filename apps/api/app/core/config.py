@@ -23,20 +23,8 @@ class Settings(BaseSettings):
     # Encryption for bot tokens (AES-256-GCM, 32-byte key)
     encryption_key: str = ""
 
-    # OpenRouter (for the agent team)
-    openrouter_api_key: str = ""
-    openrouter_base_url: str = "https://openrouter.ai/api/v1"
-
-    # Cognee (for Phase 4 fork)
+    # Cognee
     cognee_data_dir: str = "./cognee_data"
-    llm_provider: str = "openai"
-    llm_endpoint: str = "https://openrouter.ai/api/v1"
-    llm_api_key: str = ""
-    llm_model: str = "openai/gpt-4o-mini"
-    embedding_provider: str = "openai"
-    embedding_endpoint: str = "https://openrouter.ai/api/v1"
-    embedding_model: str = "openai/text-embedding-3-small"
-    cognee_skip_connection_test: bool = True
 
 
 settings = Settings()
