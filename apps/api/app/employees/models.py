@@ -1,21 +1,38 @@
+from __future__ import annotations
+
 from datetime import datetime
+from typing import TYPE_CHECKING
 from uuid import UUID
 
-from sqlalchemy import DateTime, ForeignKey, String, Text, Uuid, func
+from sqlalchemy import CheckConstraint, DateTime, ForeignKey, String, Text, Uuid, func
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
 
+if TYPE_CHECKING:
+    from app.channel_assignments.models import ChannelAssignment
+    from app.documents.models import Document
+    from app.organizations.models import Organization
+
 
 class Employee(Base):
     __tablename__ = "employees"
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('active', 'inactive', 'suspended')",
+            name="ck_employees_status",
+        ),
+    )
 
     id: Mapped[UUID] = mapped_column(
         Uuid, primary_key=True, server_default=func.gen_random_uuid()
     )
     org_id: Mapped[UUID] = mapped_column(
-        Uuid, ForeignKey("organizations.id"), nullable=False, index=True
+        Uuid,
+        ForeignKey("organizations.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
     )
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     role: Mapped[str | None] = mapped_column(String(255), nullable=True)
@@ -48,12 +65,17 @@ class Employee(Base):
     )
 
     # Relationships
-    organization: Mapped["Organization"] = relationship(
+    organization: Mapped[Organization] = relationship(
         "Organization", back_populates="employees"
     )
-    channel_assignments: Mapped[list["ChannelAssignment"]] = relationship(
-        "ChannelAssignment", back_populates="employee"
+    channel_assignments: Mapped[list[ChannelAssignment]] = relationship(
+        "ChannelAssignment",
+        back_populates="employee",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
     )
-    documents: Mapped[list["Document"]] = relationship(
-        "Document", back_populates="employee"
+    documents: Mapped[list[Document]] = relationship(
+        "Document",
+        back_populates="employee",
+        passive_deletes=True,
     )

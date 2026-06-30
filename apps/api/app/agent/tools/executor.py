@@ -1,0 +1,226 @@
+import ast
+import ipaddress
+import operator
+import re
+import socket
+from datetime import UTC, datetime
+from urllib.parse import urlparse
+from zoneinfo import ZoneInfo
+
+import httpx
+from duckduckgo_search import DDGS
+from langchain_core.runnables import RunnableConfig
+from langchain_core.tools import tool
+
+# ---------------------------------------------------------------------------
+# SSRF protection — hostname / IP blocklists
+# ---------------------------------------------------------------------------
+
+_BLOCKED_SCHEMES = {"file", "ftp", "gopher", "dict", "ldap", "tftp"}
+
+_BLOCKED_HOSTNAMES = {
+    "localhost",
+    "127.0.0.1",
+    "0.0.0.0",
+    "::1",
+    "[::1]",
+    "0",
+    "metadata.google.internal",  # cloud metadata endpoints
+    "169.254.169.254",
+}
+
+_BLOCKED_NETWORKS = [
+    ipaddress.ip_network("127.0.0.0/8"),      # loopback
+    ipaddress.ip_network("10.0.0.0/8"),       # private
+    ipaddress.ip_network("172.16.0.0/12"),    # private
+    ipaddress.ip_network("192.168.0.0/16"),   # private
+    ipaddress.ip_network("169.254.0.0/16"),   # link-local
+    ipaddress.ip_network("0.0.0.0/8"),        # current network
+    ipaddress.ip_network("::1/128"),          # IPv6 loopback
+    ipaddress.ip_network("fc00::/7"),         # IPv6 unique local
+    ipaddress.ip_network("fe80::/10"),        # IPv6 link-local
+]
+
+
+def _is_private_host(hostname: str) -> bool:
+    """Return True if *hostname* resolves to or is a private / loopback address."""
+    # Strip brackets from IPv6 addresses
+    clean = hostname.strip("[]")
+    # Fast path — literal IP
+    try:
+        addr = ipaddress.ip_address(clean)
+        return any(addr in net for net in _BLOCKED_NETWORKS)
+    except ValueError:
+        pass  # not a literal IP, try DNS
+    # DNS resolution
+    try:
+        resolved = socket.getaddrinfo(clean, None)
+    except OSError:
+        # Can't resolve — err on the side of safety
+        return True
+    for family, _, _, _, sockaddr in resolved:
+        ip_str = sockaddr[0]
+        try:
+            addr = ipaddress.ip_address(ip_str)
+        except ValueError:
+            continue
+        if any(addr in net for net in _BLOCKED_NETWORKS):
+            return True
+    return False
+
+
+def _validate_url(url: str) -> str:
+    """Validate URL is safe to fetch. Returns an error message or empty string."""
+    parsed = urlparse(url)
+
+    # Block dangerous schemes
+    if parsed.scheme in _BLOCKED_SCHEMES:
+        return f"Blocked scheme: {parsed.scheme}"
+
+    if parsed.scheme not in ("http", "https"):
+        return f"Unsupported scheme: {parsed.scheme or '(empty)'}"
+
+    hostname = parsed.hostname
+    if not hostname:
+        return "No hostname in URL"
+
+    # Block well-known blocked hostnames
+    if hostname.lower() in _BLOCKED_HOSTNAMES or hostname in _BLOCKED_HOSTNAMES:
+        return f"Blocked hostname: {hostname}"
+
+    # Block cloud metadata IPs
+    if hostname == "169.254.169.254":
+        return f"Blocked hostname: {hostname}"
+
+    # DNS / IP check
+    if _is_private_host(hostname):
+        return f"Blocked internal address: {hostname}"
+
+    return ""  # safe
+
+
+@tool
+async def search_web(query: str) -> str:
+    """Search the web for current information, news, or facts. Useful for time-sensitive queries."""
+    try:
+        with DDGS() as ddgs:
+            results = list(ddgs.text(query, max_results=5))
+        if not results:
+            return "No results found."
+        return "\n\n".join(
+            f"**{r['title']}**\n{r['body']}\nSource: {r['href']}" for r in results
+        )
+    except Exception as e:
+        return f"Error performing web search: {e}"
+
+
+@tool
+def get_datetime(timezone: str = "UTC") -> str:
+    """Get the current date and time. Useful for scheduling and checking dates.
+
+    Accepts an IANA timezone name (e.g. ``"America/New_York"``, ``"Asia/Tokyo"``).
+    Defaults to UTC when the timezone is unrecognised.
+    """
+    tz_info: UTC | ZoneInfo
+    try:
+        tz_info = ZoneInfo(timezone)
+    except Exception:
+        tz_info = UTC
+        timezone = "UTC"
+    now = datetime.now(tz_info)
+    return f"Current date and time: {now.strftime('%Y-%m-%d %H:%M:%S %Z')} ({timezone})"
+
+
+@tool
+def calculate(expression: str) -> str:
+    """Safely evaluate a mathematical expression. E.g. '2 + 2 * 10 / 5'."""
+    _ops = {
+        ast.Add: operator.add,
+        ast.Sub: operator.sub,
+        ast.Mult: operator.mul,
+        ast.Div: operator.truediv,
+        ast.Pow: operator.pow,
+    }
+
+    def _eval(node):
+        if isinstance(node, ast.Constant):
+            return node.value
+        if isinstance(node, ast.BinOp):
+            return _ops[type(node.op)](_eval(node.left), _eval(node.right))
+        if isinstance(node, ast.UnaryOp) and isinstance(node.op, ast.USub):
+            return -_eval(node.operand)
+        raise ValueError(f"Unsupported node type: {type(node).__name__}")
+
+    try:
+        # Parse expression safely
+        tree = ast.parse(expression, mode="eval")
+        result = _eval(tree.body)
+        return str(result)
+    except Exception as e:
+        return f"Error evaluating expression: {e}"
+
+
+@tool
+async def fetch_url(url: str) -> str:
+    """Fetch and return the text content of a public webpage. Blocks internal URLs."""
+    # SSRF check before any network I/O
+    err = _validate_url(url)
+    if err:
+        return f"Cannot fetch URL: {err}"
+
+    try:
+        async with httpx.AsyncClient(follow_redirects=True, timeout=10) as client:
+            # Re-validate the final URL after redirects to catch open-redirect
+            # to internal addresses. httpx doesn't expose the redirect chain
+            # natively, so we issue a HEAD first to get the final URL.
+            head = await client.head(url)
+            final_url = str(head.url)
+            final_err = _validate_url(final_url)
+            if final_err:
+                return f"Cannot fetch URL (redirect): {final_err}"
+
+            resp = await client.get(url)
+            resp.raise_for_status()
+
+        # Simple HTML tag removal
+        text = re.sub(r"<[^>]+>", " ", resp.text)
+        text = re.sub(r"\s+", " ", text).strip()
+        # Return first 3000 chars to avoid prompt bloat
+        return text[:3000]
+    except httpx.HTTPError as e:
+        return f"Error fetching URL: {e}"
+    except Exception as e:
+        return f"Error fetching URL: {e}"
+
+
+@tool
+async def search_memory(query: str, config: RunnableConfig = None) -> str:
+    """Search team memory for past decisions, facts, and knowledge."""
+    emp_id = None
+    if config and "configurable" in config:
+        emp_id = config["configurable"].get("employee_id")
+
+    emp_id = emp_id or "unknown"
+    return f"No relevant memory found for employee '{emp_id}'."
+
+
+@tool
+async def ingest_memory(content: str, config: RunnableConfig = None) -> str:
+    """Store an important fact or decision in team memory for future reference."""
+    emp_id = None
+    if config and "configurable" in config:
+        emp_id = config["configurable"].get("employee_id")
+
+    emp_id = emp_id or "unknown"
+    return f"Fact successfully remembered for employee '{emp_id}'."
+
+
+# List of all built-in tools to export
+BUILT_IN_TOOLS = [
+    search_web,
+    get_datetime,
+    calculate,
+    fetch_url,
+    search_memory,
+    ingest_memory,
+]

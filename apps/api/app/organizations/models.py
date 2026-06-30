@@ -1,10 +1,18 @@
+from __future__ import annotations
+
 from datetime import datetime
+from typing import TYPE_CHECKING
 from uuid import UUID
 
 from sqlalchemy import DateTime, ForeignKey, String, Uuid, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
+
+if TYPE_CHECKING:
+    from app.auth.models import User
+    from app.documents.models import Document
+    from app.employees.models import Employee
 
 
 class Organization(Base):
@@ -14,7 +22,7 @@ class Organization(Base):
         Uuid, primary_key=True, server_default=func.gen_random_uuid()
     )
     owner_id: Mapped[UUID] = mapped_column(
-        Uuid, ForeignKey("users.id"), nullable=False
+        Uuid, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
     )
     name: Mapped[str] = mapped_column(String(255), nullable=False)
 
@@ -35,10 +43,16 @@ class Organization(Base):
     )
 
     # Relationships
-    owner: Mapped["User"] = relationship("User", back_populates="organizations")
-    employees: Mapped[list["Employee"]] = relationship(
-        "Employee", back_populates="organization"
+    owner: Mapped[User] = relationship("User", back_populates="organizations")
+    employees: Mapped[list[Employee]] = relationship(
+        "Employee",
+        back_populates="organization",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
     )
-    documents: Mapped[list["Document"]] = relationship(
-        "Document", back_populates="organization"
+    documents: Mapped[list[Document]] = relationship(
+        "Document",
+        back_populates="organization",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
     )

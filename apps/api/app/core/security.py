@@ -1,6 +1,6 @@
 import base64
 import os
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import bcrypt
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
@@ -25,7 +25,7 @@ def verify_password(plain: str, hashed: str) -> bool:
 
 def create_access_token(user_id: str) -> str:
     """Create a signed JWT for the given user ID."""
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     payload = {
         "sub": user_id,
         "iat": now,
@@ -44,8 +44,11 @@ def decode_access_token(token: str) -> dict:
 def _get_encryption_key() -> bytes:
     raw = settings.encryption_key
     if not raw:
-        raise RuntimeError("encryption_key is not set — generate a 32-byte hex string")
-    key = bytes.fromhex(raw)
+        raise RuntimeError("encryption_key is not set; generate a 32-byte hex string")
+    try:
+        key = bytes.fromhex(raw)
+    except ValueError as exc:
+        raise RuntimeError("encryption_key must be a valid hex string") from exc
     if len(key) != 32:
         raise RuntimeError("encryption_key must be 32 bytes (64 hex characters)")
     return key

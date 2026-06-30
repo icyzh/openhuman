@@ -1,10 +1,16 @@
+from __future__ import annotations
+
 from datetime import datetime
+from typing import TYPE_CHECKING
 from uuid import UUID
 
 from sqlalchemy import DateTime, String, Uuid, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
+
+if TYPE_CHECKING:
+    from app.organizations.models import Organization
 
 
 class User(Base):
@@ -28,6 +34,9 @@ class User(Base):
     )
 
     # Relationships
-    organizations: Mapped[list["Organization"]] = relationship(
-        "Organization", back_populates="owner"
+    organizations: Mapped[list[Organization]] = relationship(
+        "Organization",
+        back_populates="owner",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
     )

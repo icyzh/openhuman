@@ -1,23 +1,42 @@
+from __future__ import annotations
+
 from datetime import datetime
+from typing import TYPE_CHECKING
 from uuid import UUID
 
-from sqlalchemy import DateTime, ForeignKey, Integer, String, Uuid, func
+from sqlalchemy import CheckConstraint, DateTime, ForeignKey, Integer, String, Uuid, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
 
+if TYPE_CHECKING:
+    from app.employees.models import Employee
+    from app.organizations.models import Organization
+
 
 class Document(Base):
     __tablename__ = "documents"
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('uploaded', 'processing', 'indexed', 'failed')",
+            name="ck_documents_status",
+        ),
+    )
 
     id: Mapped[UUID] = mapped_column(
         Uuid, primary_key=True, server_default=func.gen_random_uuid()
     )
     org_id: Mapped[UUID] = mapped_column(
-        Uuid, ForeignKey("organizations.id"), nullable=False
+        Uuid,
+        ForeignKey("organizations.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
     )
     employee_id: Mapped[UUID | None] = mapped_column(
-        Uuid, ForeignKey("employees.id"), nullable=True
+        Uuid,
+        ForeignKey("employees.id", ondelete="CASCADE"),
+        nullable=True,
+        index=True,
     )
 
     filename: Mapped[str] = mapped_column(String(255), nullable=False)
@@ -36,9 +55,9 @@ class Document(Base):
     )
 
     # Relationships
-    organization: Mapped["Organization"] = relationship(
+    organization: Mapped[Organization] = relationship(
         "Organization", back_populates="documents"
     )
-    employee: Mapped["Employee | None"] = relationship(
+    employee: Mapped[Employee | None] = relationship(
         "Employee", back_populates="documents"
     )
