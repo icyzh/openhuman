@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import logging
 from uuid import UUID
 
@@ -118,25 +119,21 @@ async def delete_org(db: AsyncSession, org_id: UUID, user_id: UUID) -> bool:
         return False
 
     # ── Best-effort Cognee cleanup before cascade delete ────────────────
-    employees_with_cognee = [
-        e for e in org.employees if e.cognee_dataset_name
-    ]
-    for emp in employees_with_cognee:
-        try:
-            await forget_dataset(emp.cognee_dataset_name)  # type: ignore[arg-type]
-        except Exception:
-            logger.exception(
-                "Cognee forget_dataset failed during org delete "
-                "for employee %s",
-                emp.id,
-            )
+    tasks: list = []
+    for emp in org.employees:
+        if emp.cognee_dataset_name:
+            tasks.append(forget_dataset(emp.cognee_dataset_name))  # type: ignore[arg-type]
     if org.cognee_dataset_name:
-        try:
-            await forget_dataset(org.cognee_dataset_name)
-        except Exception:
-            logger.exception(
-                "Cognee forget_dataset failed during org delete %s", org.id
-            )
+        tasks.append(forget_dataset(org.cognee_dataset_name))
+    if tasks:
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+        for i, result in enumerate(results):
+            if isinstance(result, Exception):
+                logger.exception(
+                    "Cognee forget_dataset failed during org delete %s",
+                    org.id,
+                    exc_info=result,
+                )
     # ─────────────────────────────────────────────────────────────────────
 
     await db.delete(org)

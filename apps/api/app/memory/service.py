@@ -49,8 +49,17 @@ async def init_cognee() -> None:
     await cognee.run_migrations()
 
 
+_admin_cache: dict | None = None
+
+
 async def get_or_create_admin() -> dict:
-    """Idempotent: returns {id, email} for the app-wide admin Cognee user."""
+    """Idempotent: returns {id, email} for the app-wide admin Cognee user.
+
+    Cached in-process after first resolution — the admin is immutable.
+    """
+    global _admin_cache
+    if _admin_cache is not None:
+        return _admin_cache
     user = await _cognee_get_user_by_email(_ADMIN_EMAIL)
     if user is None:
         user = await _cognee_create_user(
@@ -58,7 +67,8 @@ async def get_or_create_admin() -> dict:
             password=secrets.token_urlsafe(32),
             is_superuser=True,
         )
-    return {"id": str(user.id), "email": user.email}
+    _admin_cache = {"id": str(user.id), "email": user.email}
+    return _admin_cache
 
 
 # ---------------------------------------------------------------------------
@@ -202,7 +212,3 @@ async def forget_dataset(dataset_name: str) -> dict:
     return {"status": "ok"}
 
 
-async def improve_dataset(dataset_name: str) -> dict:
-    """Refresh embeddings and re-index a dataset."""
-    await cognee.improve(dataset=dataset_name)
-    return {"status": "ok"}

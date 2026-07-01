@@ -32,6 +32,17 @@ from app.organizations.models import Organization
 
 logger = logging.getLogger(__name__)
 
+
+def _build_employee_profile(emp: Employee) -> str:
+    """Serialize employee identity fields to JSON for Cognee profile seed."""
+    return json.dumps({
+        "name": emp.name,
+        "role": emp.role,
+        "employee_type": emp.employee_type,
+        "personality": emp.personality,
+        "specialization": emp.specialization,
+    })
+
 # ---------------------------------------------------------------------------
 # Exceptions
 # ---------------------------------------------------------------------------
@@ -164,13 +175,7 @@ async def create_employee(
             )
 
             # Seed employee profile
-            profile = json.dumps({
-                "name": emp.name,
-                "role": emp.role,
-                "employee_type": emp.employee_type,
-                "personality": emp.personality,
-                "specialization": emp.specialization,
-            })
+            profile = _build_employee_profile(emp)
             await remember(
                 profile,
                 f"employee-{emp.id}",
@@ -252,7 +257,8 @@ async def update_employee(
                 f"An employee of type '{data.employee_type}' already exists in this organization."
             )
 
-    for field, value in data.model_dump(exclude_none=True).items():
+    update_data = data.model_dump(exclude_none=True)
+    for field, value in update_data.items():
         if field == "status" and value not in _ALLOWED_STATUSES:
             raise ValueError(
                 f"status must be one of {sorted(_ALLOWED_STATUSES)}"
@@ -270,7 +276,7 @@ async def update_employee(
 
     # ── Re-seed Cognee profile if identity fields changed ───────────────
     cognee_changed = any(
-        field in data.model_dump(exclude_none=True)
+        field in update_data
         for field in (
             "name", "role", "employee_type",
             "personality", "specialization",
@@ -278,13 +284,7 @@ async def update_employee(
     )
     if cognee_changed and emp.cognee_user_id and emp.cognee_dataset_name:
         try:
-            profile = json.dumps({
-                "name": emp.name,
-                "role": emp.role,
-                "employee_type": emp.employee_type,
-                "personality": emp.personality,
-                "specialization": emp.specialization,
-            })
+            profile = _build_employee_profile(emp)
             await remember(
                 profile,
                 emp.cognee_dataset_name,
