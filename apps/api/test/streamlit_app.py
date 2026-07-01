@@ -53,6 +53,9 @@ from langchain_core.messages import HumanMessage, ToolMessage
 
 from app.agent.build import build_graph
 from app.agent.tools import BUILT_IN_TOOLS
+from app.agent.tools.mcp.connectors import REGISTRY as MCP_REGISTRY
+from app.agent.tools.mcp.connectors.spec import ConnectorSpec
+from app.employees.templates import get_template
 from test.fixtures import (
     SEED_EMPLOYEES,
     clear_slack_token,
@@ -60,6 +63,12 @@ from test.fixtures import (
     print_banner,
     set_slack_token,
     setup_test_db,
+)
+from test.mcp_helpers import (
+    add_mcp_connection,
+    list_mcp_connectors,
+    remove_mcp_connection,
+    resolve_mcp_tools,
 )
 
 if TYPE_CHECKING:
@@ -76,23 +85,42 @@ st.set_page_config(
 )
 
 # ---------------------------------------------------------------------------
-# Compiled agent graph (cached once per process)
+# Compiled agent graph cache helpers
 # ---------------------------------------------------------------------------
-if "agent_graph" not in st.session_state:
-    st.session_state.agent_graph = build_graph(BUILT_IN_TOOLS)
+def _clear_graph_cache():
+    """Remove all cached graph keys from session state."""
+    keys_to_drop = [k for k in st.session_state if k.startswith("graph_")]
+    for k in keys_to_drop:
+        del st.session_state[k]
 
-agent_graph = st.session_state.agent_graph
+
+def _cached_graph(tool_names: list[str], all_tools: list) -> tuple:
+    """Build (or return cached) agent graph for *all_tools*.
+
+    Returns ``(graph, all_tools)``.
+    """
+    import hashlib
+    import json
+
+    tool_hash = hashlib.sha256(
+        json.dumps(sorted(tool_names)).encode()
+    ).hexdigest()[:12]
+
+    cache_key = f"graph_{tool_hash}"
+    if cache_key not in st.session_state:
+        st.session_state[cache_key] = build_graph(all_tools)
+
+    return st.session_state[cache_key], all_tools
 
 
 # ---------------------------------------------------------------------------
 # Async runner helper
 # ---------------------------------------------------------------------------
 def _run_async(coro):
-    """Run an async coroutine and cache the event loop policy."""
+    """Run an async coroutine."""
     try:
         return asyncio.run(coro)
     except RuntimeError:
-        # Already inside a running event loop (rare with Streamlit)
         loop = asyncio.get_event_loop()
         return loop.run_until_complete(coro)
 
@@ -138,26 +166,47 @@ def _init_state():
 # Agent invocation
 # ---------------------------------------------------------------------------
 async def _invoke_agent(employee_id: UUID, message: str, platform: str, session_factory):
-    """Run the agent graph and return (result_state, elapsed_seconds)."""
-    initial_state = {
-        "messages": [HumanMessage(content=message)],
-        "platform": platform,
-        "employee_id": str(employee_id),
-        "tool_round": 0,
-    }
+    """Run the agent graph and return (result_state, elapsed_seconds, mcp_tool_count)."""
+    from sqlalchemy import select as sa_select
+
+    from app.employees.models import Employee
 
     async with session_factory() as session:
+        # Resolve MCP tools within this session (no nested asyncio.run)
+        emp = await session.scalar(
+            sa_select(Employee).where(Employee.id == employee_id)
+        )
+        template = get_template(emp.specialization if emp else "general")
+        mcp_tools: list = []
+        if emp is not None and template.allowed_mcp_servers and emp.org_id:
+            mcp_tools = await resolve_mcp_tools(
+                session, emp.org_id, employee_id, template.allowed_mcp_servers
+            )
+
+        all_tools = list(BUILT_IN_TOOLS) + mcp_tools
+        tool_names = sorted(t.name for t in all_tools)
+        graph, all_tools = _cached_graph(tool_names, all_tools)
+
+        initial_state = {
+            "messages": [HumanMessage(content=message)],
+            "platform": platform,
+            "employee_id": str(employee_id),
+            "tool_round": 0,
+        }
+
         config = {
             "configurable": {
                 "db": session,
                 "employee_id": str(employee_id),
+                "all_tools": all_tools,
             }
         }
         t0 = time.monotonic()
-        result = await agent_graph.ainvoke(initial_state, config=config)
+        result = await graph.ainvoke(initial_state, config=config)
         elapsed = time.monotonic() - t0
 
-    return result, elapsed
+    mcp_tool_count = sum(1 for t in all_tools if t.name.startswith("mcp__"))
+    return result, elapsed, mcp_tool_count
 
 
 # ---------------------------------------------------------------------------
@@ -311,6 +360,38 @@ def _render_sidebar():
             else:
                 st.caption("No organization found for the selected employee.")
 
+    # --- MCP Connectors -------------------------------------------------------
+    st.sidebar.header("🔌 MCP Connectors")
+
+    if employee_id is not None:
+        session_factory = st.session_state.get("db_session_factory")
+        if session_factory is not None:
+            # Fetch connector statuses
+            async def _get_mcp_list():
+                async with session_factory() as s:
+                    from sqlalchemy import select as sa_select
+                    from app.employees.models import Employee
+                    emp = await s.scalar(
+                        sa_select(Employee).where(Employee.id == employee_id)
+                    )
+                    if emp is None:
+                        return []
+                    return await list_mcp_connectors(s, emp.org_id, employee_id)
+
+            connectors = _run_async(_get_mcp_list())
+
+            if not connectors:
+                st.sidebar.caption("No MCP connectors registered.")
+            else:
+                for c in connectors:
+                    _render_mcp_connector_row(
+                        c, employee_id, session_factory
+                    )
+        else:
+            st.sidebar.caption("DB not ready — cannot list MCP connectors.")
+    else:
+        st.sidebar.caption("Select an employee to manage MCP connections.")
+
     # --- Model info ----------------------------------------------------------
     st.sidebar.header("🔧 Configuration")
     st.sidebar.markdown(
@@ -342,6 +423,102 @@ def _render_sidebar():
     )
 
     return employee_id
+
+
+def _render_mcp_connector_row(conn: dict, employee_id: UUID, session_factory):
+    """Render one MCP connector row in the sidebar."""
+    slug = conn["slug"]
+    is_connected = conn["is_connected"]
+    auth_type = conn["auth_type"]
+
+    icon = "✅" if is_connected else "⬜"
+    label = f"{icon} {conn['name']}"
+
+    with st.sidebar.expander(label, expanded=False):
+        st.caption(conn["description"])
+        st.caption(f"Auth: `{auth_type}`")
+
+        if conn.get("requires_manual_approval"):
+            st.warning("⚠️ Requires vendor approval")
+
+        if is_connected:
+            st.success(f"Connected — status: {conn['connection_status']}")
+            scopes = conn.get("scopes")
+            if scopes:
+                st.caption(f"Scopes: {', '.join(scopes)}")
+            if st.button("🔌 Disconnect", key=f"mcp_disc_{slug}", use_container_width=True):
+                async def _disconnect():
+                    async with session_factory() as s:
+                        from sqlalchemy import select as sa_select
+                        from app.employees.models import Employee
+                        emp = await s.scalar(
+                            sa_select(Employee).where(Employee.id == employee_id)
+                        )
+                        if emp:
+                            ok = await remove_mcp_connection(
+                                s, emp.org_id, employee_id, slug
+                            )
+                            if ok:
+                                # Clear graph cache so it rebuilds without this connector
+                                _clear_graph_cache()
+                _run_async(_disconnect())
+                st.rerun()
+
+        elif auth_type in ("pat_bearer", "api_key_header"):
+            # Key-paste form for PAT / API-key connectors
+            key_input = st.text_input(
+                "Credential",
+                type="password",
+                placeholder="ghp_..." if slug == "github" else "Paste key …",
+                key=f"mcp_key_{slug}",
+            )
+            if st.button("💾 Connect", key=f"mcp_add_{slug}", use_container_width=True):
+                if key_input.strip():
+                    async def _connect():
+                        async with session_factory() as s:
+                            from sqlalchemy import select as sa_select
+                            from app.employees.models import Employee
+                            emp = await s.scalar(
+                                sa_select(Employee).where(Employee.id == employee_id)
+                            )
+                            if emp:
+                                from test.mcp_helpers import add_mcp_connection as _add
+                                await _add(
+                                    s, emp.org_id, employee_id, slug, key_input.strip()
+                                )
+                                _clear_graph_cache()
+                    _run_async(_connect())
+                    st.success(f"Connected to {conn['name']}!")
+                    st.rerun()
+                else:
+                    st.warning("Enter a credential first.")
+
+        elif auth_type == "oauth2":
+            # OAuth install link
+            api_base = os.getenv("API_BASE_URL", "http://localhost:8000")
+            streamlit_url = os.getenv("STREAMLIT_URL", "http://localhost:8501")
+
+            async def _get_org():
+                async with session_factory() as s:
+                    from sqlalchemy import select as sa_select
+                    from app.employees.models import Employee
+                    emp = await s.scalar(
+                        sa_select(Employee).where(Employee.id == employee_id)
+                    )
+                    return emp.org_id if emp else None
+
+            org_id = _run_async(_get_org())
+            if org_id:
+                install_url = (
+                    f"{api_base}/api/organizations/{org_id}"
+                    f"/employees/{employee_id}/mcp-connections/{slug}/install"
+                    f"?redirect_to={streamlit_url}"
+                )
+                st.markdown(f"[🔌 **Connect {conn['name']}**]({install_url})")
+            else:
+                st.caption("No org found.")
+        else:
+            st.caption("No authentication required — always available.")
 
 
 def _mask_key(key: str) -> str:
@@ -394,6 +571,19 @@ def main():
         st.error(f"❌ Slack connection failed: {reason}")
         st.query_params.clear()
 
+    # Show MCP OAuth result if redirected back from callback
+    mcp_oauth = st.query_params.get("mcp_oauth")
+    if mcp_oauth == "connected":
+        mcp_slug = st.query_params.get("connector_slug", "unknown")
+        st.success(f"✅ MCP connector **{mcp_slug}** connected!")
+        _clear_graph_cache()
+        st.query_params.clear()
+    elif mcp_oauth == "error":
+        mcp_slug = st.query_params.get("connector_slug", "?")
+        reason = st.query_params.get("reason", "unknown error")
+        st.error(f"❌ MCP connection to **{mcp_slug}** failed: {reason}")
+        st.query_params.clear()
+
     if employee_id is None:
         st.warning("No employee selected. Pick one from the sidebar.")
         return
@@ -430,7 +620,7 @@ def main():
             placeholder.markdown("⏳ *Running agent graph …*")
 
             try:
-                result, elapsed = _run_async(
+                result, elapsed, mcp_tool_count = _run_async(
                     _invoke_agent(
                         UUID(employee_id_str),
                         user_input,
@@ -474,6 +664,7 @@ def main():
                 "error": error,
                 "system_prompt": system_prompt,
                 "messages": messages,
+                "mcp_tool_count": mcp_tool_count,
             }
 
             # Display the final response
@@ -500,14 +691,16 @@ def _render_message_meta(meta: dict | None):
         return
 
     with st.expander("🔍 Agent trace", expanded=False):
-        col1, col2, col3, col4 = st.columns(4)
+        col1, col2, col3, col4, col5 = st.columns(5)
         col1.metric("⏱️ Latency", f"{meta.get('elapsed', 0):.2f}s")
         col2.metric("🔧 Tool rounds", meta.get("tool_rounds", 0))
-        col3.metric(
+        mcp_count = meta.get("mcp_tool_count", 0)
+        col3.metric("🔌 MCP tools", str(mcp_count) if mcp_count else "—")
+        col4.metric(
             "🛡️ Input guard",
             "🚫 Blocked" if meta.get("input_blocked") else "✅ Pass",
         )
-        col4.metric(
+        col5.metric(
             "✅ Output guard",
             "✅ Pass" if meta.get("output_guardrail_passed") else "❌ Fail",
         )
@@ -528,8 +721,16 @@ def _render_message_meta(meta: dict | None):
             for tc in tool_calls:
                 tc_id = tc.get("id", "")
                 result_text = tool_results.get(tc_id, "<no result>")
+                tool_name = tc.get("name", "?")
+                # Highlight MCP tools with server badge
+                label = tool_name
+                if tool_name.startswith("mcp__"):
+                    parts = tool_name.split("__", 2)
+                    if len(parts) >= 3:
+                        server, fn = parts[1], parts[2]
+                        label = f"MCP `{server}` → `{fn}`"
                 with st.container(border=True):
-                    st.markdown(f"**`{tc['name']}`**")
+                    st.markdown(f"**{label}**")
                     with st.expander("Args", expanded=False):
                         st.json(tc.get("args", {}))
                     with st.expander("Result", expanded=False):

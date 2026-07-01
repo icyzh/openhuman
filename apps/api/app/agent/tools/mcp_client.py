@@ -1,11 +1,5 @@
-# Skeleton for Model Context Protocol client manager
-class MCPClientManager:
-    """Stub client manager for MCP servers."""
+"""Compatibility shim — real implementation lives in ``app.agent.tools.mcp.client``."""
 
-    async def connect(self, mcp_connections: list[dict]) -> list:
-        """Stub connect method returning no tools."""
-        return []
+from app.agent.tools.mcp.client import MCPClientManager, ResolvedConnection
 
-    async def disconnect(self) -> None:
-        """Stub disconnect method."""
-        pass
+__all__ = ["MCPClientManager", "ResolvedConnection"]

@@ -8,7 +8,18 @@ class EmployeeTemplate(BaseModel):
     role: str
     system_prompt_template: str
     allowed_tools: list[str]
-    suggested_mcp_servers: list[str] = Field(default_factory=list)
+    allowed_mcp_servers: list[str] = Field(
+        default_factory=list,
+        description=(
+            "MCP server slugs this employee is allowed to use. "
+            '``["*"]`` means all connected servers. '
+            "Empty list (default) means no MCP tools are bound."
+        ),
+    )
+    suggested_mcp_servers: list[str] = Field(
+        default_factory=list,
+        description="Recommended MCP servers shown in the dashboard UI",
+    )
     guardrail_config: dict[str, bool] = Field(default_factory=dict)
     suggested_duties: list[str] = Field(default_factory=list)
     default_personality: dict = Field(default_factory=dict)
@@ -59,7 +70,8 @@ SALES_TEMPLATE = EmployeeTemplate(
         "Use tools when you need information. Don't use tools for simple greetings or opinions."
     ),
     allowed_tools=["search_memory", "ingest_memory", "search_web"],
-    suggested_mcp_servers=["hubspot", "salesforce"],
+    allowed_mcp_servers=["web_search"],
+    suggested_mcp_servers=["hubspot", "salesforce", "github"],
     guardrail_config={"block_pii": False, "require_citations": False},
     suggested_duties=[
         "Draft weekly pipeline summaries in the #sales-reports channel",
@@ -84,7 +96,8 @@ SUPPORT_TEMPLATE = EmployeeTemplate(
         "Use tools when you need information. Don't use tools for simple greetings or opinions."
     ),
     allowed_tools=["search_memory", "ingest_memory", "search_web", "fetch_url"],
-    suggested_mcp_servers=["zendesk", "intercom"],
+    allowed_mcp_servers=["web_search"],
+    suggested_mcp_servers=["github", "zendesk", "intercom"],
     guardrail_config={"block_pii": True, "require_citations": True},
     suggested_duties=[
         "Answer support questions in #support when mentioned",
@@ -113,7 +126,8 @@ GENERAL_TEMPLATE = EmployeeTemplate(
         "search_memory", "ingest_memory", "search_web",
         "calculate", "fetch_url", "get_datetime",
     ],
-    suggested_mcp_servers=[],
+    allowed_mcp_servers=["web_search"],
+    suggested_mcp_servers=["github"],
     guardrail_config={"block_pii": False, "require_citations": False},
     suggested_duties=[
         "Answer general questions when mentioned",

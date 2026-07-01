@@ -1,12 +1,13 @@
-"""Unit tests for built-in tools and memory stubs (Phase 5).
+"""Unit tests for built-in tools, MCP client, and memory stubs.
 
 Covers the verification scenarios from the audit plan:
 - Safe / unsafe calculator expressions
 - Allowed / blocked URLs (SSRF protection)
 - Timezone handling in get_datetime
 - Memory stub behaviour with employee ID
-- MCP client stub isolation
-- Employee-specific tool allowlist enforcement
+- MCP client manager (real implementation)
+- MCP connector registry integrity
+- Employee-specific tool allowlist enforcement (built-in + MCP)
 """
 
 from unittest.mock import MagicMock, patch
@@ -423,38 +424,322 @@ class TestIngestMemory:
 
 
 # =============================================================================
-# MCP client stub tests
+# MCP client manager tests (real implementation)
 # =============================================================================
 
 
-class TestMcpClient:
-    """MCP client is a clearly isolated stub."""
+class TestMcpClientManager:
+    """MCPClientManager tests — mock MultiServerMCPClient to verify
+    tool loading, name prefixing, and error handling."""
 
     @pytest.mark.anyio
-    async def test_connect_returns_empty_list(self):
-        from app.agent.tools.mcp_client import MCPClientManager
+    async def test_connect_with_no_connections_returns_empty(self):
+        from app.agent.tools.mcp.client import MCPClientManager
 
         mgr = MCPClientManager()
         tools = await mgr.connect([])
         assert tools == []
 
     @pytest.mark.anyio
-    async def test_connect_always_returns_empty(self):
-        from app.agent.tools.mcp_client import MCPClientManager
+    async def test_disconnect_does_not_raise(self):
+        from app.agent.tools.mcp.client import MCPClientManager
 
         mgr = MCPClientManager()
-        tools = await mgr.connect(
-            [{"server": "github", "token": "fake"}]
-        )
-        assert tools == []
+        await mgr.disconnect()  # Should not raise
 
     @pytest.mark.anyio
-    async def test_disconnect_does_not_raise(self):
-        from app.agent.tools.mcp_client import MCPClientManager
+    async def test_connect_loads_and_prefixes_tools(self):
+        """When MultiServerMCPClient returns tools, they get the mcp__ prefix."""
+        from unittest.mock import AsyncMock, MagicMock, patch
+
+        from langchain_core.tools import tool as lc_tool
+
+        from app.agent.tools.mcp.client import MCPClientManager, ResolvedConnection
+        from app.agent.tools.mcp.connectors.registry import ConnectorSpec
+
+        @lc_tool
+        def list_repos() -> str:
+            """List repos."""
+            return "repo1, repo2"
+
+        @lc_tool
+        def search_code(query: str) -> str:
+            """Search code."""
+            return f"results for {query}"
+
+        spec = ConnectorSpec(
+            slug="github",
+            name="GitHub",
+            description="GitHub MCP",
+            base_url="https://api.githubcopilot.com/mcp/",
+            transport="streamable_http",
+            auth_type="pat_bearer",
+        )
+
+        # Mock MultiServerMCPClient to return our tools per server
+        with patch(
+            "app.agent.tools.mcp.client.MultiServerMCPClient"
+        ) as mock_client_cls:
+            mock_instance = MagicMock()
+            mock_instance.get_tools = AsyncMock(
+                side_effect=lambda server_name: {
+                    "github": [list_repos],
+                }.get(server_name, [])
+            )
+            mock_client_cls.return_value = mock_instance
+
+            mgr = MCPClientManager()
+            tools = await mgr.connect([
+                ResolvedConnection(slug="github", connector=spec, credentials="ghp_test"),
+            ])
+
+        # Should have 1 tool from our mock
+        assert len(tools) == 1
+        # Tool name should be prefixed: mcp__github__list_repos
+        assert tools[0].name == "mcp__github__list_repos"
+
+    @pytest.mark.anyio
+    async def test_connect_multiple_servers_prefixes_correctly(self):
+        """Tools from different servers get different mcp__{slug} prefixes."""
+        from unittest.mock import AsyncMock, MagicMock, patch
+
+        from langchain_core.tools import tool as lc_tool
+
+        from app.agent.tools.mcp.client import MCPClientManager, ResolvedConnection
+        from app.agent.tools.mcp.connectors.registry import ConnectorSpec
+
+        @lc_tool
+        def search(query: str) -> str:
+            """Search the web."""
+            return f"web: {query}"
+
+        github_spec = ConnectorSpec(
+            slug="github",
+            name="GitHub",
+            description="GitHub MCP",
+            base_url="https://api.githubcopilot.com/mcp/",
+            transport="streamable_http",
+            auth_type="pat_bearer",
+        )
+        web_spec = ConnectorSpec(
+            slug="web_search",
+            name="Web Search",
+            description="Free web search",
+            base_url="https://search.example.com/mcp",
+            transport="streamable_http",
+            auth_type="none",
+        )
+
+        with patch(
+            "app.agent.tools.mcp.client.MultiServerMCPClient"
+        ) as mock_client_cls:
+            mock_instance = MagicMock()
+            mock_instance.get_tools = AsyncMock(
+                side_effect=lambda server_name: {
+                    "github": [search],
+                    "web_search": [search],
+                }.get(server_name, [])
+            )
+            mock_client_cls.return_value = mock_instance
+
+            mgr = MCPClientManager()
+            tools = await mgr.connect([
+                ResolvedConnection(slug="github", connector=github_spec, credentials="ghp_test"),
+                ResolvedConnection(slug="web_search", connector=web_spec, credentials=None),
+            ])
+
+        assert len(tools) == 2
+        tool_names = {t.name for t in tools}
+        assert "mcp__github__search" in tool_names
+        assert "mcp__web_search__search" in tool_names
+        # No name collision despite same underlying tool name
+        assert len(tool_names) == 2
+
+    @pytest.mark.anyio
+    async def test_error_per_server_is_graceful(self):
+        """When one server fails, others still load successfully."""
+        from unittest.mock import AsyncMock, MagicMock, patch
+
+        from langchain_core.tools import tool as lc_tool
+
+        from app.agent.tools.mcp.client import MCPClientManager, ResolvedConnection
+        from app.agent.tools.mcp.connectors.registry import ConnectorSpec
+
+        @lc_tool
+        def search(query: str) -> str:
+            """Search."""
+            return f"results: {query}"
+
+        good_spec = ConnectorSpec(
+            slug="good",
+            name="Good",
+            description="Works",
+            base_url="https://good.example.com/mcp",
+            transport="streamable_http",
+            auth_type="none",
+        )
+        bad_spec = ConnectorSpec(
+            slug="bad",
+            name="Bad",
+            description="Fails",
+            base_url="https://bad.example.com/mcp",
+            transport="streamable_http",
+            auth_type="none",
+        )
+
+        with patch(
+            "app.agent.tools.mcp.client.MultiServerMCPClient"
+        ) as mock_client_cls:
+            mock_instance = MagicMock()
+            mock_instance.get_tools = AsyncMock(
+                side_effect=lambda server_name: (
+                    [search] if server_name == "good"
+                    else (_ for _ in ()).throw(RuntimeError("connection refused"))
+                )
+            )
+            mock_client_cls.return_value = mock_instance
+
+            mgr = MCPClientManager()
+            tools = await mgr.connect([
+                ResolvedConnection(slug="good", connector=good_spec, credentials=None),
+                ResolvedConnection(slug="bad", connector=bad_spec, credentials=None),
+            ])
+
+        # Good server loaded, bad one skipped
+        assert len(tools) == 1
+        assert tools[0].name == "mcp__good__search"
+
+    @pytest.mark.anyio
+    async def test_connect_skips_unknown_connector(self):
+        """When a connection references a slug not in REGISTRY, it is skipped."""
+        from app.agent.tools.mcp.client import MCPClientManager, ResolvedConnection
+        from app.agent.tools.mcp.connectors.registry import ConnectorSpec
+
+        # This spec is NOT in REGISTRY
+        unknown_spec = ConnectorSpec(
+            slug="unknown",
+            name="Unknown",
+            description="Not registered",
+            base_url="https://unknown.example.com/mcp",
+        )
 
         mgr = MCPClientManager()
-        # Should not raise
-        await mgr.disconnect()
+        tools = await mgr.connect([
+            ResolvedConnection(slug="unknown", connector=unknown_spec, credentials=None),
+        ])
+
+        # Should still resolve (the manager doesn't check REGISTRY — that's
+        # the router's job). This test verifies we don't crash on any valid
+        # ConnectorSpec.
+        assert tools == []  # No tools from a mock without patching
+
+
+# =============================================================================
+# MCP tool name helpers
+# =============================================================================
+
+
+class TestMcpToolNameHelpers:
+    """_is_mcp_tool and _mcp_slug correctly parse mcp__{slug}__{tool} names."""
+
+    def test_is_mcp_tool_true_for_prefixed(self):
+        from app.agent.nodes.llm_call import _is_mcp_tool
+
+        class _FakeTool:
+            name = "mcp__github__list_repos"
+
+        assert _is_mcp_tool(_FakeTool()) is True
+
+    def test_is_mcp_tool_false_for_builtin(self):
+        from app.agent.nodes.llm_call import _is_mcp_tool
+
+        class _FakeTool:
+            name = "search_web"
+
+        assert _is_mcp_tool(_FakeTool()) is False
+
+    def test_is_mcp_tool_false_for_no_prefix(self):
+        from app.agent.nodes.llm_call import _is_mcp_tool
+
+        class _FakeTool:
+            name = "github__list_repos"
+
+        assert _is_mcp_tool(_FakeTool()) is False
+
+    def test_mcp_slug_extracts_correctly(self):
+        from app.agent.nodes.llm_call import _mcp_slug
+
+        class _FakeTool:
+            name = "mcp__github__list_repos"
+
+        assert _mcp_slug(_FakeTool()) == "github"
+
+    def test_mcp_slug_with_multisection_tool_name(self):
+        from app.agent.nodes.llm_call import _mcp_slug
+
+        class _FakeTool:
+            name = "mcp__web_search__fetch_page"
+
+        assert _mcp_slug(_FakeTool()) == "web_search"
+
+    def test_mcp_slug_empty_for_non_mcp(self):
+        from app.agent.nodes.llm_call import _mcp_slug
+
+        class _FakeTool:
+            name = "search_web"
+
+        assert _mcp_slug(_FakeTool()) == ""
+
+    def test_mcp_slug_empty_for_too_short(self):
+        from app.agent.nodes.llm_call import _mcp_slug
+
+        class _FakeTool:
+            name = "mcp__only"
+
+        assert _mcp_slug(_FakeTool()) == ""
+
+
+# =============================================================================
+# Connector registry tests
+# =============================================================================
+
+
+class TestConnectorRegistry:
+    """ConnectorSpec and REGISTRY are well-formed."""
+
+    def test_registry_is_dict(self):
+        from app.agent.tools.mcp.connectors import REGISTRY
+
+        assert isinstance(REGISTRY, dict)
+
+    def test_connector_spec_validation(self):
+        from app.agent.tools.mcp.connectors.registry import ConnectorSpec
+
+        spec = ConnectorSpec(
+            slug="test",
+            name="Test Connector",
+            description="A test connector",
+            base_url="https://test.example.com/mcp",
+            auth_type="none",
+        )
+        assert spec.slug == "test"
+        assert spec.transport == "streamable_http"
+        assert spec.auth_type == "none"
+        assert spec.default_scopes == []
+
+    def test_connector_spec_auth_types(self):
+        from app.agent.tools.mcp.connectors.registry import ConnectorSpec
+
+        for auth in ("none", "api_key_header", "pat_bearer", "oauth2"):
+            spec = ConnectorSpec(
+                slug="test",
+                name="Test",
+                description="Test",
+                base_url="https://test.example.com/mcp",
+                auth_type=auth,  # type: ignore[arg-type]
+            )
+            assert spec.auth_type == auth
+
 
 
 # =============================================================================
@@ -520,6 +805,54 @@ class TestEmployeeToolAllowlist:
         assert general_tools == all_names, (
             "General template should have access to all built-in tools"
         )
+
+
+class TestEmployeeMcpAllowlist:
+    """MCP server allowlist on EmployeeTemplate gates MCP tool binding."""
+
+    def test_default_templates_have_empty_mcp_allowlist(self):
+        """HR template keeps no MCP servers; others allow free web_search in Phase 1."""
+        from app.employees.templates import TEMPLATES
+
+        for slug, template in TEMPLATES.items():
+            assert isinstance(template.allowed_mcp_servers, list), (
+                f"Template '{slug}' allowed_mcp_servers must be a list"
+            )
+        # HR template remains the most restricted — no MCP servers
+        assert TEMPLATES["hr_specialist"].allowed_mcp_servers == [], (
+            "HR template should have empty allowed_mcp_servers"
+        )
+        # Phase 1: general, sales, and support get the free web_search MCP
+        for slug in ("general", "sales_rep", "support_agent"):
+            assert "web_search" in TEMPLATES[slug].allowed_mcp_servers, (
+                f"Template '{slug}' should allow web_search in Phase 1"
+            )
+
+    def test_can_set_wildcard_mcp_allowlist(self):
+        """allowed_mcp_servers=["*"] should be a valid config."""
+        from app.employees.templates import EmployeeTemplate
+
+        tmpl = EmployeeTemplate(
+            name="Test",
+            role="Test",
+            system_prompt_template="You are a test.",
+            allowed_tools=["search_web"],
+            allowed_mcp_servers=["*"],
+        )
+        assert tmpl.allowed_mcp_servers == ["*"]
+
+    def test_can_set_specific_mcp_servers(self):
+        """allowed_mcp_servers can list specific slugs."""
+        from app.employees.templates import EmployeeTemplate
+
+        tmpl = EmployeeTemplate(
+            name="Test",
+            role="Test",
+            system_prompt_template="You are a test.",
+            allowed_tools=["search_web"],
+            allowed_mcp_servers=["github", "web_search"],
+        )
+        assert tmpl.allowed_mcp_servers == ["github", "web_search"]
 
 
 # =============================================================================

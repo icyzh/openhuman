@@ -596,13 +596,16 @@ class TestErrorSanitization:
 
         bot = EmployeeDiscordBot(employee_id=uuid4())
 
-        with patch(
-            "app.gateway.discord_bot.agent_graph"
-        ) as mock_graph:
-            mock_graph.ainvoke = AsyncMock(
-                side_effect=RuntimeError("Internal DB connection pool exhausted: pswd=secret")
-            )
+        from unittest.mock import MagicMock
 
+        mock_graph = MagicMock()
+        mock_graph.ainvoke = AsyncMock(
+            side_effect=RuntimeError("Internal DB connection pool exhausted: pswd=secret")
+        )
+        with patch(
+            "app.gateway.discord_bot.get_graph_for_employee",
+            AsyncMock(return_value=(mock_graph, [])),
+        ):
             result = await bot._run_agent("hello")
             assert result == _SAFE_ERROR_MESSAGE
             assert "pswd=secret" not in result
@@ -610,18 +613,21 @@ class TestErrorSanitization:
 
     @pytest.mark.anyio
     async def test_slack_agent_error_returns_safe_message(self):
+        from unittest.mock import MagicMock
+
         from app.gateway.slack_bot import _SAFE_ERROR_MESSAGE
 
         # Use the test helper that mocks AsyncApp construction
         bot = TestSlackBotFilters._make_bot(self)
 
+        mock_graph = MagicMock()
+        mock_graph.ainvoke = AsyncMock(
+            side_effect=RuntimeError("KeyError: 'missing_field' in /etc/secrets")
+        )
         with patch(
-            "app.gateway.slack_bot.agent_graph"
-        ) as mock_graph:
-            mock_graph.ainvoke = AsyncMock(
-                side_effect=RuntimeError("KeyError: 'missing_field' in /etc/secrets")
-            )
-
+            "app.gateway.slack_bot.get_graph_for_employee",
+            AsyncMock(return_value=(mock_graph, [])),
+        ):
             result = await bot._run_agent("hello")
             assert result == _SAFE_ERROR_MESSAGE
             assert "/etc/secrets" not in result
@@ -629,15 +635,18 @@ class TestErrorSanitization:
     @pytest.mark.anyio
     async def test_discord_empty_response_gets_fallback(self):
         """Empty agent response should get a placeholder, not be blank."""
+        from unittest.mock import MagicMock
+
         from app.gateway.discord_bot import EmployeeDiscordBot
 
         bot = EmployeeDiscordBot(employee_id=uuid4())
 
+        mock_graph = MagicMock()
+        mock_graph.ainvoke = AsyncMock(return_value={"response": ""})
         with patch(
-            "app.gateway.discord_bot.agent_graph"
-        ) as mock_graph:
-            mock_graph.ainvoke = AsyncMock(return_value={"response": ""})
-
+            "app.gateway.discord_bot.get_graph_for_employee",
+            AsyncMock(return_value=(mock_graph, [])),
+        ):
             result = await bot._run_agent("hello")
             assert result == ""
 

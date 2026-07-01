@@ -5,7 +5,7 @@ import discord
 from langchain_core.messages import HumanMessage
 from sqlalchemy import select
 
-from app.agent.router import agent_graph
+from app.agent.router import get_graph_for_employee
 from app.channel_assignments.models import ChannelAssignment
 from app.core.database import async_session_factory
 
@@ -119,13 +119,17 @@ class EmployeeDiscordBot(discord.Client):
 
         try:
             async with async_session_factory() as session:
+                graph, all_tools = await get_graph_for_employee(
+                    session, self.employee_id,
+                )
                 config = {
                     "configurable": {
                         "db": session,
                         "employee_id": str(self.employee_id),
+                        "all_tools": all_tools,
                     }
                 }
-                result = await agent_graph.ainvoke(initial_state, config=config)
+                result = await graph.ainvoke(initial_state, config=config)
                 return result.get("response", "")
         except Exception:
             logger.exception(

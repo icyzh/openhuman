@@ -18,6 +18,8 @@ dependencies = [
     "duckduckgo-search",
     "discord.py>=2.3.0",
     "slack-bolt>=1.18.0",
+    "langchain-mcp-adapters>=0.1.0",
+    "mcp>=1.0.0",
 ]
 
 [project.optional-dependencies]

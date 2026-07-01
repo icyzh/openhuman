@@ -63,6 +63,44 @@ class Settings(BaseSettings):
     # Frontend URL (used for OAuth redirects back to the dashboard)
     frontend_url: str = "http://localhost:3000"
 
+    # MCP OAuth — per-connector client credentials for the generic MCP OAuth flow.
+    # Only connectors that require a registered OAuth app need these (Notion, Vercel,
+    # GitHub OAuth mode).  Leave empty for connectors that use PAT / API-key /
+    # no-auth modes.
+    notion_client_id: str = ""
+    notion_client_secret: str = ""
+    vercel_client_id: str = ""
+    vercel_client_secret: str = ""
+    github_client_id: str = ""
+    github_client_secret: str = ""
+
+    # The full redirect URI that OAuth providers send the user back to after consent.
+    # Must be registered with each provider's OAuth app config.
+    # Example: "https://api.example.com/api/mcp/oauth/callback"
+    mcp_oauth_redirect_uri: str = ""
+
+    @property
+    def mcp_oauth_credentials(self) -> dict[str, dict[str, str]]:
+        """Return ``{slug: {client_id, client_secret}}`` for every OAuth connector
+        whose credentials are configured in the environment."""
+        creds: dict[str, dict[str, str]] = {}
+        if self.notion_client_id:
+            creds["notion"] = {
+                "client_id": self.notion_client_id,
+                "client_secret": self.notion_client_secret,
+            }
+        if self.vercel_client_id:
+            creds["vercel"] = {
+                "client_id": self.vercel_client_id,
+                "client_secret": self.vercel_client_secret,
+            }
+        if self.github_client_id:
+            creds["github"] = {
+                "client_id": self.github_client_id,
+                "client_secret": self.github_client_secret,
+            }
+        return creds
+
     @model_validator(mode="after")
     def validate_production_secrets(self) -> "Settings":
         """Fail fast if production is configured with development-only secrets."""

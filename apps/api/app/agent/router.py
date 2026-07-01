@@ -1,18 +1,197 @@
+"""Agent run endpoint — resolves MCP tools per employee at request time."""
+
+from __future__ import annotations
+
+import logging
+from uuid import UUID
+
 from fastapi import APIRouter, Depends, HTTPException, status
 from langchain_core.messages import HumanMessage
+from langgraph.graph.state import CompiledStateGraph
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.agent.build import build_graph
 from app.agent.schemas import AgentResponse, MessageInput
 from app.agent.tools import BUILT_IN_TOOLS
+from app.agent.tools.mcp.client import MCPClientManager, ResolvedConnection
+from app.agent.tools.mcp.connectors import REGISTRY
+from app.agent.tools.mcp.models import McpConnection
 from app.auth.models import User
 from app.core.database import get_db
 from app.core.dependencies import get_current_user
+from app.core.security import decrypt_token
+from app.employees.models import Employee
+from app.employees.templates import get_template
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/agent", tags=["agent"])
 
-# Compile the agent graph once at startup
-agent_graph = build_graph(BUILT_IN_TOOLS)
+# ---------------------------------------------------------------------------
+# Graph cache — keyed by frozenset of tool names so identical tool sets
+# reuse a compiled graph across requests.
+# ---------------------------------------------------------------------------
+_graph_cache: dict[frozenset, CompiledStateGraph] = {}
+
+
+def _get_or_build_graph(tool_names: frozenset, tools: list) -> CompiledStateGraph:
+    """Return a compiled graph for *tools*, reusing a cached copy if possible."""
+    if tool_names not in _graph_cache:
+        _graph_cache[tool_names] = build_graph(tools)
+    return _graph_cache[tool_names]
+
+
+# ---------------------------------------------------------------------------
+# Public helper — used by bot gateways in-process
+# ---------------------------------------------------------------------------
+
+
+async def get_graph_for_employee(
+    db: AsyncSession,
+    employee_id: UUID,
+) -> tuple[CompiledStateGraph, list]:
+    """Resolve the right compiled graph + tool set for *employee_id*.
+
+    Returns ``(graph, all_tools)`` where *all_tools* should be passed in
+    ``config["configurable"]["all_tools"]`` so ``llm_call_node`` can filter
+    by the employee's template.
+
+    Bot gateways call this directly instead of importing a module-level graph.
+    """
+    emp = await db.scalar(select(Employee).where(Employee.id == employee_id))
+    if emp is not None:
+        org_id = emp.org_id
+        template = get_template(emp.specialization or "general")
+    else:
+        org_id = None
+        template = get_template("general")
+
+    # Resolve MCP tools
+    mcp_tools: list = []
+    if org_id is not None and template.allowed_mcp_servers:
+        mcp_tools = await _resolve_mcp_tools(
+            db, org_id, employee_id, template.allowed_mcp_servers
+        )
+
+    all_tools = list(BUILT_IN_TOOLS) + mcp_tools
+    tool_names = frozenset(t.name for t in all_tools)
+    graph = _get_or_build_graph(tool_names, all_tools)
+
+    return graph, all_tools
+
+
+# ---------------------------------------------------------------------------
+# MCP tool resolution
+# ---------------------------------------------------------------------------
+
+
+async def _resolve_mcp_tools(
+    db: AsyncSession,
+    org_id: UUID,
+    employee_id: UUID,
+    allowed_mcp_servers: list[str],
+) -> list:
+    """Resolve MCP tools available to *employee_id*.
+
+    1. Queries ``mcp_connections`` for org-wide + employee-specific rows.
+    2. Filters by template ``allowed_mcp_servers``.
+    3. Decrypts credentials and loads tools via ``MCPClientManager``.
+    """
+    if not allowed_mcp_servers:
+        return []
+
+    # Fetch connections: org-wide (employee_id IS NULL) + this employee
+    result = await db.execute(
+        select(McpConnection).where(
+            McpConnection.org_id == org_id,
+            McpConnection.status == "connected",
+            (
+                (McpConnection.employee_id == employee_id)
+                | (McpConnection.employee_id.is_(None))
+            ),
+        )
+    )
+    rows: list[McpConnection] = list(result.scalars().all())
+
+    if not rows:
+        return []
+
+    # Build resolved connections
+    resolved: list[ResolvedConnection] = []
+    for row in rows:
+        # Template gate
+        if (
+            "*" not in allowed_mcp_servers
+            and row.connector_slug not in allowed_mcp_servers
+        ):
+            continue
+
+        spec = REGISTRY.get(row.connector_slug)
+        if spec is None:
+            logger.warning(
+                "MCP connection references unknown connector slug '%s' — skipping",
+                row.connector_slug,
+            )
+            continue
+
+        # -- Lazy OAuth token refresh (before decrypting) -----------------
+        if (
+            spec.supports_token_refresh
+            and row.auth_type == "oauth2"
+            and row.oauth_refresh_token_enc
+        ):
+            try:
+                from app.mcp.oauth import refresh_access_token
+
+                refreshed = await refresh_access_token(spec, row)
+                if refreshed is not None:
+                    await db.commit()
+                    logger.debug(
+                        "Refreshed OAuth token for %s/%s",
+                        row.connector_slug,
+                        row.id,
+                    )
+            except Exception:
+                logger.debug(
+                    "Token refresh not attempted / failed for %s — "
+                    "using existing token",
+                    row.connector_slug,
+                )
+
+        # Decrypt credentials if present
+        creds: str | None = None
+        if row.credentials_enc:
+            try:
+                creds = decrypt_token(row.credentials_enc)
+            except Exception:
+                logger.exception(
+                    "Failed to decrypt credentials for MCP connection '%s'",
+                    row.connector_slug,
+                )
+                continue
+
+        resolved.append(ResolvedConnection(slug=row.connector_slug, connector=spec, credentials=creds))
+
+    if not resolved:
+        return []
+
+    # Load tools — use the MCP slug as the server name so tools get
+    # prefixed as ``mcp__{slug}__{tool}`` when ``tool_name_prefix=True``
+    # is set on the client.
+    mgr = MCPClientManager()
+    try:
+        tools = await mgr.connect(resolved)
+    except Exception:
+        logger.exception("Failed to connect to MCP servers")
+        tools = []
+
+    return tools
+
+
+# ---------------------------------------------------------------------------
+# Endpoint
+# ---------------------------------------------------------------------------
 
 
 @router.post("/run", response_model=AgentResponse)
@@ -27,29 +206,32 @@ async def run_agent(
     testing and development — production bot gateways call the graph
     in-process.
     """
-    # Construct initial LangGraph state.
-    # MessagesState (via AgentState) uses ``total=False`` semantics so
-    # we only need to seed the keys that have meaningful initial values.
+    employee_id = data.employee_id
+
+    # Resolve the graph + tools for this employee
+    graph, all_tools = await get_graph_for_employee(db, employee_id)
+
+    # Construct initial LangGraph state
     initial_state = {
         "messages": [HumanMessage(content=data.content)],
         "platform": data.platform,
-        "employee_id": str(data.employee_id),
+        "employee_id": str(employee_id),
         "tool_round": 0,
     }
 
-    # Pass the async database session and employee context in configuration
+    # Pass async DB session, employee context, and the FULL tool set so
+    # llm_call_node can filter down to the employee-specific subset.
     config = {
         "configurable": {
             "db": db,
-            "employee_id": str(data.employee_id),
+            "employee_id": str(employee_id),
+            "all_tools": all_tools,
         }
     }
 
     try:
-        # Run graph execution loop
-        result_state = await agent_graph.ainvoke(initial_state, config=config)
+        result_state = await graph.ainvoke(initial_state, config=config)
 
-        # Extract final formatted response, tool-round counter and error
         response_text = result_state.get("response")
         tool_rounds = result_state.get("tool_round", 0)
         error = result_state.get("error")

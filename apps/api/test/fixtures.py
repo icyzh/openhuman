@@ -24,6 +24,7 @@ if str(_api_dir) not in sys.path:
     sys.path.insert(0, str(_api_dir))
 
 # Import models so their __table__ objects are registered
+import app.agent.tools.mcp.models  # noqa: F401  — McpConnection
 import app.auth.models  # noqa: F401  — User
 import app.channel_assignments.models  # noqa: F401
 import app.documents.models  # noqa: F401
