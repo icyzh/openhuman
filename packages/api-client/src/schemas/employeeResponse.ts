@@ -31,6 +31,8 @@ export interface EmployeeResponse {
   status: string;
   has_discord_token: boolean;
   has_slack_token: boolean;
+  has_slack_slot?: boolean;
+  slack_team_name?: string | null;
   cognee_user_id?: EmployeeResponseCogneeUserId;
   cognee_dataset_name?: EmployeeResponseCogneeDatasetName;
   channel_assignments?: ChannelAssignmentResponse[];
