@@ -10,7 +10,12 @@ from app.organizations.schemas import CreateOrganizationRequest, UpdateOrganizat
 async def create_org(
     db: AsyncSession, user_id: UUID, data: CreateOrganizationRequest
 ) -> Organization:
-    org = Organization(owner_id=user_id, name=data.name)
+    org = Organization(
+        owner_id=user_id,
+        name=data.name,
+        description=data.description,
+        what_it_does=data.what_it_does,
+    )
     db.add(org)
     await db.commit()
     await db.refresh(org)
@@ -42,6 +47,10 @@ async def update_org(
         return None
     if data.name is not None:
         org.name = data.name
+    if data.description is not None:
+        org.description = data.description
+    if data.what_it_does is not None:
+        org.what_it_does = data.what_it_does
     await db.commit()
     await db.refresh(org)
     return org

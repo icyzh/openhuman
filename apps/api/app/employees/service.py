@@ -1,6 +1,7 @@
 from uuid import UUID
 
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -13,6 +14,15 @@ from app.employees.schemas import (
     UpdateEmployeeRequest,
 )
 from app.organizations.models import Organization
+
+# ---------------------------------------------------------------------------
+# Exceptions
+# ---------------------------------------------------------------------------
+
+
+class DuplicateEmployeeTypeError(Exception):
+    """Raised when creating/updating an employee to a type already used by the org."""
+
 
 # ---------------------------------------------------------------------------
 # Internal helpers
@@ -44,6 +54,7 @@ def _to_response(emp: Employee) -> EmployeeResponse:
         id=emp.id,
         org_id=emp.org_id,
         name=emp.name,
+        employee_type=emp.employee_type,
         role=emp.role,
         personality=emp.personality,
         specialization=emp.specialization,
@@ -74,17 +85,40 @@ async def create_employee(
     org = await _get_org(db, org_id, user_id)
     if org is None:
         return None
+
+    # Enforce one employee per type per organization
+    if data.employee_type:
+        existing = await db.scalar(
+            select(Employee).where(
+                Employee.org_id == org_id,
+                Employee.employee_type == data.employee_type,
+            )
+        )
+        if existing is not None:
+            raise DuplicateEmployeeTypeError(
+                f"An employee of type '{data.employee_type}' already exists in this organization."
+            )
+
     emp = Employee(
         org_id=org_id,
         name=data.name,
         role=data.role,
         personality=data.personality,
         specialization=data.specialization,
+        employee_type=data.employee_type,
         duties=data.duties,
         memory_policy=data.memory_policy,
     )
     db.add(emp)
-    await db.commit()
+    try:
+        await db.commit()
+    except IntegrityError as exc:
+        await db.rollback()
+        if "ix_employees_org_id_employee_type" in str(exc):
+            raise DuplicateEmployeeTypeError(
+                f"An employee of type '{data.employee_type}' already exists in this organization."
+            ) from exc
+        raise
     # Re-fetch with relationships
     emp = await _get_employee_with_assignments(db, emp.id, org_id)  # type: ignore[assignment]
     return _to_response(emp)  # type: ignore[arg-type]
@@ -129,14 +163,37 @@ async def update_employee(
     emp = await _get_employee_with_assignments(db, emp_id, org_id)
     if emp is None:
         return None
+
+    # If employee_type is being changed, check for conflicts
+    if data.employee_type is not None and data.employee_type != emp.employee_type:
+        existing = await db.scalar(
+            select(Employee).where(
+                Employee.org_id == org_id,
+                Employee.employee_type == data.employee_type,
+                Employee.id != emp_id,
+            )
+        )
+        if existing is not None:
+            raise DuplicateEmployeeTypeError(
+                f"An employee of type '{data.employee_type}' already exists in this organization."
+            )
+
     for field, value in data.model_dump(exclude_none=True).items():
         if field == "status" and value not in _ALLOWED_STATUSES:
             raise ValueError(
                 f"status must be one of {sorted(_ALLOWED_STATUSES)}"
             )
         setattr(emp, field, value)
-    await db.commit()
-    emp = await _get_employee_with_assignments(db, emp_id, org_id)  # type: ignore[assignment]
+    try:
+        await db.commit()
+    except IntegrityError as exc:
+        await db.rollback()
+        if "ix_employees_org_id_employee_type" in str(exc):
+            raise DuplicateEmployeeTypeError(
+                f"An employee of type '{data.employee_type}' already exists in this organization."
+            ) from exc
+        raise
+    emp = await _get_employee_with_assignments(db, emp_id, org_id)  # type: ignore[arg-type]
     return _to_response(emp)  # type: ignore[arg-type]
 
 

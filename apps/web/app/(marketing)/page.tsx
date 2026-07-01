@@ -1,6 +1,10 @@
+"use client";
+
+import Link from "next/link";
 import { AgentCarousel } from "@/components/agent-carousel";
-import { ArrowDiagonal, ArrowRight } from "@/components/ui/button-arrow";
+import { ArrowDiagonal } from "@/components/ui/button-arrow";
 import Image from "next/image";
+import { useAuthStore } from "@/stores/auth";
 
 const features = [
   {
@@ -36,6 +40,8 @@ const features = [
 ];
 
 export default function Home() {
+  const loggedIn = !!useAuthStore((s) => s.token);
+
   return (
     <main className="flex min-h-screen flex-col items-center">
       <section className="relative flex h-screen w-full flex-col items-center justify-center px-6">
@@ -57,19 +63,13 @@ export default function Home() {
             Cognee
           </a>
         </p>
-        <div className="mt-10 flex items-center gap-5">
-          <button
-            type="button"
-            className="group relative inline-flex cursor-pointer items-center gap-4 overflow-hidden rounded-lg bg-primary px-10 py-5 text-lg font-medium text-primary-foreground shadow-lg shadow-foreground/10"
+        <div className="mt-10">
+          <Link
+            href={loggedIn ? "/dashboard" : "/signup"}
+            className="inline-flex items-center gap-3 rounded-lg bg-primary px-10 py-5 text-lg font-medium text-primary-foreground shadow-lg shadow-foreground/10 no-underline"
           >
-            <span className="transition-all duration-300 group-hover:opacity-0 group-hover:-translate-y-full">
-              Get started
-            </span>
-            <span className="absolute left-1/2 -translate-x-1/2 translate-y-full opacity-0 transition-all duration-300 group-hover:opacity-100 group-hover:translate-y-0">
-              Dashboard
-            </span>
-            <ArrowRight size={16} />
-          </button>
+            {loggedIn ? "Dashboard" : "Get started"}
+          </Link>
         </div>
       </section>
 

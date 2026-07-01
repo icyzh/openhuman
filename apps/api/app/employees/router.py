@@ -15,6 +15,7 @@ from app.employees.schemas import (
     UpdateEmployeeRequest,
 )
 from app.employees.service import (
+    DuplicateEmployeeTypeError,
     create_employee,
     delete_employee,
     get_employee,
@@ -38,7 +39,13 @@ async def create_employee_route(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> EmployeeResponse:
-    result = await create_employee(db, org_id, current_user.id, data)
+    try:
+        result = await create_employee(db, org_id, current_user.id, data)
+    except DuplicateEmployeeTypeError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=str(exc),
+        )
     if result is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Organization not found")
     return result
@@ -79,6 +86,11 @@ async def update_employee_route(
 ) -> EmployeeResponse:
     try:
         result = await update_employee(db, org_id, emp_id, current_user.id, data)
+    except DuplicateEmployeeTypeError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=str(exc),
+        )
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc))
     if result is None:

@@ -4,6 +4,7 @@ from datetime import datetime
 from typing import TYPE_CHECKING
 from uuid import UUID
 
+import sqlalchemy as sa
 from sqlalchemy import CheckConstraint, DateTime, ForeignKey, String, Text, Uuid, func
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -23,6 +24,17 @@ class Employee(Base):
             "status IN ('active', 'inactive', 'suspended')",
             name="ck_employees_status",
         ),
+        CheckConstraint(
+            "employee_type IS NULL OR employee_type IN ('legal-compliance', 'support', 'hr', 'general')",
+            name="ck_employees_employee_type",
+        ),
+        sa.Index(
+            "ix_employees_org_id_employee_type",
+            "org_id",
+            "employee_type",
+            unique=True,
+            postgresql_where=sa.text("employee_type IS NOT NULL"),
+        ),
     )
 
     id: Mapped[UUID] = mapped_column(
@@ -38,6 +50,7 @@ class Employee(Base):
     role: Mapped[str | None] = mapped_column(String(255), nullable=True)
     personality: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     specialization: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    employee_type: Mapped[str | None] = mapped_column(String(50), nullable=True)
     duties: Mapped[list | None] = mapped_column(JSONB, nullable=True)
 
     # Bot tokens — encrypted at rest via AES-256-GCM

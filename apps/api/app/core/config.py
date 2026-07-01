@@ -46,6 +46,15 @@ class Settings(BaseSettings):
     # Document storage
     upload_dir: str = "./uploads"
 
+    # Storage backend: "local" (default) or "s3"
+    storage_backend: str = "local"
+    s3_endpoint_url: str = ""
+    s3_access_key_id: str = ""
+    s3_secret_access_key: str = ""
+    s3_region: str = "auto"
+    s3_bucket_name: str = "openhuman-uploads"
+    s3_presigned_url_expiry: int = 3600
+
     # Bot Gateway
     gateway_enabled: bool = False
     """Whether to start the Discord/Slack bot gateway at application startup.

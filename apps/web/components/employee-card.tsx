@@ -1,26 +1,16 @@
 "use client";
 
-import type { Employee } from "@/data/employees";
-import { DEPARTMENT_COLORS } from "@/data/employees";
+import type { EmployeeDisplay } from "@/types/employee";
+import { getStatusConfig } from "@/types/employee";
 import { cn } from "@/lib/utils";
 import { Card, CardContent } from "@/components/ui/card";
 
 interface EmployeeCardProps {
-  employee: Employee;
+  employee: EmployeeDisplay;
   className?: string;
   onClick?: () => void;
   selected?: boolean;
 }
-
-const STATUS_CONFIG: Record<
-  Employee["status"],
-  { label: string; dotColor: string }
-> = {
-  active: { label: "Working", dotColor: "bg-green-500" },
-  training: { label: "Working", dotColor: "bg-green-500" },
-  idle: { label: "Idle", dotColor: "bg-amber-400" },
-  offline: { label: "Idle", dotColor: "bg-muted-foreground/30" },
-};
 
 export function EmployeeCard({
   employee,
@@ -29,8 +19,7 @@ export function EmployeeCard({
   selected,
 }: EmployeeCardProps) {
   const isInteractive = Boolean(onClick);
-  const deptColor = DEPARTMENT_COLORS[employee.department] ?? "#6b7280";
-  const statusConfig = STATUS_CONFIG[employee.status];
+  const statusConfig = getStatusConfig(employee.status);
 
   return (
     <Card
@@ -69,15 +58,11 @@ export function EmployeeCard({
         </p>
 
         <div className="mt-2 flex items-center gap-2 text-xs">
-          <span
-            className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 font-medium"
-            style={{
-              backgroundColor: `${deptColor}12`,
-              color: deptColor,
-            }}
-          >
-            {employee.department}
-          </span>
+          {employee.specialization && (
+            <span className="inline-flex items-center gap-1 rounded-md bg-muted px-1.5 py-0.5 font-medium text-muted-foreground">
+              {employee.specialization}
+            </span>
+          )}
           <span className="text-muted-foreground">
             {statusConfig.label}
           </span>

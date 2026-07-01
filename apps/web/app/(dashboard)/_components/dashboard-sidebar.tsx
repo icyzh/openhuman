@@ -4,17 +4,20 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
   Activity,
-  Bot,
   Building2,
   HardDrive,
   LayoutDashboard,
+  LogOut,
   Settings,
 } from "lucide-react";
 
 import { Logo } from "@/components/logo";
+import { useAuthStore } from "@/stores/auth";
+import { useOrgStore } from "@/stores/org";
 import {
   Sidebar,
   SidebarContent,
+  SidebarFooter,
   SidebarGroup,
   SidebarGroupContent,
   SidebarHeader,
@@ -25,7 +28,6 @@ import {
 
 const NAV_ITEMS = [
   { label: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
-  { label: "Agents", href: "/agents", icon: Bot },
   { label: "Activity", href: "/activity", icon: Activity },
   { label: "Storage", href: "/storage", icon: HardDrive },
   { label: "Organization", href: "/organization", icon: Building2 },
@@ -34,6 +36,8 @@ const NAV_ITEMS = [
 
 export function DashboardSidebar() {
   const pathname = usePathname();
+  const logout = useAuthStore((s) => s.logout);
+  const clearOrg = useOrgStore((s) => s.clearOrg);
 
   return (
     <Sidebar>
@@ -68,6 +72,28 @@ export function DashboardSidebar() {
           </SidebarGroupContent>
         </SidebarGroup>
       </SidebarContent>
+
+      <SidebarFooter>
+        <SidebarGroup>
+          <SidebarGroupContent>
+            <SidebarMenu>
+              <SidebarMenuItem>
+                <SidebarMenuButton
+                  tooltip="Logout"
+                  onClick={() => {
+                    clearOrg();
+                    logout();
+                    window.location.href = "/";
+                  }}
+                >
+                  <LogOut />
+                  <span>Logout</span>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+            </SidebarMenu>
+          </SidebarGroupContent>
+        </SidebarGroup>
+      </SidebarFooter>
     </Sidebar>
   );
 }

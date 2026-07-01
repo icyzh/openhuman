@@ -1,23 +1,38 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { PlusIcon, SearchIcon, UsersIcon } from "lucide-react";
 
-import { useEmployeesStore } from "@/stores/employees";
+import { useEmployeesListEmployeesRoute } from "@repo/api-client";
+import { useAuthStore } from "@/stores/auth";
+import { useOrgStore } from "@/stores/org";
+import { apiToEmployeeDisplay } from "@/types/employee";
 import { EmployeeCard } from "@/components/employee-card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Skeleton } from "@/components/ui/skeleton";
 
 export default function DashboardPage() {
   const router = useRouter();
-  const employees = useEmployeesStore((s) => s.employees);
-  const load = useEmployeesStore((s) => s.load);
+  const user = useAuthStore((s) => s.user);
+  const orgId = useOrgStore((s) => s.orgId);
   const [search, setSearch] = useState("");
 
-  useEffect(() => {
-    load();
-  }, [load]);
+  const enabled = !!orgId;
+  const {
+    data: apiEmployees,
+    isLoading,
+    isError,
+    refetch,
+  } = useEmployeesListEmployeesRoute(orgId ?? "", {
+    query: { enabled },
+  });
+
+  const employees = useMemo(
+    () => (apiEmployees ?? []).map(apiToEmployeeDisplay),
+    [apiEmployees],
+  );
 
   const filtered = useMemo(() => {
     if (!search.trim()) return employees;
@@ -26,8 +41,7 @@ export default function DashboardPage() {
       (e) =>
         e.name.toLowerCase().includes(q) ||
         e.role.toLowerCase().includes(q) ||
-        e.department.toLowerCase().includes(q) ||
-        e.model.toLowerCase().includes(q),
+        e.specialization.toLowerCase().includes(q),
     );
   }, [employees, search]);
 
@@ -35,7 +49,7 @@ export default function DashboardPage() {
     <div className="flex flex-col gap-6 px-6 py-6">
       <div className="flex flex-col gap-1">
         <p className="text-2xl font-semibold tracking-tight text-foreground">
-          Welcome back, vimzh
+          Welcome back, {user?.name ?? "there"}
         </p>
       </div>
       <div className="flex items-center justify-between gap-4">
@@ -66,7 +80,26 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      {filtered.length === 0 && employees.length > 0 ? (
+      {isLoading ? (
+        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+          {Array.from({ length: 3 }).map((_, i) => (
+            <Skeleton key={i} className="h-28 rounded-xl" />
+          ))}
+        </div>
+      ) : isError ? (
+        <div className="flex flex-col items-center justify-center py-24">
+          <p className="text-sm text-muted-foreground">
+            Failed to load employees.
+          </p>
+          <Button
+            variant="link"
+            onClick={() => refetch()}
+            className="mt-2"
+          >
+            Try again
+          </Button>
+        </div>
+      ) : filtered.length === 0 && employees.length > 0 ? (
         <div className="flex flex-col items-center justify-center py-24">
           <SearchIcon className="size-10 text-muted-foreground/40" />
           <p className="mt-3 text-sm text-muted-foreground">

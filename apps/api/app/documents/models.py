@@ -47,6 +47,9 @@ class Document(Base):
     cognee_document_id: Mapped[str | None] = mapped_column(
         String(255), nullable=True
     )
+    storage_backend: Mapped[str] = mapped_column(
+        String(20), nullable=False, default="local", server_default="local"
+    )
     status: Mapped[str] = mapped_column(
         String(50), default="uploaded", server_default="uploaded"
     )
@@ -61,3 +64,8 @@ class Document(Base):
     employee: Mapped[Employee | None] = relationship(
         "Employee", back_populates="documents"
     )
+
+    @property
+    def employee_name(self) -> str | None:
+        """Agent/employee name from the joined relationship."""
+        return self.employee.name if self.employee else None
