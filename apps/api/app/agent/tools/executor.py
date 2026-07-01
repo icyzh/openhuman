@@ -1,16 +1,25 @@
 import ast
 import ipaddress
+import logging
 import operator
 import re
 import socket
 from datetime import UTC, datetime
 from urllib.parse import urlparse
+from uuid import UUID
 from zoneinfo import ZoneInfo
 
 import httpx
 from duckduckgo_search import DDGS
 from langchain_core.runnables import RunnableConfig
 from langchain_core.tools import tool
+from sqlalchemy import select
+
+from app.employees.models import Employee
+from app.memory.service import recall, remember
+from app.organizations.models import Organization
+
+logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
 # SSRF protection — hostname / IP blocklists
@@ -195,24 +204,96 @@ async def fetch_url(url: str) -> str:
 
 @tool
 async def search_memory(query: str, config: RunnableConfig = None) -> str:
-    """Search team memory for past decisions, facts, and knowledge."""
+    """Search team memory for past decisions, facts, and knowledge.
+    Searches both your personal memory and shared org knowledge."""
     emp_id = None
+    db = None
     if config and "configurable" in config:
         emp_id = config["configurable"].get("employee_id")
+        db = config["configurable"].get("db")
 
-    emp_id = emp_id or "unknown"
-    return f"No relevant memory found for employee '{emp_id}'."
+    if not emp_id or not db:
+        return "Memory search unavailable (no employee context)."
+
+    try:
+        emp = await db.scalar(
+            select(Employee).where(Employee.id == UUID(emp_id))
+        )
+        if not emp:
+            return "Employee not found."
+
+        org = await db.scalar(
+            select(Organization).where(Organization.id == emp.org_id)
+        )
+
+        datasets: list[str] = []
+        if emp.cognee_dataset_name:
+            datasets.append(emp.cognee_dataset_name)
+        if org and org.cognee_dataset_name:
+            datasets.append(org.cognee_dataset_name)
+
+        user_id = emp.cognee_user_id or (
+            org.cognee_system_user_id if org else None
+        )
+        if not user_id or not datasets:
+            return "Memory not yet provisioned for this employee."
+
+        results = await recall(query, user_id, datasets=datasets)
+        if not results:
+            return f"No relevant memory found for '{query}'."
+
+        lines = []
+        for r in results:
+            ds = r.get("dataset_name", "")
+            text = r.get("text", "")
+            lines.append(f"- [{ds}] {text}")
+        return (
+            f"Found {len(results)} memory result(s):\n\n"
+            + "\n".join(lines)
+        )
+    except Exception as e:
+        logger.exception("search_memory tool failed")
+        return f"Error searching memory: {e}"
 
 
 @tool
 async def ingest_memory(content: str, config: RunnableConfig = None) -> str:
-    """Store an important fact or decision in team memory for future reference."""
+    """Store an important fact or decision in your personal memory
+    for future reference. Use this to remember things you've learned."""
     emp_id = None
+    db = None
     if config and "configurable" in config:
         emp_id = config["configurable"].get("employee_id")
+        db = config["configurable"].get("db")
 
-    emp_id = emp_id or "unknown"
-    return f"Fact successfully remembered for employee '{emp_id}'."
+    if not emp_id or not db:
+        return "Cannot store memory (no employee context)."
+
+    try:
+        emp = await db.scalar(
+            select(Employee).where(Employee.id == UUID(emp_id))
+        )
+        if (
+            not emp
+            or not emp.cognee_user_id
+            or not emp.cognee_dataset_name
+        ):
+            return "Memory not yet provisioned for this employee."
+
+        await remember(
+            content,
+            emp.cognee_dataset_name,
+            emp.cognee_user_id,
+            dataset_id=emp.cognee_dataset_id,
+            background=False,
+        )
+        return (
+            f"Successfully remembered: {content[:200]}"
+            + ("..." if len(content) > 200 else "")
+        )
+    except Exception as e:
+        logger.exception("ingest_memory tool failed")
+        return f"Error storing memory: {e}"
 
 
 # List of all built-in tools to export
