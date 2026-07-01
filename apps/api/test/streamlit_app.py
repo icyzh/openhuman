@@ -25,9 +25,8 @@ import os
 import sys
 import time
 import traceback
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
-from textwrap import dedent
 from typing import TYPE_CHECKING
 from uuid import UUID
 
@@ -55,8 +54,6 @@ from langgraph.types import Command
 
 from app.agent.build import build_graph
 from app.agent.tools import BUILT_IN_TOOLS
-from app.agent.tools.mcp.connectors import REGISTRY as MCP_REGISTRY
-from app.agent.tools.mcp.connectors.spec import ConnectorSpec
 from app.employees.templates import get_template
 from test.fixtures import (
     SEED_EMPLOYEES,
@@ -66,7 +63,6 @@ from test.fixtures import (
     get_escalation_policy,
     get_slack_token_status,
     get_slot_summary,
-    print_banner,
     provision_test_slots,
     release_employee_slot,
     set_escalation_policy,
@@ -74,14 +70,13 @@ from test.fixtures import (
     setup_test_db,
 )
 from test.mcp_helpers import (
-    add_mcp_connection,
     list_mcp_connectors,
     remove_mcp_connection,
     resolve_mcp_tools,
 )
 
 if TYPE_CHECKING:
-    from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker
+    from sqlalchemy.ext.asyncio import AsyncEngine
 
 # ---------------------------------------------------------------------------
 # Page config
@@ -296,6 +291,7 @@ async def _resume_graph(
 async def _resolve_graph(session, employee_id: UUID):
     """Resolve the graph + tools for an employee in one session."""
     from sqlalchemy import select as sa_select
+
     from app.employees.models import Employee
 
     emp = await session.scalar(
@@ -378,7 +374,7 @@ def _render_sidebar():
 
     if selected_spec in TEMPLATES:
         t = TEMPLATES[selected_spec]
-        st.sidebar.markdown(f"**Tools allowed:**")
+        st.sidebar.markdown("**Tools allowed:**")
         for tool in t.allowed_tools:
             st.sidebar.markdown(f"- `{tool}`")
         st.sidebar.markdown(f"**Guardrails:** PII={t.guardrail_config.get('block_pii', False)}, Citations={t.guardrail_config.get('require_citations', False)}")
@@ -438,8 +434,8 @@ def _render_sidebar():
                         st.error("All fields are required to provision a real app slot.")
                     else:
                         async def _create_custom_slot():
-                            from app.gateway.models import SlackAppSlot
                             from app.core.security import encrypt_token
+                            from app.gateway.models import SlackAppSlot
                             slot = SlackAppSlot(
                                 slack_app_id=cust_app_id.strip(),
                                 client_id=cust_client_id.strip(),
@@ -458,8 +454,9 @@ def _render_sidebar():
             if st.button("🗑️ Clear all slots", use_container_width=True, key="clear_slots_btn"):
                 async def _clear_slots():
                     from sqlalchemy import delete, update
-                    from app.gateway.models import SlackAppSlot
+
                     from app.employees.models import Employee
+                    from app.gateway.models import SlackAppSlot
                     async with session_factory() as session:
                         await session.execute(
                             update(Employee).values(
@@ -492,11 +489,11 @@ def _render_sidebar():
             if status == "connected":
                 st.sidebar.success(f"✅ Connected — {slot_info['detail']}")
             elif status == "slot_ready":
-                st.sidebar.info(f"🔧 Slot assigned — ready for OAuth")
+                st.sidebar.info("🔧 Slot assigned — ready for OAuth")
             elif status == "token_only":
-                st.sidebar.warning(f"⚠️ Has token, no slot (shared mode)")
+                st.sidebar.warning("⚠️ Has token, no slot (shared mode)")
             else:
-                st.sidebar.caption(f"❌ No slot assigned")
+                st.sidebar.caption("❌ No slot assigned")
 
         # Slot actions: assign / release
         with st.sidebar.expander("Slot actions", expanded=slot_info is None or slot_info["status"] == "no_slot"):
@@ -652,7 +649,7 @@ def _render_sidebar():
                     "general": {"manager_slack_id": "U0123456789", "default_escalation_channel": "#general"},
                 }
                 for spec, eid in ids.items():
-                    await set_escalation_policy(sf, eid, defaults.get(spec, defaults["general"]))
+                    await set_escalation_policy(session_factory, eid, defaults.get(spec, defaults["general"]))
             _run_async(_seed_all())
             st.success("Seeded escalation policies on all employees!")
             _clear_graph_cache()
@@ -668,6 +665,7 @@ def _render_sidebar():
             async def _get_mcp_list():
                 async with session_factory() as s:
                     from sqlalchemy import select as sa_select
+
                     from app.employees.models import Employee
                     emp = await s.scalar(
                         sa_select(Employee).where(Employee.id == employee_id)
@@ -781,6 +779,7 @@ def _render_mcp_connector_row(conn: dict, employee_id: UUID, session_factory):
                 async def _disconnect():
                     async with session_factory() as s:
                         from sqlalchemy import select as sa_select
+
                         from app.employees.models import Employee
                         emp = await s.scalar(
                             sa_select(Employee).where(Employee.id == employee_id)
@@ -808,6 +807,7 @@ def _render_mcp_connector_row(conn: dict, employee_id: UUID, session_factory):
                     async def _connect():
                         async with session_factory() as s:
                             from sqlalchemy import select as sa_select
+
                             from app.employees.models import Employee
                             emp = await s.scalar(
                                 sa_select(Employee).where(Employee.id == employee_id)
@@ -832,6 +832,7 @@ def _render_mcp_connector_row(conn: dict, employee_id: UUID, session_factory):
             async def _get_org():
                 async with session_factory() as s:
                     from sqlalchemy import select as sa_select
+
                     from app.employees.models import Employee
                     emp = await s.scalar(
                         sa_select(Employee).where(Employee.id == employee_id)
@@ -939,7 +940,7 @@ def main():
     if st.session_state.escalation_paused:
         ctx = st.session_state.pending_resume_ctx or {}
         with st.container(border=True):
-            st.warning(f"⏸️  Graph is **paused** — waiting for escalation decision.")
+            st.warning("⏸️  Graph is **paused** — waiting for escalation decision.")
             st.caption(f"Thread: `{ctx.get('thread_id', '?')}`")
             col1, col2 = st.columns(2)
             if col1.button("✅ Approve", use_container_width=True, type="primary", key="resume_approve_btn"):
@@ -960,7 +961,7 @@ def main():
                         "role": "assistant",
                         "content": response_text,
                         "meta": _build_meta(result, elapsed, mcp_count),
-                        "timestamp": datetime.now(timezone.utc).isoformat(),
+                        "timestamp": datetime.now(UTC).isoformat(),
                     })
                     st.success("Graph resumed successfully!")
                 else:
@@ -983,7 +984,7 @@ def main():
                         "role": "assistant",
                         "content": response_text,
                         "meta": _build_meta(result, elapsed, mcp_count),
-                        "timestamp": datetime.now(timezone.utc).isoformat(),
+                        "timestamp": datetime.now(UTC).isoformat(),
                     })
                     st.success("Graph resumed (denied)!")
                 else:
@@ -1003,7 +1004,7 @@ def main():
             "role": "user",
             "content": user_input,
             "meta": None,
-            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "timestamp": datetime.now(UTC).isoformat(),
         })
         st.session_state.message_counter += 1
 
@@ -1028,7 +1029,7 @@ def main():
                     "role": "assistant",
                     "content": f"❌ Error: {exc}",
                     "meta": {"error": str(exc)},
-                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                    "timestamp": datetime.now(UTC).isoformat(),
                 })
                 st.rerun()
 
@@ -1048,7 +1049,7 @@ def main():
                     "role": "assistant",
                     "content": "⏸️ *Waiting for escalation approval…*",
                     "meta": {"elapsed": elapsed, "tool_rounds": 0, "paused": True},
-                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                    "timestamp": datetime.now(UTC).isoformat(),
                 })
                 st.rerun()
 
@@ -1064,7 +1065,7 @@ def main():
                 "role": "assistant",
                 "content": meta["response_text"],
                 "meta": meta,
-                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "timestamp": datetime.now(UTC).isoformat(),
             })
 
             st.rerun()

@@ -10,7 +10,6 @@ def check_output(
 
     # Check for blocked keywords or phrases (e.g. system instructions leaking)
     blocked_patterns = [
-        "as an AI,",
         "system prompt template",
         "according to my instructions",
     ]

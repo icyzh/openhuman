@@ -48,7 +48,7 @@ HR_TEMPLATE = EmployeeTemplate(
         "escalate_to_human", "escalate_to_human_interactive",
     ],
     suggested_mcp_servers=["bamboohr", "rippling"],
-    guardrail_config={"block_pii": True, "require_citations": True},
+    guardrail_config={"block_pii": True, "require_citations": False},
     suggested_duties=[
         "Screen resumes shared in the #hiring channel",
         "Answer policy questions when mentioned",
@@ -110,7 +110,7 @@ SUPPORT_TEMPLATE = EmployeeTemplate(
     ],
     allowed_mcp_servers=["web_search"],
     suggested_mcp_servers=["github", "zendesk", "intercom"],
-    guardrail_config={"block_pii": True, "require_citations": True},
+    guardrail_config={"block_pii": True, "require_citations": False},
     suggested_duties=[
         "Answer support questions in #support when mentioned",
         "Post a weekly digest of common questions every Friday",
