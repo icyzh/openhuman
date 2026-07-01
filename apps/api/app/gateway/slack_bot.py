@@ -157,6 +157,43 @@ class EmployeeSlackBot:
             )
             return
 
+        # ── Auto-ingest Slack message into org memory ────────────────────
+        try:
+            async with async_session_factory() as session:
+                emp = await session.get(Employee, self.employee_id)
+                if emp:
+                    org = await session.scalar(
+                        select(Organization).where(
+                            Organization.id == emp.org_id
+                        )
+                    )
+                    if (
+                        org
+                        and org.cognee_dataset_name
+                        and org.cognee_system_user_id
+                    ):
+                        speaker = event.get("user", "unknown")
+                        ch = event.get("channel", "unknown")
+                        ts = event.get("ts", "")
+                        ingest_text = (
+                            f"Slack message from <@{speaker}> "
+                            f"in <#{ch}> at {ts}:\n{text}"
+                        )
+                        await remember(
+                            ingest_text,
+                            org.cognee_dataset_name,
+                            org.cognee_system_user_id,
+                            dataset_id=org.cognee_dataset_id,
+                            background=True,
+                        )
+        except Exception:
+            logger.debug(
+                "Slack message Cognee ingest skipped for employee %s",
+                self.employee_id,
+                exc_info=True,
+            )
+        # ── End auto-ingest ──────────────────────────────────────────────
+
         # Run the agent
         response_text = await self._run_agent(text)
         if not response_text:
