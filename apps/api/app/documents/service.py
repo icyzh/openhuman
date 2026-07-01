@@ -72,20 +72,25 @@ async def save_document(
     await db.refresh(doc)
 
     # ── Cognee ingest for text files (best-effort, non-blocking) ──────────
-    safe_name = sanitize_filename(file.filename)
     TEXT_TYPES = {
         "text/plain", "text/markdown", "text/csv",
         "application/json", "application/xml",
     }
+    _MAX_COGNEE_TEXT_SIZE = 500_000
     is_text = (
         file.content_type in TEXT_TYPES
-        or safe_name.endswith((".txt", ".md", ".csv", ".json", ".xml"))
+        or doc.filename.endswith((".txt", ".md", ".csv", ".json", ".xml"))
     )
-    if is_text and org.cognee_dataset_name and org.cognee_system_user_id:
+    if is_text and size > _MAX_COGNEE_TEXT_SIZE:
+        logger.debug(
+            "Skipping Cognee ingest for %s (%d bytes exceeds limit)",
+            doc.filename, size,
+        )
+    elif is_text and org.cognee_dataset_name and org.cognee_system_user_id:
         try:
             text_content = content.decode("utf-8", errors="replace")
             await remember(
-                f"Document: {safe_name}\n\n{text_content}",
+                f"Document: {doc.filename}\n\n{text_content}",
                 org.cognee_dataset_name,
                 org.cognee_system_user_id,
                 dataset_id=org.cognee_dataset_id,

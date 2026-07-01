@@ -6,6 +6,7 @@ from uuid import UUID
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.memory.service import (
     add_user_to_tenant,
@@ -81,7 +82,9 @@ async def create_org(
 
 async def get_org(db: AsyncSession, org_id: UUID, user_id: UUID) -> Organization | None:
     return await db.scalar(
-        select(Organization).where(
+        select(Organization)
+        .options(selectinload(Organization.employees))
+        .where(
             Organization.id == org_id, Organization.owner_id == user_id
         )
     )
