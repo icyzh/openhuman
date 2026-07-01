@@ -25,6 +25,7 @@ async def test_slack_install_invalid_uuids(client: TestClient) -> None:
     with patch("app.gateway.slack_oauth.settings") as mock_settings:
         mock_settings.slack_client_id = "test-client-id"
         mock_settings.slack_oauth_redirect_uri = "https://example.com/callback"
+        mock_settings.slack_identity_mode = "shared"
         mock_settings.frontend_url = "http://localhost:3000"
 
         # Using non-uuid employee_id and org_id
@@ -51,6 +52,7 @@ async def test_slack_install_custom_redirect_to(client: TestClient) -> None:
     ):
         mock_settings.slack_client_id = "test-client-id"
         mock_settings.slack_oauth_redirect_uri = "https://example.com/callback"
+        mock_settings.slack_identity_mode = "shared"
         mock_settings.jwt_secret_key = "secret"
         mock_settings.jwt_algorithm = "HS256"
 
@@ -107,6 +109,7 @@ async def test_slack_callback_redirects_to_custom_url(client: TestClient) -> Non
         mock_settings.slack_client_id = "test-client-id"
         mock_settings.slack_client_secret = "test-client-secret"
         mock_settings.slack_oauth_redirect_uri = "https://example.com/callback"
+        mock_settings.slack_identity_mode = "shared"
         mock_settings.jwt_secret_key = "secret"
         mock_settings.jwt_algorithm = "HS256"
 

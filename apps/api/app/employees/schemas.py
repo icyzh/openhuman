@@ -65,6 +65,9 @@ class EmployeeResponse(BaseModel):
     status: str
     has_discord_token: bool
     has_slack_token: bool
+    has_slack_slot: bool = False
+    slack_team_name: str | None = None
+    slack_bot_user_id: str | None = None
     cognee_user_id: str | None = None
     cognee_dataset_name: str | None = None
     channel_assignments: list[ChannelAssignmentResponse] = []

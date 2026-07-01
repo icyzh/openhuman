@@ -61,13 +61,27 @@ class Settings(BaseSettings):
     Should be ``True`` in production or when bot integrations are needed.
     Defaults to ``False`` for local development safety."""
 
-    # Slack App Token (for socket mode)
+    # Slack App Token (for socket mode) — used in shared mode only
     slack_app_token: str = ""
 
-    # Slack OAuth (for "Connect Slack" onboarding flow)
+    # Slack OAuth (for "Connect Slack" onboarding flow) — used in shared mode only
     slack_client_id: str = ""
     slack_client_secret: str = ""
     slack_oauth_redirect_uri: str = ""
+
+    # Slack per-employee identity (Pattern A)
+    slack_identity_mode: str = "shared"
+    """Feature flag: 'shared' = one global Slack app (legacy), 'per_employee' = one
+    app slot per AI employee (Pattern A)."""
+
+    slack_slot_pool_threshold: int = 5
+    """Alert when available slot count drops below this threshold."""
+
+    slack_config_token: str = ""
+    """xoxe- config token for Slack manifest API (Phase 2 dynamic provisioning)."""
+
+    slack_config_refresh_token: str = ""
+    """Refresh token for rotating the config token (Phase 2)."""
 
     # Frontend URL (used for OAuth redirects back to the dashboard)
     frontend_url: str = "http://localhost:3000"

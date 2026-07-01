@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.channel_assignments.schemas import ChannelAssignmentResponse
+from app.core.config import settings
 from app.core.security import decrypt_token, encrypt_token
 from app.employees.models import Employee
 from app.employees.schemas import (
@@ -13,6 +14,7 @@ from app.employees.schemas import (
     EmployeeResponse,
     UpdateEmployeeRequest,
 )
+from app.gateway.slack_app_provisioning import assign_slot_to_employee, release_slot
 from app.organizations.models import Organization
 
 # ---------------------------------------------------------------------------
@@ -64,6 +66,9 @@ def _to_response(emp: Employee) -> EmployeeResponse:
         status=emp.status,
         has_discord_token=emp.discord_token_enc is not None,
         has_slack_token=emp.slack_token_enc is not None,
+        has_slack_slot=emp.slack_slot_id is not None,
+        slack_team_name=emp.slack_team_name,
+        slack_bot_user_id=emp.slack_bot_user_id,
         cognee_user_id=emp.cognee_user_id,
         cognee_dataset_name=emp.cognee_dataset_name,
         channel_assignments=[
@@ -110,6 +115,12 @@ async def create_employee(
         memory_policy=data.memory_policy,
     )
     db.add(emp)
+    await db.flush()
+
+    # Pattern A: assign a Slack app slot so this employee can get its own identity
+    if settings.slack_identity_mode == "per_employee":
+        await assign_slot_to_employee(db, emp)
+
     try:
         await db.commit()
     except IntegrityError as exc:
@@ -208,6 +219,11 @@ async def delete_employee(
     )
     if emp is None:
         return False
+
+    # Pattern A: release the Slack app slot back to the pool
+    if settings.slack_identity_mode == "per_employee":
+        await release_slot(db, emp)
+
     await db.delete(emp)
     await db.commit()
     return True
@@ -268,10 +284,12 @@ async def get_employee_raw(
 async def get_active_employees_with_tokens(db: AsyncSession) -> list[Employee]:
     """Return all active employees that have at least one bot token. Used by gateway."""
     result = await db.execute(
-        select(Employee).where(
+        select(Employee)
+        .where(
             Employee.status == "active",
             (Employee.discord_token_enc.is_not(None)) | (Employee.slack_token_enc.is_not(None)),
         )
+        .options(selectinload(Employee.slack_slot))
     )
     return list(result.scalars().all())
 

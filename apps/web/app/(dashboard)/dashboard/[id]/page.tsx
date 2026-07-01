@@ -148,6 +148,8 @@ export default function EmployeeDetailPage() {
         status: apiEmployee.status,
         hasDiscord: apiEmployee.has_discord_token,
         hasSlack: apiEmployee.has_slack_token,
+        hasSlackSlot: apiEmployee.has_slack_slot,
+        slackTeamName: apiEmployee.slack_team_name ?? null,
         deployedAt: apiEmployee.created_at,
       }
     : null;
@@ -521,18 +523,36 @@ export default function EmployeeDetailPage() {
             />
             <InfoRow
               label="Slack"
-              value={employee.hasSlack ? "Connected" : "Not connected"}
+              value={
+                employee.hasSlack && employee.slackTeamName
+                  ? `Connected (${employee.slackTeamName})`
+                  : employee.hasSlack
+                    ? "Connected"
+                    : employee.hasSlackSlot
+                      ? "Slot assigned — not connected"
+                      : "Not connected"
+              }
             />
             {orgId && (
               <div className="flex items-center justify-between">
                 <span className="text-sm text-muted-foreground">Slack Bot</span>
-                <a
-                  href={slackInstallUrl(employee.id, orgId)}
-                  className="inline-flex items-center gap-1 text-sm font-medium text-primary hover:underline"
-                >
-                  <ExternalLinkIcon className="size-3.5" />
-                  Connect Slack
-                </a>
+                {employee.hasSlack && employee.slackTeamName ? (
+                  <span className="text-sm font-medium text-green-600 dark:text-green-400">
+                    Connected ({employee.slackTeamName})
+                  </span>
+                ) : employee.hasSlackSlot ? (
+                  <a
+                    href={slackInstallUrl(employee.id, orgId)}
+                    className="inline-flex items-center gap-1 text-sm font-medium text-primary hover:underline"
+                  >
+                    <ExternalLinkIcon className="size-3.5" />
+                    Add {employee.name} to Slack
+                  </a>
+                ) : (
+                  <span className="text-sm text-muted-foreground">
+                    No slot available
+                  </span>
+                )}
               </div>
             )}
             <InfoRow label="Employee ID" value={employee.id} mono />
@@ -620,18 +640,39 @@ export default function EmployeeDetailPage() {
                     <span className="text-sm font-medium text-foreground">
                       Connect Slack Bot
                     </span>
-                    <span className="text-xs text-muted-foreground">
-                      Install the Slack app to your workspace so this employee
-                      can respond to @mentions and DMs.
-                    </span>
+                    {employee.hasSlack && employee.slackTeamName ? (
+                      <span className="text-xs text-green-600 dark:text-green-400">
+                        Connected to {employee.slackTeamName}
+                      </span>
+                    ) : employee.hasSlackSlot ? (
+                      <span className="text-xs text-muted-foreground">
+                        Install {employee.name}&apos;s Slack app so it can
+                        respond to @mentions and DMs.
+                      </span>
+                    ) : (
+                      <span className="text-xs text-amber-600 dark:text-amber-400">
+                        No Slack app slot available. Contact support to increase
+                        capacity.
+                      </span>
+                    )}
                   </div>
-                  <a
-                    href={slackInstallUrl(employee.id, orgId)}
-                    className="inline-flex shrink-0 items-center gap-1.5 rounded-md bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground hover:bg-primary/90"
-                  >
-                    <ExternalLinkIcon className="size-3.5" />
-                    Connect
-                  </a>
+                  {employee.hasSlack ? (
+                    <span className="inline-flex shrink-0 items-center gap-1.5 rounded-md bg-green-100 px-3 py-1.5 text-sm font-medium text-green-700 dark:bg-green-900/30 dark:text-green-400">
+                      Connected
+                    </span>
+                  ) : employee.hasSlackSlot ? (
+                    <a
+                      href={slackInstallUrl(employee.id, orgId)}
+                      className="inline-flex shrink-0 items-center gap-1.5 rounded-md bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground hover:bg-primary/90"
+                    >
+                      <ExternalLinkIcon className="size-3.5" />
+                      Connect
+                    </a>
+                  ) : (
+                    <span className="inline-flex shrink-0 items-center gap-1.5 rounded-md bg-muted px-3 py-1.5 text-sm font-medium text-muted-foreground">
+                      Unavailable
+                    </span>
+                  )}
                 </div>
               )}
 

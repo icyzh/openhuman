@@ -4,10 +4,12 @@ Bot Gateway Manager — lifecycle for Discord and Slack bot connections.
 Runs a background refresh loop that polls the database for active employees
 and reconciles the set of running bot clients.
 
-**Slack:** One :class:`WorkspaceSlackBot` per unique bot token, not per
-employee.  Multiple employees in the same Slack workspace share one token
-(and therefore one Socket Mode connection).  The bot routes each incoming
-message to the correct employee via ``channel_assignments``.
+**Slack (shared mode):** One :class:`WorkspaceSlackBot` per unique bot token.
+Multiple employees in the same Slack workspace share one token and one Socket
+Mode connection.  The bot routes messages via ``channel_assignments``.
+
+**Slack (per_employee mode):** One :class:`EmployeeSlackBot` per employee
+(each has its own Slack app identity).  Mirrors the Discord architecture.
 """
 
 import asyncio
@@ -17,6 +19,7 @@ from uuid import UUID
 
 from app.core.config import settings
 from app.core.database import async_session_factory
+from app.core.security import decrypt_token
 from app.employees.models import Employee
 from app.employees.service import (
     decrypt_discord_token,
@@ -24,7 +27,7 @@ from app.employees.service import (
     get_active_employees_with_tokens,
 )
 from app.gateway.discord_bot import EmployeeDiscordBot
-from app.gateway.slack_bot import WorkspaceSlackBot
+from app.gateway.slack_bot import EmployeeSlackBot, WorkspaceSlackBot
 
 logger = logging.getLogger(__name__)
 
@@ -48,9 +51,14 @@ class BotGatewayManager:
         # Discord: one client per employee (each has their own token)
         self.discord_bots: dict[UUID, tuple[EmployeeDiscordBot, asyncio.Task[None]]] = {}
 
-        # Slack: one WorkspaceSlackBot per unique bot token
-        # Keyed by bot token string so duplicate tokens share one connection.
-        self.slack_bots: dict[str, WorkspaceSlackBot] = {}
+        # Slack: storage differs by identity mode
+        #   shared:       dict[token_str, WorkspaceSlackBot]
+        #   per_employee: dict[employee_id, EmployeeSlackBot]
+        self.slack_bots: dict[str, WorkspaceSlackBot] | dict[UUID, EmployeeSlackBot] = {}
+
+        # Import WorkspaceSlackBot is still needed for shared mode; keep the ref
+        # alive so tests/imports don't break.
+        self._WorkspaceSlackBot = WorkspaceSlackBot  # noqa: N806
 
         self.refresh_task: asyncio.Task[None] | None = None
         self.running: bool = False
@@ -80,8 +88,14 @@ class BotGatewayManager:
             await self._stop_discord_bot(emp_id)
 
         # Shut down Slack bots
-        for token in list(self.slack_bots.keys()):
-            await self._stop_slack_bot(token)
+        if settings.slack_identity_mode == "per_employee":
+            slack_bots: dict[UUID, EmployeeSlackBot] = self.slack_bots  # type: ignore[assignment]
+            for emp_id in list(slack_bots.keys()):
+                await self._stop_employee_slack_bot(emp_id)
+        else:
+            shared_bots: dict[str, WorkspaceSlackBot] = self.slack_bots  # type: ignore[assignment]
+            for token in list(shared_bots.keys()):
+                await self._stop_workspace_slack_bot(token)
 
         logger.info("Bot Gateway Manager stopped.")
 
@@ -112,8 +126,11 @@ class BotGatewayManager:
         for emp in active_employees:
             await self._reconcile_discord_bot(emp)
 
-        # --- Slack (new: group by token, one bot per unique token) ------------
-        await self._reconcile_slack_bots(active_employees)
+        # --- Slack ------------------------------------------------------------
+        if settings.slack_identity_mode == "per_employee":
+            await self._reconcile_slack_bots_per_employee(active_employees)
+        else:
+            await self._reconcile_slack_bots_shared(active_employees)
 
     # ------------------------------------------------------------------
     # Discord — per-employee (unchanged)
@@ -204,21 +221,17 @@ class BotGatewayManager:
         logger.info("Stopped Discord bot for employee %s", emp_id)
 
     # ------------------------------------------------------------------
-    # Slack — one bot per unique token (refactored)
+    # Slack — shared mode (legacy)
     # ------------------------------------------------------------------
 
-    async def _reconcile_slack_bots(self, active_employees: list[Employee]) -> None:
+    async def _reconcile_slack_bots_shared(self, active_employees: list[Employee]) -> None:
         """Group active employees by decrypted Slack token and ensure exactly
         one :class:`WorkspaceSlackBot` is running per unique token.
-
-        Employees whose token cannot be decrypted are silently skipped
-        (and any existing bot for their *old* token is unaffected — it will
-        be torn down when the token is no longer in use by anyone).
         """
         if not settings.slack_app_token:
-            # No app-level token configured → shut down all Slack bots
-            for token in list(self.slack_bots.keys()):
-                await self._stop_slack_bot(token)
+            shared_bots: dict[str, WorkspaceSlackBot] = self.slack_bots  # type: ignore[assignment]
+            for token in list(shared_bots.keys()):
+                await self._stop_workspace_slack_bot(token)
             return
 
         # Group employees by decrypted bot token
@@ -236,31 +249,26 @@ class BotGatewayManager:
 
         active_tokens = set(token_to_employees.keys())
 
+        shared_bots: dict[str, WorkspaceSlackBot] = self.slack_bots  # type: ignore[assignment]
+
         # Stop bots for tokens that are no longer present
-        for token in list(self.slack_bots.keys()):
+        for token in list(shared_bots.keys()):
             if token not in active_tokens:
-                await self._stop_slack_bot(token)
+                await self._stop_workspace_slack_bot(token)
 
         # Start / update bots for current tokens
         for token, emp_ids in token_to_employees.items():
-            if token in self.slack_bots:
-                # Bot already running — update its employee list in case
-                # employees were added/removed for this token
-                existing = self.slack_bots[token]
+            if token in shared_bots:
+                existing = shared_bots[token]
                 existing.employee_ids = emp_ids
                 existing._employee_id_set = frozenset(emp_ids)
             else:
-                await self._start_slack_bot(token, emp_ids)
+                await self._start_workspace_slack_bot(token, emp_ids)
 
-    async def _start_slack_bot(
+    async def _start_workspace_slack_bot(
         self, token: str, employee_ids: list[UUID],
     ) -> None:
-        """Create and connect a single Socket Mode connection for *token*.
-
-        All *employee_ids* share this token (they are in the same Slack
-        workspace).  The bot will route messages to the correct employee
-        based on channel assignments.
-        """
+        """Create and connect a single Socket Mode connection for *token*."""
         if not settings.slack_app_token:
             logger.warning("Cannot start Slack bot — SLACK_APP_TOKEN is not set.")
             return
@@ -278,16 +286,115 @@ class BotGatewayManager:
             )
             return
 
-        self.slack_bots[token] = bot
+        shared_bots: dict[str, WorkspaceSlackBot] = self.slack_bots  # type: ignore[assignment]
+        shared_bots[token] = bot
         logger.info(
             "Started Slack bot for token ...%s (%d employees)",
             token[-8:], len(employee_ids),
         )
 
-    async def _stop_slack_bot(self, token: str) -> None:
-        """Disconnect and remove the Slack bot for *token*."""
-        bot = self.slack_bots.pop(token, None)
+    async def _stop_workspace_slack_bot(self, token: str) -> None:
+        """Disconnect and remove the WorkspaceSlackBot for *token*."""
+        shared_bots: dict[str, WorkspaceSlackBot] = self.slack_bots  # type: ignore[assignment]
+        bot = shared_bots.pop(token, None)
         if bot is None:
             return
         await bot.disconnect()
         logger.info("Stopped Slack bot for token ...%s", token[-8:])
+
+    # ------------------------------------------------------------------
+    # Slack — per-employee mode (Pattern A)
+    # ------------------------------------------------------------------
+
+    async def _reconcile_slack_bots_per_employee(
+        self, active_employees: list[Employee],
+    ) -> None:
+        """One :class:`EmployeeSlackBot` per active employee with a Slack token
+        and an assigned slot (app-level token).
+
+        Mirrors the Discord reconciliation pattern.
+        """
+        per_emp_bots: dict[UUID, EmployeeSlackBot] = self.slack_bots  # type: ignore[assignment]
+
+        # Collect active employee IDs that have valid Slack config
+        active_slack_ids: set[UUID] = set()
+        for emp in active_employees:
+            if emp.slack_token_enc is None:
+                continue
+            # Must have an assigned slot with an app token
+            if emp.slack_slot is None:
+                logger.debug("Employee %s has no Slack slot — skipping", emp.id)
+                continue
+            active_slack_ids.add(emp.id)
+
+        # Stop bots for employees no longer active / without Slack
+        for emp_id in list(per_emp_bots.keys()):
+            if emp_id not in active_slack_ids:
+                await self._stop_employee_slack_bot(emp_id)
+
+        # Start / reconcile bots for active employees
+        for emp in active_employees:
+            if emp.id not in active_slack_ids:
+                continue
+            await self._reconcile_employee_slack_bot(emp)
+
+    async def _reconcile_employee_slack_bot(self, emp: Employee) -> None:
+        """Start, stop, or leave alone the EmployeeSlackBot for *emp*."""
+        per_emp_bots: dict[UUID, EmployeeSlackBot] = self.slack_bots  # type: ignore[assignment]
+
+        try:
+            bot_token = decrypt_slack_token(emp)
+        except Exception:
+            logger.exception("Failed to decrypt Slack token for employee %s", emp.id)
+            if emp.id in per_emp_bots:
+                await self._stop_employee_slack_bot(emp.id)
+            return
+
+        if bot_token is None or emp.slack_slot is None:
+            if emp.id in per_emp_bots:
+                await self._stop_employee_slack_bot(emp.id)
+            return
+
+        try:
+            app_token = decrypt_token(emp.slack_slot.app_token_enc)
+        except Exception:
+            logger.exception("Failed to decrypt Slack app token for employee %s", emp.id)
+            if emp.id in per_emp_bots:
+                await self._stop_employee_slack_bot(emp.id)
+            return
+
+        if emp.id in per_emp_bots:
+            # Bot already running — nothing to update (it's 1:1)
+            return
+
+        await self._start_employee_slack_bot(emp.id, bot_token, app_token)
+
+    async def _start_employee_slack_bot(
+        self, emp_id: UUID, bot_token: str, app_token: str,
+    ) -> None:
+        """Create and connect an EmployeeSlackBot for *emp_id*."""
+        bot = EmployeeSlackBot(
+            employee_id=emp_id,
+            bot_token=bot_token,
+            app_token=app_token,
+        )
+        try:
+            await bot.connect()
+        except Exception:
+            logger.exception(
+                "Failed to connect EmployeeSlackBot for employee %s", emp_id,
+            )
+            return
+
+        per_emp_bots: dict[UUID, EmployeeSlackBot] = self.slack_bots  # type: ignore[assignment]
+        per_emp_bots[emp_id] = bot
+        logger.info("Started EmployeeSlackBot for employee %s", emp_id)
+
+    async def _stop_employee_slack_bot(self, emp_id: UUID) -> None:
+        """Disconnect and remove the EmployeeSlackBot for *emp_id*."""
+        per_emp_bots: dict[UUID, EmployeeSlackBot] = self.slack_bots  # type: ignore[assignment]
+        bot = per_emp_bots.pop(emp_id, None)
+        if bot is None:
+            return
+        await bot.disconnect()
+        logger.info("Stopped EmployeeSlackBot for employee %s", emp_id)

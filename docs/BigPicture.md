@@ -181,8 +181,11 @@ async def refresh_loop():
         employees = await db.get_active_employees()
 
         for emp in employees:
+            # Discord: one bot per employee (each has own token)
             if emp.discord_token and emp.id not in active_discord_bots:
                 await start_discord_bot(emp)
+            # Slack (shared mode): one bot per unique token (employees share)
+            # Slack (per_employee mode): one bot per employee (pattern A)
             if emp.slack_token and emp.id not in active_slack_bots:
                 await start_slack_bot(emp)
 

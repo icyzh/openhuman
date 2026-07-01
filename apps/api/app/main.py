@@ -13,6 +13,7 @@ import app.documents.models  # noqa: F401
 import app.employees.models  # noqa: F401
 import app.organizations.models  # noqa: F401
 import app.agent.tools.mcp.models  # noqa: F401
+import app.gateway.models  # noqa: F401
 from app.agent.router import router as agent_router
 from app.auth.router import router as auth_router
 from app.channel_assignments.router import router as ca_router

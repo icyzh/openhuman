@@ -58,9 +58,14 @@ from app.agent.tools.mcp.connectors.spec import ConnectorSpec
 from app.employees.templates import get_template
 from test.fixtures import (
     SEED_EMPLOYEES,
+    assign_slot_to_employee,
     clear_slack_token,
+    get_employee_slot_status,
     get_slack_token_status,
+    get_slot_summary,
     print_banner,
+    provision_test_slots,
+    release_employee_slot,
     set_slack_token,
     setup_test_db,
 )
@@ -117,32 +122,52 @@ def _cached_graph(tool_names: list[str], all_tools: list) -> tuple:
 # Async runner helper
 # ---------------------------------------------------------------------------
 def _run_async(coro):
-    """Run an async coroutine."""
+    """Run an async coroutine in a thread-safe way (works inside Streamlit).
+
+    Always creates a fresh event loop to avoid uvloop / thread-local issues.
+    """
+    loop = asyncio.new_event_loop()
     try:
-        return asyncio.run(coro)
-    except RuntimeError:
-        loop = asyncio.get_event_loop()
         return loop.run_until_complete(coro)
+    finally:
+        loop.close()
 
 
 # ---------------------------------------------------------------------------
 # DB lifecycle (cached in session state)
 # ---------------------------------------------------------------------------
 def _init_db():
-    """One-shot DB setup — only called when not already in session state."""
+    """One-shot DB setup — only called when not already in session state.
+
+    When ``USE_API_DB=true`` is set in the environment, the Streamlit app
+    shares the same PostgreSQL database as the API server (via
+    ``DATABASE_URL``).  This enables end-to-end OAuth testing: employees
+    created here can be looked up by the API's Slack OAuth endpoints.
+    """
     if "db_engine" in st.session_state:
         return
 
-    db_path = os.getenv("TEST_DB_PATH", "/tmp/openhuman_test.db")
-    with st.spinner(f"Setting up test database ({db_path}) …"):
+    use_api_db = os.getenv("USE_API_DB", "").lower() in ("1", "true", "yes")
+    if use_api_db:
+        from app.core.config import settings
+        db_path = settings.database_url
+        db_label = f"API database ({settings.database_url.split('@')[1] if '@' in settings.database_url else settings.database_url})"
+    else:
+        db_path = os.getenv("TEST_DB_PATH", "/tmp/openhuman_test.db")
+        db_label = db_path
+
+    with st.spinner(f"Connecting to {db_label} …"):
+        from sqlalchemy.pool import NullPool
         engine, session_factory, employee_ids = _run_async(
-            setup_test_db(db_path)
+            setup_test_db(db_path, poolclass=NullPool)
         )
 
     st.session_state.db_engine = engine
     st.session_state.db_session_factory = session_factory
     st.session_state.employee_ids = employee_ids  # specialization → UUID
     st.session_state.db_ready = True
+    st.session_state.use_api_db = use_api_db
+    st.session_state.db_label = db_label
 
 
 # ---------------------------------------------------------------------------
@@ -155,6 +180,8 @@ def _init_state():
         "selected_employee_spec": "general",
         "platform": "api",
         "db_ready": False,
+        "use_api_db": False,
+        "db_label": "",
         "message_counter": 0,
     }
     for key, value in defaults.items():
@@ -288,22 +315,130 @@ def _render_sidebar():
     )
     st.session_state.platform = platform
 
-    # --- Slack Bot Token -----------------------------------------------------
-    st.sidebar.header("🔌 Slack Bot Token")
+    # --- Slack App Slots (Pattern A) -----------------------------------------
+    st.sidebar.header("🎰 Slack App Slots")
 
-    if employee_id is not None:
-        session_factory = st.session_state.get("db_session_factory")
-        if session_factory is not None:
-            has_token = _run_async(get_slack_token_status(session_factory, employee_id))
+    session_factory = st.session_state.get("db_session_factory")
+
+    # Slot pool summary
+    if session_factory is not None:
+        slot_summary = _run_async(get_slot_summary(session_factory))
+        pool_text = f"{slot_summary['available']} available / {slot_summary['assigned']} assigned / {slot_summary['total']} total"
+        if slot_summary["total"] == 0:
+            st.sidebar.warning(f"⚠️ No slots — {pool_text}")
+        elif slot_summary["available"] == 0 and slot_summary["total"] > 0:
+            st.sidebar.warning(f"🔴 Pool exhausted — {pool_text}")
         else:
-            has_token = False
+            st.sidebar.success(f"✅ {pool_text}")
 
-        if has_token:
-            st.sidebar.success("✅ Bot token stored (encrypted)")
-        else:
-            st.sidebar.caption("❌ No bot token set")
+        # Provision test slots
+        with st.sidebar.expander("Provision test slots"):
+            mode = st.radio(
+                "Provisioning mode",
+                options=["Auto (Dummy)", "Manual (Real)"],
+                horizontal=True,
+                key="provision_mode"
+            )
 
-        # Manual token paste (existing manual flow)
+            if mode == "Auto (Dummy)":
+                provision_count = st.number_input(
+                    "Number of slots", min_value=1, max_value=20, value=4, step=1,
+                    key="provision_count",
+                )
+                if st.button("🎰 Provision Auto", use_container_width=True, key="provision_slots_btn"):
+                    slots = _run_async(provision_test_slots(session_factory, provision_count))
+                    st.success(f"Created {len(slots)} test slot(s)!")
+                    st.rerun()
+            else:
+                cust_app_id = st.text_input("App ID (e.g. A0123ABC)", placeholder="A0...")
+                cust_client_id = st.text_input("Client ID", placeholder="12345.67890")
+                cust_client_secret = st.text_input("Client Secret", type="password")
+                cust_app_token = st.text_input("App-level Token (xapp-...)", type="password")
+
+                if st.button("🎰 Provision Manual Slot", use_container_width=True, key="provision_manual_btn"):
+                    if not cust_client_id or not cust_client_secret or not cust_app_token or not cust_app_id:
+                        st.error("All fields are required to provision a real app slot.")
+                    else:
+                        async def _create_custom_slot():
+                            from app.gateway.models import SlackAppSlot
+                            from app.core.security import encrypt_token
+                            slot = SlackAppSlot(
+                                slack_app_id=cust_app_id.strip(),
+                                client_id=cust_client_id.strip(),
+                                client_secret_enc=encrypt_token(cust_client_secret.strip()),
+                                app_token_enc=encrypt_token(cust_app_token.strip()),
+                                status="available",
+                            )
+                            async with session_factory() as session:
+                                session.add(slot)
+                                await session.commit()
+                        _run_async(_create_custom_slot())
+                        st.success("Custom real app slot provisioned successfully!")
+                        st.rerun()
+
+            st.markdown("---")
+            if st.button("🗑️ Clear all slots", use_container_width=True, key="clear_slots_btn"):
+                async def _clear_slots():
+                    from sqlalchemy import delete, update
+                    from app.gateway.models import SlackAppSlot
+                    from app.employees.models import Employee
+                    async with session_factory() as session:
+                        await session.execute(
+                            update(Employee).values(
+                                slack_slot_id=None,
+                                slack_token_enc=None,
+                                slack_team_id=None,
+                                slack_team_name=None,
+                                slack_bot_user_id=None,
+                                status="inactive"
+                            )
+                        )
+                        await session.execute(delete(SlackAppSlot))
+                        await session.commit()
+                _run_async(_clear_slots())
+                st.success("All slots cleared and connections reset!")
+                st.rerun()
+    else:
+        st.sidebar.caption("DB not ready.")
+
+    # --- Slack Bot Token (per-employee) --------------------------------------
+    st.sidebar.header("🔌 Slack Connection")
+
+    if employee_id is not None and session_factory is not None:
+        # Get comprehensive slot + token status
+        slot_info = _run_async(get_employee_slot_status(session_factory, employee_id))
+        has_token = _run_async(get_slack_token_status(session_factory, employee_id))
+
+        if slot_info:
+            status = slot_info["status"]
+            if status == "connected":
+                st.sidebar.success(f"✅ Connected — {slot_info['detail']}")
+            elif status == "slot_ready":
+                st.sidebar.info(f"🔧 Slot assigned — ready for OAuth")
+            elif status == "token_only":
+                st.sidebar.warning(f"⚠️ Has token, no slot (shared mode)")
+            else:
+                st.sidebar.caption(f"❌ No slot assigned")
+
+        # Slot actions: assign / release
+        with st.sidebar.expander("Slot actions", expanded=slot_info is None or slot_info["status"] == "no_slot"):
+            col1, col2 = st.columns(2)
+            if col1.button("➕ Assign slot", use_container_width=True, key="assign_slot_btn"):
+                ok = _run_async(assign_slot_to_employee(session_factory, employee_id))
+                if ok:
+                    st.success("Slot assigned!")
+                    st.rerun()
+                else:
+                    st.error("No available slots. Provision more first.")
+            if col2.button("🔓 Release slot", use_container_width=True, key="release_slot_btn"):
+                ok = _run_async(release_employee_slot(session_factory, employee_id))
+                if ok:
+                    st.success("Slot released.")
+                    st.rerun()
+                else:
+                    st.error("No slot to release.")
+
+        # Manual token paste
         with st.sidebar.expander("Paste bot token", expanded=not has_token):
             slack_token_input = st.text_input(
                 "Bot token (xoxb-...)",
@@ -313,7 +448,7 @@ def _render_sidebar():
             )
             col1, col2 = st.columns(2)
             if col1.button("💾 Store", use_container_width=True, key="store_slack_btn"):
-                if slack_token_input.strip() and session_factory is not None:
+                if slack_token_input.strip():
                     ok = _run_async(
                         set_slack_token(session_factory, employee_id, slack_token_input.strip())
                     )
@@ -326,39 +461,50 @@ def _render_sidebar():
                     st.warning("Enter a token first.")
 
             if col2.button("🗑️ Clear", use_container_width=True, key="clear_slack_btn"):
-                if session_factory is not None:
-                    _run_async(clear_slack_token(session_factory, employee_id))
-                    st.success("Token cleared.")
-                    st.rerun()
+                _run_async(clear_slack_token(session_factory, employee_id))
+                st.success("Token cleared.")
+                st.rerun()
 
-        # OAuth install URL (new flow)
-        with st.sidebar.expander("Or use OAuth (Connect Slack)"):
-            api_base = os.getenv("API_BASE_URL", "http://localhost:8000")
-            org_id = None
-            if employee_id is not None and session_factory is not None:
-                async def _get_org_id():
-                    from app.employees.models import Employee
-                    async with session_factory() as session:
-                        emp = await session.get(Employee, employee_id)
-                        return emp.org_id if emp else None
-                org_id = _run_async(_get_org_id())
+        # OAuth install URL — requires shared DB with API
+        if slot_info and slot_info["has_slot"]:
+            with st.sidebar.expander("🔄 OAuth (Connect Slack)", expanded=not has_token):
+                api_base = os.getenv("API_BASE_URL", "http://localhost:8000")
+                use_api_db = st.session_state.get("use_api_db", False)
 
-            if org_id:
-                streamlit_url = os.getenv("STREAMLIT_URL", "http://localhost:8501")
-                install_url = (
-                    f"{api_base}/api/slack/install"
-                    f"?employee_id={employee_id}"
-                    f"&org_id={org_id}"
-                    f"&redirect_to={streamlit_url}"
-                )
-                st.write("Connect the currently selected employee to a Slack workspace:")
-                st.markdown(f"[🔌 **Connect Slack**]({install_url})")
-                st.caption(
-                    "Note: Ensure the API server is running, configured with the same database, "
-                    "and has SLACK_CLIENT_ID / SLACK_CLIENT_SECRET set in .env."
-                )
-            else:
-                st.caption("No organization found for the selected employee.")
+                if not use_api_db:
+                    st.warning(
+                        "OAuth requires sharing the API database. "
+                        "Set `USE_API_DB=true` and restart Streamlit."
+                    )
+                    st.caption(
+                        "The API at localhost:8000 looks up employees in PostgreSQL. "
+                        "Without a shared DB, the API won't find this employee."
+                    )
+                else:
+                    org_id = None
+                    if employee_id is not None and session_factory is not None:
+                        async def _get_org_id():
+                            from app.employees.models import Employee
+                            async with session_factory() as session:
+                                emp = await session.get(Employee, employee_id)
+                                return emp.org_id if emp else None
+                        org_id = _run_async(_get_org_id())
+
+                    if org_id:
+                        streamlit_url = os.getenv("STREAMLIT_URL", "http://localhost:8501")
+                        install_url = (
+                            f"{api_base}/api/slack/install"
+                            f"?employee_id={employee_id}"
+                            f"&org_id={org_id}"
+                            f"&redirect_to={streamlit_url}"
+                        )
+                        st.markdown(f"[🔌 **Connect {slot_info['name']} to Slack**]({install_url})")
+                        st.caption(
+                            "Uses the slot's own Slack app for per-employee identity. "
+                            "The API will find this employee in the shared database."
+                        )
+                    else:
+                        st.caption("No organization found.")
 
     # --- MCP Connectors -------------------------------------------------------
     st.sidebar.header("🔌 MCP Connectors")
@@ -417,10 +563,33 @@ def _render_sidebar():
 
     # --- Status --------------------------------------------------------------
     st.sidebar.divider()
+    use_api_db = st.session_state.get("use_api_db", False)
+
+    # API server health indicator (only relevant when using API DB)
+    if use_api_db:
+        api_base = os.getenv("API_BASE_URL", "http://localhost:8000")
+        try:
+            import urllib.request
+            req = urllib.request.Request(f"{api_base}/api/health", method="GET")
+            resp = urllib.request.urlopen(req, timeout=2)
+            api_ok = resp.status == 200
+        except Exception:
+            api_ok = False
+
+        if api_ok:
+            st.sidebar.success(f"🟢 API server running at {api_base}")
+        else:
+            st.sidebar.error(f"🔴 API server NOT reachable at {api_base}")
+            st.sidebar.caption("Start it: `cd apps/api && uv run uvicorn app.main:app --port 8000`")
+
+    db_label = st.session_state.get("db_label", "?")
     st.sidebar.caption(
         f"Messages: {len(st.session_state.chat_history)} | "
-        f"DB: {'✅' if st.session_state.db_ready else '❌'}"
+        f"DB: {'✅' if st.session_state.db_ready else '❌'} "
+        f"({db_label})"
     )
+    if use_api_db:
+        st.sidebar.caption("🔄 Sharing API database — OAuth will work end-to-end")
 
     return employee_id
 
@@ -538,6 +707,8 @@ def _teardown_db():
         _run_async(engine.dispose())
     st.session_state.pop("db_session_factory", None)
     st.session_state.pop("employee_ids", None)
+    st.session_state.pop("use_api_db", None)
+    st.session_state.pop("db_label", None)
 
 
 # ---------------------------------------------------------------------------
