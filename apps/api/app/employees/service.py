@@ -1,3 +1,7 @@
+from __future__ import annotations
+
+import json
+import logging
 from uuid import UUID
 
 from sqlalchemy import select
@@ -15,7 +19,29 @@ from app.employees.schemas import (
     UpdateEmployeeRequest,
 )
 from app.gateway.slack_app_provisioning import assign_slot_to_employee, release_slot
+from app.memory.service import (
+    add_user_to_tenant,
+    create_dataset,
+    create_employee_user,
+    forget_dataset,
+    get_or_create_admin,
+    grant_tenant_read,
+    remember,
+)
 from app.organizations.models import Organization
+
+logger = logging.getLogger(__name__)
+
+
+def _build_employee_profile(emp: Employee) -> str:
+    """Serialize employee identity fields to JSON for Cognee profile seed."""
+    return json.dumps({
+        "name": emp.name,
+        "role": emp.role,
+        "employee_type": emp.employee_type,
+        "personality": emp.personality,
+        "specialization": emp.specialization,
+    })
 
 # ---------------------------------------------------------------------------
 # Exceptions
@@ -130,6 +156,48 @@ async def create_employee(
                 f"An employee of type '{data.employee_type}' already exists in this organization."
             ) from exc
         raise
+
+    # ── Cognee provisioning (best-effort, only if org has tenant) ──────
+    if org.cognee_tenant_id:
+        try:
+            admin = await get_or_create_admin()
+            cognee_user = await create_employee_user(
+                org.cognee_tenant_id, emp.name
+            )
+            await add_user_to_tenant(
+                cognee_user["id"], org.cognee_tenant_id, admin["id"]
+            )
+            dataset = await create_dataset(
+                f"employee-{emp.id}", cognee_user["id"]
+            )
+            await grant_tenant_read(
+                dataset["id"], org.cognee_tenant_id, cognee_user["id"]
+            )
+
+            # Seed employee profile
+            profile = _build_employee_profile(emp)
+            await remember(
+                profile,
+                f"employee-{emp.id}",
+                cognee_user["id"],
+                dataset_id=dataset["id"],
+                background=True,
+            )
+
+            # Persist Cognee IDs on employee row
+            emp.cognee_user_id = cognee_user["id"]
+            emp.cognee_user_name = cognee_user["email"]
+            emp.cognee_dataset_id = dataset["id"]
+            emp.cognee_dataset_name = dataset["name"]
+            await db.commit()
+        except Exception:
+            logger.exception(
+                "Cognee employee provisioning failed for emp %s "
+                "(non-blocking)",
+                emp.id,
+            )
+    # ── End Cognee ──────────────────────────────────────────────────────
+
     # Re-fetch with relationships
     emp = await _get_employee_with_assignments(db, emp.id, org_id)  # type: ignore[assignment]
     return _to_response(emp)  # type: ignore[arg-type]
@@ -189,7 +257,8 @@ async def update_employee(
                 f"An employee of type '{data.employee_type}' already exists in this organization."
             )
 
-    for field, value in data.model_dump(exclude_none=True).items():
+    update_data = data.model_dump(exclude_none=True)
+    for field, value in update_data.items():
         if field == "status" and value not in _ALLOWED_STATUSES:
             raise ValueError(
                 f"status must be one of {sorted(_ALLOWED_STATUSES)}"
@@ -204,6 +273,32 @@ async def update_employee(
                 f"An employee of type '{data.employee_type}' already exists in this organization."
             ) from exc
         raise
+
+    # ── Re-seed Cognee profile if identity fields changed ───────────────
+    cognee_changed = any(
+        field in update_data
+        for field in (
+            "name", "role", "employee_type",
+            "personality", "specialization",
+        )
+    )
+    if cognee_changed and emp.cognee_user_id and emp.cognee_dataset_name:
+        try:
+            profile = _build_employee_profile(emp)
+            await remember(
+                profile,
+                emp.cognee_dataset_name,
+                emp.cognee_user_id,
+                dataset_id=emp.cognee_dataset_id,
+                background=True,
+            )
+        except Exception:
+            logger.exception(
+                "Cognee profile re-seed failed for emp %s (non-blocking)",
+                emp.id,
+            )
+    # ── End Cognee ──────────────────────────────────────────────────────
+
     emp = await _get_employee_with_assignments(db, emp_id, org_id)  # type: ignore[arg-type]
     return _to_response(emp)  # type: ignore[arg-type]
 
@@ -223,6 +318,17 @@ async def delete_employee(
     # Pattern A: release the Slack app slot back to the pool
     if settings.slack_identity_mode == "per_employee":
         await release_slot(db, emp)
+
+    # ── Best-effort Cognee cleanup ──────────────────────────────────────
+    if emp.cognee_dataset_name:
+        try:
+            await forget_dataset(emp.cognee_dataset_name)
+        except Exception:
+            logger.exception(
+                "Cognee forget_dataset failed during employee delete %s",
+                emp.id,
+            )
+    # ─────────────────────────────────────────────────────────────────────
 
     await db.delete(emp)
     await db.commit()

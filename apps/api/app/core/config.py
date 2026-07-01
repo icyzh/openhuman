@@ -14,6 +14,7 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(
         env_file=str(_ENV_FILE) if _ENV_FILE.exists() else ".env",
         env_file_encoding="utf-8",
+        extra="ignore",
     )
 
     # Server
@@ -35,8 +36,16 @@ class Settings(BaseSettings):
     # Encryption for bot tokens (AES-256-GCM, 32-byte key)
     encryption_key: str = ""
 
-    # Cognee (deferred — Phase 5 real implementation)
+    # Cognee memory (embedded — SQLite + LanceDB + Kuzu)
     cognee_data_dir: str = "./cognee_data"
+    cognee_llm_provider: str = "openai"
+    cognee_llm_endpoint: str = ""
+    cognee_llm_api_key: str = ""
+    cognee_llm_model: str = "openai/gpt-4o-mini"
+    cognee_embedding_provider: str = "openai"
+    cognee_embedding_endpoint: str = ""
+    cognee_embedding_model: str = "openai/text-embedding-3-small"
+    cognee_skip_connection_test: bool = True
 
     # OpenAI (used by LangGraph agent)
     openai_api_key: str = ""

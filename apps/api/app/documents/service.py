@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from collections.abc import AsyncGenerator
 from uuid import UUID
 
@@ -12,9 +13,12 @@ from app.core.config import settings
 from app.documents.models import Document
 from app.documents.schemas import DocumentsStatsResponse
 from app.documents.utils import sanitize_filename
+from app.memory.service import remember
 from app.organizations.models import Organization
 from app.storage import get_local_backend, get_s3_backend, get_storage_backend
 from app.storage.base import StorageBackend
+
+logger = logging.getLogger(__name__)
 
 
 async def _verify_org(db: AsyncSession, org_id: UUID, user_id: UUID) -> Organization | None:
@@ -66,6 +70,39 @@ async def save_document(
     db.add(doc)
     await db.commit()
     await db.refresh(doc)
+
+    # ── Cognee ingest for text files (best-effort, non-blocking) ──────────
+    TEXT_TYPES = {
+        "text/plain", "text/markdown", "text/csv",
+        "application/json", "application/xml",
+    }
+    _MAX_COGNEE_TEXT_SIZE = 500_000
+    is_text = (
+        file.content_type in TEXT_TYPES
+        or doc.filename.endswith((".txt", ".md", ".csv", ".json", ".xml"))
+    )
+    if is_text and size > _MAX_COGNEE_TEXT_SIZE:
+        logger.debug(
+            "Skipping Cognee ingest for %s (%d bytes exceeds limit)",
+            doc.filename, size,
+        )
+    elif is_text and org.cognee_dataset_name and org.cognee_system_user_id:
+        try:
+            text_content = content.decode("utf-8", errors="replace")
+            await remember(
+                f"Document: {doc.filename}\n\n{text_content}",
+                org.cognee_dataset_name,
+                org.cognee_system_user_id,
+                dataset_id=org.cognee_dataset_id,
+                background=True,
+            )
+        except Exception:
+            logger.exception(
+                "Cognee document ingest failed for doc %s (non-blocking)",
+                doc.id,
+            )
+    # ── End Cognee ──────────────────────────────────────────────────────────
+
     return doc
 
 

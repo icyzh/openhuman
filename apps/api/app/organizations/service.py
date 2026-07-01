@@ -1,10 +1,27 @@
+from __future__ import annotations
+
+import asyncio
+import logging
 from uuid import UUID
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
+from app.memory.service import (
+    add_user_to_tenant,
+    create_dataset,
+    create_system_user,
+    create_tenant,
+    forget_dataset,
+    get_or_create_admin,
+    grant_tenant_read,
+    remember,
+)
 from app.organizations.models import Organization
 from app.organizations.schemas import CreateOrganizationRequest, UpdateOrganizationRequest
+
+logger = logging.getLogger(__name__)
 
 
 async def create_org(
@@ -19,12 +36,55 @@ async def create_org(
     db.add(org)
     await db.commit()
     await db.refresh(org)
+
+    # ── Cognee provisioning (best-effort, non-blocking) ──────────────────
+    try:
+        admin = await get_or_create_admin()
+        tenant = await create_tenant(org.name, admin["id"])
+        sys_user = await create_system_user(tenant["id"], admin["id"])
+        await add_user_to_tenant(sys_user["id"], tenant["id"], admin["id"])
+        dataset = await create_dataset(
+            f"company-{tenant['id']}", sys_user["id"]
+        )
+        await grant_tenant_read(dataset["id"], tenant["id"], sys_user["id"])
+
+        # Seed org info as a memory fact
+        seed_text = f"Organization: {org.name}"
+        if org.description:
+            seed_text += f"\nDescription: {org.description}"
+        if org.what_it_does:
+            seed_text += f"\nWhat it does: {org.what_it_does}"
+        await remember(
+            seed_text,
+            f"company-{tenant['id']}",
+            sys_user["id"],
+            dataset_id=dataset["id"],
+            background=True,
+        )
+
+        # Persist Cognee IDs on org row
+        org.cognee_tenant_id = tenant["id"]
+        org.cognee_tenant_name = tenant["name"]
+        org.cognee_system_user_id = sys_user["id"]
+        org.cognee_system_user_name = sys_user["email"]
+        org.cognee_dataset_id = dataset["id"]
+        org.cognee_dataset_name = dataset["name"]
+        await db.commit()
+        await db.refresh(org)
+    except Exception:
+        logger.exception(
+            "Cognee org provisioning failed for org %s (non-blocking)", org.id
+        )
+    # ── End Cognee ──────────────────────────────────────────────────────
+
     return org
 
 
 async def get_org(db: AsyncSession, org_id: UUID, user_id: UUID) -> Organization | None:
     return await db.scalar(
-        select(Organization).where(
+        select(Organization)
+        .options(selectinload(Organization.employees))
+        .where(
             Organization.id == org_id, Organization.owner_id == user_id
         )
     )
@@ -60,6 +120,25 @@ async def delete_org(db: AsyncSession, org_id: UUID, user_id: UUID) -> bool:
     org = await get_org(db, org_id, user_id)
     if org is None:
         return False
+
+    # ── Best-effort Cognee cleanup before cascade delete ────────────────
+    tasks: list = []
+    for emp in org.employees:
+        if emp.cognee_dataset_name:
+            tasks.append(forget_dataset(emp.cognee_dataset_name))  # type: ignore[arg-type]
+    if org.cognee_dataset_name:
+        tasks.append(forget_dataset(org.cognee_dataset_name))
+    if tasks:
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+        for i, result in enumerate(results):
+            if isinstance(result, Exception):
+                logger.exception(
+                    "Cognee forget_dataset failed during org delete %s",
+                    org.id,
+                    exc_info=result,
+                )
+    # ─────────────────────────────────────────────────────────────────────
+
     await db.delete(org)
     await db.commit()
     return True

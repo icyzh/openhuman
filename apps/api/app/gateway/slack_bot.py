@@ -23,6 +23,8 @@ from app.agent.router import get_graph_for_employee
 from app.channel_assignments.models import ChannelAssignment
 from app.core.database import async_session_factory
 from app.employees.models import Employee
+from app.memory.service import remember
+from app.organizations.models import Organization
 
 logger = logging.getLogger(__name__)
 
@@ -363,6 +365,40 @@ class WorkspaceSlackBot:
                     employee_name = f"{emp.name} ({emp.role})"
                 else:
                     employee_name = emp.name
+
+                # ── Auto-ingest Slack message into org memory ────────────
+                try:
+                    org = await session.scalar(
+                        select(Organization).where(
+                            Organization.id == emp.org_id
+                        )
+                    )
+                    if (
+                        org
+                        and org.cognee_dataset_name
+                        and org.cognee_system_user_id
+                    ):
+                        speaker = event.get("user", "unknown")
+                        ch = event.get("channel", "unknown")
+                        ts = event.get("ts", "")
+                        ingest_text = (
+                            f"Slack message from <@{speaker}> "
+                            f"in <#{ch}> at {ts}:\n{text}"
+                        )
+                        await remember(
+                            ingest_text,
+                            org.cognee_dataset_name,
+                            org.cognee_system_user_id,
+                            dataset_id=org.cognee_dataset_id,
+                            background=True,
+                        )
+                except Exception:
+                    logger.debug(
+                        "Slack message Cognee ingest skipped for employee %s",
+                        employee_id,
+                        exc_info=True,
+                    )
+                # ── End auto-ingest ──────────────────────────────────────
 
         response_text = await self._run_agent(employee_id, text)
         if not response_text:

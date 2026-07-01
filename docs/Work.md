@@ -85,3 +85,41 @@
 - **`get_db` in `database.py`**: Not in `dependencies.py` — it's a database utility, not an auth concern
 - **Model imports in `main.py`**: All model modules imported before router registration (avoids SQLAlchemy string resolution errors)
 - **HTTPBearer scheme**: Standard `Authorization: Bearer <token>` header, no custom middleware needed
+
+---
+
+## Phase 4: Cognee Memory Integration 🔜
+
+**Status**: Planned (2026-07-01). Not yet started.
+
+**Design doc**: `docs/Cognee.md` — architecture, identity model, SDK reference
+**Implementation plan**: `docs/plans/cognee_implementation.md` — step-by-step, 11 files
+
+### Summary
+
+Replace mock memory stubs with real Cognee SDK. Wire tenant/user/dataset provisioning into org/employee lifecycle. Add memory search/ingest to agent tools. Auto-ingest Slack messages into org knowledge.
+
+### Key design decisions
+
+- **Embedded Cognee**: runs in-process (SQLite + LanceDB + Kuzu). No separate Docker service. Data in `./cognee_data`.
+- **PG as identity bridge**: `employee_id` (PG UUID) → ORM lookup → Cognee IDs → SDK calls
+- **Two datasets per org**: `company-{tenantId}` (shared knowledge) + `employee-{empUuid}` (personal memory)
+- **Agent `search_memory`**: searches both datasets. Agent `ingest_memory`: writes to employee dataset only.
+- **Best-effort everywhere**: Cognee failures never block CRUD. All provisioning in try/except.
+- **Two-step doc ingest**: 1) StorageBackend (durable bucket), 2) Cognee (best-effort, non-blocking)
+
+### Files to create/modify (11 total)
+
+| # | File | Change |
+|---|---|---|
+| 1 | `pyproject.toml` | Add `cognee>=1.2,<2.0` |
+| 2 | `app/core/config.py` | Add 8 Cognee env var fields |
+| 3 | `app/core/cognee.py` | **NEW** — bootstrap (sets os.environ before import) |
+| 4 | `app/memory/service.py` | Full rewrite — real Cognee wrappers |
+| 5 | `app/memory/router.py` | Wire search/ingest to real SDK calls |
+| 6 | `app/organizations/service.py` | Cognee provisioning in create/delete |
+| 7 | `app/employees/service.py` | Cognee provisioning in create/update/delete |
+| 8 | `app/documents/service.py` | Cognee ingest after storage backend save |
+| 9 | `app/agent/tools/executor.py` | Real search_memory/ingest_memory |
+| 10 | `app/main.py` | Bootstrap import + init_cognee() in lifespan |
+| 11 | `app/gateway/slack_bot.py` | Auto-ingest Slack messages |

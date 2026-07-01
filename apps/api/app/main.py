@@ -1,5 +1,11 @@
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
+import logging
+
+# ── Cognee bootstrap: MUST run before any import app.* that triggers import cognee ──
+from app.core.cognee import apply_cognee_config
+apply_cognee_config()
+# ────────────────────────────────────────────────────────────────────────────────────
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -26,7 +32,10 @@ from app.health.router import router as health_router
 from app.mcp.router import oauth_router as mcp_oauth_router
 from app.mcp.router import router as mcp_router
 from app.memory.router import router as memory_router
+from app.memory.service import init_cognee
 from app.organizations.router import router as org_router
+
+logger = logging.getLogger(__name__)
 
 
 def custom_generate_unique_id(route: APIRoute) -> str:
@@ -39,6 +48,17 @@ def custom_generate_unique_id(route: APIRoute) -> str:
 @asynccontextmanager
 async def lifespan(_app: FastAPI) -> AsyncGenerator[None, None]:
     """Application lifespan — initialize and teardown resources here."""
+
+    # ── Cognee startup ──────────────────────────────────────────────────
+    try:
+        await init_cognee()
+        logger.info("Cognee initialized successfully")
+    except Exception:
+        logger.exception(
+            "Cognee initialization failed — continuing without memory"
+        )
+    # ── Gateway ──────────────────────────────────────────────────────────
+
     gateway_manager = BotGatewayManager()
     if settings.gateway_enabled:
         await gateway_manager.start()

@@ -1,19 +1,183 @@
-# Cognee Memory Integration — Phase 4 (fork from main)
+# Cognee Memory Integration
 
 ## Context
 
-Port the Cognee service from the old repo (`/home/sno/Work/hackathon/oldhuman/openhuman/services/ai/app/cognee_service/`). Wire it into org/employee creation so Cognee tenants, users, and datasets are provisioned automatically. Expose memory search/ingest endpoints for the dashboard and agent.
+Replace mock memory stubs with real Cognee SDK integration. Cognee tenants, users, and datasets are provisioned automatically during org/employee creation. Memory search/ingest is exposed through the API router and agent tools. Slack messages are auto-ingested into org knowledge.
 
-The old implementation has known issues (from `snowork.md`):
+**Stack**: FastAPI backend, **SQLAlchemy 2.0 ORM** (async, `Mapped[]` + `mapped_column()`), **Alembic** for migrations, PostgreSQL for application data. Cognee is embedded (SQLite + LanceDB + Kuzu) and stores its own data separately in `./cognee_data`. The Cognee ID columns on `organizations` and `employees` tables were added in the initial Alembic migration — no new migration needed.
+
+Fixes known issues from the old repo:
 - Dataset IDs were created then discarded — only names were used
 - Dataset names like `"company-knowledge"` weren't tenant-unique
 - Memory review pipeline used auto-created datasets with no permissions
 
-This implementation fixes those: UUID-based dataset names, IDs stored in ORM, all datasets explicitly created with permissions.
+This implementation: UUID-based dataset names, IDs stored in ORM columns, all datasets explicitly created with permissions.
 
-## Cognee SDK Reference (from `TO_REMEMBER.md`)
+## Embedded vs Remote (Why No Docker Service)
 
-Key gotchas from the old codebase:
+The old repo tried to run Cognee as a **separate Docker service** with a REST API (`docker-compose.cognee.yml`). That was heavy — separate container, networking, health checks.
+
+We use Cognee **embedded** — it runs inside the Python backend process. Cognee stores data as local files (SQLite + LanceDB + Kuzu) in `./cognee_data`. No separate server, no extra Docker service, no REST API. Just `import cognee` and use the SDK directly.
+
+Docker deployment stays at 3 services (frontend, backend, postgres). When a docker-compose setup is added, include a volume mount for `./cognee_data` so memory survives container restarts.
+
+## Two-Step Ingest: Bucket → Cognee
+
+Document upload uses a **two-step pattern** to prevent data loss. If Cognee ingest fails, the file is still safe in the bucket.
+
+### Step 1: Storage Backend (the "Bucket")
+
+`app/storage/` provides a pluggable `StorageBackend` abstraction:
+
+- **`LocalStorageBackend`**: saves to `./uploads/{org_id}/{filename}` (default)
+- **`S3StorageBackend`**: saves to `s3://{bucket}/{org_id}/{uuid8}_{filename}`
+
+The backend is configured via `storage_backend` setting (`"local"` or `"s3"`). All backends implement the same interface: `save()`, `read()`, `read_stream()`, `delete()`, `get_presigned_url()`.
+
+When a file is uploaded, `save_document()` writes it to the configured backend first. Only after the file is durably stored does it create the `Document` DB row.
+
+```
+POST /api/documents/upload
+  → backend.save(org_id, filename, content)  ← durable, synchronous
+  → INSERT INTO documents (...)               ← metadata in PG
+  → [best-effort] remember(content, org_dataset, system_user)  ← Cognee, async
+```
+
+### Step 2: Cognee Ingest (Best-Effort Memory)
+
+After the file is safely in the bucket and the DB row exists, we attempt Cognee ingestion. This step is:
+
+- **Best-effort**: failure is logged, never blocks the upload response
+- **Background**: `run_in_background=True` — the Cognee pipeline (chunk → embed → graph) runs async
+- **Text-only for v1**: txt, md, csv, json, xml files. PDF/Office deferred.
+- **Into org dataset**: ingested as the system user so all employees can search
+
+If Cognee is down or the ingest fails, the document still exists in the bucket and the DB row shows `status="uploaded"`. It can be re-ingested later.
+
+### Why Decoupled?
+
+- **Resilience**: Cognee pipeline failures don't lose files
+- **Speed**: upload response returns immediately, Cognee processes in background
+- **Replay-ability**: files in the bucket can be re-ingested if Cognee is reprovisioned
+- **Backend flexibility**: same pattern works whether files are on local disk or S3
+
+## Architecture
+
+### Dataset Topology
+
+```
+Admin (superuser: admin@openhuman.internal)
+└── Tenant: Acme Corp (cognee tenant)
+    ├── System user: system+{tenantId}@openhuman.internal
+    │   └── Dataset: company-{cogneeTenantId}
+    │       ├── Contains: org config, uploaded documents, Slack messages
+    │       └── Access: tenant-wide read (all employees inherit)
+    │
+    ├── AI Employee "Alice"
+    │   ├── Cognee user: ai-alice+{tenantId}@openhuman.internal
+    │   └── Dataset: employee-{alicePgUuid}
+    │       ├── Contains: employee profile, agent-learned facts
+    │       └── Access: tenant-wide read (via grant)
+    │
+    └── AI Employee "Bob"
+        └── (same pattern)
+```
+
+### What Goes Where
+
+| Content source | Dataset | Cognee user | Trigger |
+|---|---|---|---|
+| Org config | `company-{tenantId}` | System user | Org creation |
+| Employee profile | `employee-{empUuid}` | Employee user | Employee create/update |
+| Uploaded documents | `company-{tenantId}` | System user | File upload (after storage backend save) |
+| Slack messages | `company-{tenantId}` | System user | Gateway (every incoming msg, auto) |
+| Agent-decided facts | `employee-{empUuid}` | Employee user | Agent calls `ingest_memory` tool |
+| API ingest | `employee-{empUuid}` | Employee user | `POST /api/memory/ingest` |
+
+Two-step ingest for documents: 1) file → `StorageBackend` (durable bucket, prevents data loss), 2) content → Cognee `remember()` (best-effort memory, non-blocking).
+
+### ORM Columns (already in migration)
+
+| Table | Cognee Columns |
+|---|---|
+| organizations | `cognee_tenant_id`, `cognee_tenant_name`, `cognee_system_user_id`, `cognee_system_user_name`, `cognee_dataset_id`, `cognee_dataset_name` |
+| employees | `cognee_user_id`, `cognee_user_name`, `cognee_dataset_id`, `cognee_dataset_name` |
+| documents | `cognee_document_id` (reserved for future per-document tracking; not used in v1) |
+
+Names alongside IDs for debugging only. All `remember()`/`recall()` calls target by UUID.
+
+### Dataset Naming
+
+`company-{cogneeTenantId}` for orgs, `employee-{employeePgUuid}` for employees. UUID-based, deterministic, unique.
+
+---
+
+## How Identity Works
+
+The agent always carries its `employee_id` (PG UUID) through the LangGraph config. From that single ID, all Cognee credentials are resolved via the ORM.
+
+### Provisioning (one-time, org/employee creation)
+
+```
+POST /api/organizations {name: "Acme"}
+→ INSERT INTO organizations (id=org-uuid-1, name="Acme")
+→ Cognee: create_tenant("Acme", admin)        → tenant_id = "abc-123"
+→ Cognee: create_system_user("abc-123", admin)  → user_id = "sys-456"
+→ Cognee: create_dataset("company-abc-123")     → dataset_id = "ds-789"
+→ Cognee: grant_tenant_read(ds-789, abc-123)
+→ UPDATE organizations SET cognee_tenant_id='abc-123', cognee_system_user_id='sys-456',
+    cognee_dataset_id='ds-789', cognee_dataset_name='company-abc-123'
+
+POST /api/organizations/org-uuid-1/employees {name: "Alice"}
+→ INSERT INTO employees (id=emp-uuid-1, org_id=org-uuid-1)
+→ Cognee: create_employee_user("abc-123", "Alice")  → user_id = "ai-111"
+→ Cognee: add_user_to_tenant("ai-111", "abc-123")
+→ Cognee: create_dataset("employee-emp-uuid-1")       → dataset_id = "ds-222"
+→ Cognee: grant_tenant_read(ds-222, abc-123)
+→ UPDATE employees SET cognee_user_id='ai-111', cognee_dataset_id='ds-222',
+    cognee_dataset_name='employee-emp-uuid-1'
+```
+
+### Runtime (every agent invocation)
+
+```
+Slack message → gateway resolves employee "Alice" (emp-uuid-1)
+→ get_graph_for_employee(db, emp-uuid-1)
+→ config = {"configurable": {"db": db, "employee_id": "emp-uuid-1", "all_tools": [...]}}
+→ graph.ainvoke(initial_state, config=config)
+
+Agent calls search_memory("what's our refund policy?")
+→ tool receives config.configurable
+→ emp_id = "emp-uuid-1"
+→ db = config["configurable"]["db"]
+
+Inside search_memory:
+  SELECT cognee_user_id, cognee_dataset_name, org_id
+  FROM employees WHERE id = 'emp-uuid-1'
+  → user_id = "ai-111", emp_dataset = "employee-emp-uuid-1", org_id = "org-uuid-1"
+
+  SELECT cognee_dataset_name
+  FROM organizations WHERE id = 'org-uuid-1'
+  → org_dataset = "company-abc-123"
+
+  recall("refund policy", user_id="ai-111",
+         datasets=["employee-emp-uuid-1", "company-abc-123"])
+  → Cognee checks: can user "ai-111" read these datasets? Yes.
+  → Returns results from BOTH datasets, each tagged with dataset_name
+```
+
+**Key point**: PostgreSQL is the identity bridge. `employee_id` (PG UUID) → ORM lookup → Cognee IDs → SDK calls. Cognee's own access control (tenant read grants) ensures the user can only access authorized datasets.
+
+### Agent Memory Tools
+
+- **`search_memory(query)`** — searches `[employee-{empUuid}, company-{tenantId}]`. Results include `dataset_name` so the LLM can distinguish sources. Single tool, both datasets, no scope parameter for v1.
+- **`ingest_memory(content)`** — writes to `employee-{empUuid}` only. The employee's personal notebook. Org knowledge comes through documents/Slack paths, not through the agent tool.
+
+---
+
+## Cognee SDK Reference
+
+### Key Gotchas
 
 ```python
 # create_tenant() returns UUID directly, not an object
@@ -41,7 +205,6 @@ await cognee.remember(data, dataset_name="kb", user=user_obj)
 
 # recall() takes user=, returns graph_completion format
 results = await cognee.recall("query", user=user_obj, datasets=["kb"])
-# Results: [{"text": "...", "dataset_name": "kb", "source": "graph", "score": None}]
 
 # forget() — use memory_only=True to avoid SQLite UNIQUE constraint
 await cognee.forget(dataset="kb", memory_only=True)
@@ -49,12 +212,65 @@ await cognee.forget(dataset="kb", memory_only=True)
 # improve() takes dataset= (string), not dataset_name=
 await cognee.improve(dataset="kb")
 
-# Background remember() means data isn't instantly searchable
-# Use run_in_background=False for immediate recall
+# Background remember() — data isn't instantly searchable
 await cognee.remember(data, dataset_name="kb", user=user_obj)
 ```
 
-## Cognee Env Vars (set in Config or .env)
+### v1 API Surface
+
+Cognee v1 exposes these top-level functions:
+- `cognee.remember(data, dataset_name, user=, dataset_id=, run_in_background=True)`
+- `cognee.recall(query, user=, datasets=[...], dataset_ids=[...])` — returns `RecallResponse` list
+- `cognee.forget(dataset=, memory_only=True)`
+- `cognee.improve(dataset=)`
+- `cognee.run_migrations()`
+- `cognee.datasets.list_datasets(user=)`
+
+v1 does NOT expose tenant/user/permission management. For those we use `cognee.modules.*` internal imports (same pattern as the old repo):
+- `cognee.modules.users.tenants.methods` → `create_tenant`, `add_user_to_tenant`
+- `cognee.modules.users.methods` → `create_user`, `get_user`, `get_user_by_email`
+- `cognee.modules.data.methods` → `create_authorized_dataset`
+- `cognee.modules.users.permissions.methods` → `authorized_give_permission_on_datasets`
+
+### Env Var Bootstrap (import-order critical)
+
+Cognee reads config from `os.environ` at **import time**. If any `app.*` module does `import cognee` before env vars are set, Cognee initializes with wrong config.
+
+Solution: `app/core/cognee.py` — a tiny module that sets `os.environ` but does NOT `import cognee`. Imported and called in `main.py` BEFORE any `app.*` import.
+
+```python
+# app/core/cognee.py — NO import cognee here!
+import os
+from app.core.config import settings
+
+def apply_cognee_config():
+    os.environ.setdefault("LLM_PROVIDER", settings.cognee_llm_provider)
+    if settings.cognee_llm_endpoint:
+        os.environ["LLM_ENDPOINT"] = settings.cognee_llm_endpoint
+    if settings.cognee_llm_api_key:
+        os.environ["LLM_API_KEY"] = settings.cognee_llm_api_key
+    os.environ.setdefault("LLM_MODEL", settings.cognee_llm_model)
+    os.environ.setdefault("EMBEDDING_PROVIDER", settings.cognee_embedding_provider)
+    if settings.cognee_embedding_endpoint:
+        os.environ["EMBEDDING_ENDPOINT"] = settings.cognee_embedding_endpoint
+    os.environ.setdefault("EMBEDDING_MODEL", settings.cognee_embedding_model)
+    os.environ.setdefault("COGNEE_SKIP_CONNECTION_TEST",
+                          str(settings.cognee_skip_connection_test).lower())
+    os.environ.setdefault("COGNEE_DATA_DIR", settings.cognee_data_dir)
+```
+
+```python
+# main.py — import order matters!
+from app.core.cognee import apply_cognee_config
+apply_cognee_config()  # ← MUST run before any import cognee
+
+# Now safe: these may transitively import cognee
+import app.auth.models  # noqa: F401
+...
+from app.memory.service import init_cognee
+```
+
+### Env Vars Required
 
 ```env
 LLM_PROVIDER=openai
@@ -67,304 +283,47 @@ EMBEDDING_MODEL=openai/text-embedding-3-small
 COGNEE_SKIP_CONNECTION_TEST=true
 ```
 
-These are already in `app/core/config.py` from Phase 1.
-
-## Architecture
-
-### Admin User Pattern
-Single app-wide admin (`admin@openhuman.internal`, `is_superuser=True`) created once at startup. The admin owns all tenants. System users and AI employees are created with `parent_user_id=admin` so the admin inherits full permissions.
-
-```
-Admin (superuser)
-├── Tenant: Acme Corp
-│   ├── System user: system+{tenantId}@openhuman.internal
-│   │   └── Dataset: company-{tenantId}  (tenant-wide read)
-│   ├── AI Employee: ai-alice+{tenantId}@openhuman.internal
-│   │   └── Dataset: employee-{empPgUuid}  (tenant-wide read)
-│   └── AI Employee: ai-bob+{tenantId}@openhuman.internal
-│       └── Dataset: employee-{empPgUuid}  (tenant-wide read)
-```
-
-### Dataset Naming (deterministic, unique)
-| Dataset | Name pattern | Owned by | Created at |
-|---------|-------------|----------|------------|
-| Org knowledge | `company-{cogneeTenantId}` | System user | Org onboarding |
-| Employee brain | `employee-{employeePgUuid}` | Employee user | Employee onboarding |
-
-### What Gets Stored in ORM
-| Table | Cognee Columns |
-|-------|---------------|
-| organizations | `cognee_tenant_id`, `cognee_tenant_name`, `cognee_system_user_id`, `cognee_system_user_name`, `cognee_dataset_id`, `cognee_dataset_name` |
-| employees | `cognee_user_id`, `cognee_user_name`, `cognee_dataset_id`, `cognee_dataset_name` |
-
-Names are stored alongside IDs for debugging (`SELECT cognee_dataset_name FROM employees WHERE id = '...'` is immediately readable). They are NOT used in code paths — all `remember()`/`recall()` calls target by UUID.
-
 ---
 
-## Files to Create
+## Implementation Plan Summary
 
-### `app/memory/service.py` — Cognee wrapper (port + clean from old repo)
+See `/home/sno/.claude/plans/fizzy-hatching-shore.md` for the full plan. Quick summary of files to change:
 
-This is the core file. Port from `services/ai/app/cognee_service/` with cleanup.
-
-```python
-# ---- Admin ----
-async def init_cognee() -> None:
-    """Run Cognee migrations at startup. Call once in FastAPI lifespan."""
-    await cognee.run_migrations()
-
-async def get_or_create_admin() -> dict:
-    """Return {id, email} for the app-wide admin Cognee user."""
-    ...
-
-# ---- Tenants ----
-async def create_tenant(name: str, owner_id: str) -> dict:
-    """Create Cognee tenant. Returns {id, name}."""
-    tenant_id = await create_tenant(tenant_name=name, user_id=UUID(owner_id))
-    return {"id": str(tenant_id), "name": name}
-
-async def add_user_to_tenant(user_id: str, tenant_id: str, owner_id: str) -> None:
-    await add_user_to_tenant(user_id=UUID(user_id), tenant_id=UUID(tenant_id), owner_id=UUID(owner_id))
-
-# ---- Users ----
-async def create_system_user(tenant_id: str, admin_id: str) -> dict:
-    """Create org system user. Returns {id, email}."""
-    email = f"system+{tenant_id}@openhuman.internal"
-    user = await create_user(email=email, password=secrets.token_urlsafe(32), parent_user_id=UUID(admin_id))
-    return {"id": str(user.id), "email": user.email}
-
-async def create_employee_user(tenant_id: str, employee_name: str) -> dict:
-    """Create Cognee user for an AI employee. Returns {id, email}."""
-    safe_name = employee_name.lower().replace(" ", "-")
-    email = f"ai-{safe_name}+{tenant_id}@openhuman.internal"
-    user = await create_user(email=email, password=secrets.token_urlsafe(32))
-    return {"id": str(user.id), "email": user.email}
-
-# ---- Datasets ----
-async def create_dataset(name: str, owner_id: str) -> dict:
-    """Create a dataset. Returns {id, name}."""
-    user = await get_user(UUID(owner_id))
-    dataset = await create_authorized_dataset(name, user)
-    return {"id": str(dataset.id), "name": dataset.name}
-
-async def grant_tenant_read(dataset_id: str, tenant_id: str, owner_id: str) -> None:
-    """Grant tenant-wide read on a dataset."""
-    await authorized_give_permission_on_datasets(
-        UUID(tenant_id), [UUID(dataset_id)], "read", UUID(owner_id)
-    )
-
-# ---- Memory Operations ----
-async def remember(data: str, dataset_name: str, user_id: str,
-                   dataset_id: str | None = None, background: bool = True) -> dict:
-    """Store data in Cognee. Pass dataset_id for direct UUID targeting."""
-    user = await get_user(UUID(user_id))
-    kwargs = {"dataset_name": dataset_name, "user": user}
-    if dataset_id:
-        kwargs["dataset_id"] = UUID(dataset_id)
-    await cognee.remember(data, **kwargs, run_in_background=background)
-    return {"status": "ok"}
-
-async def recall(query: str, user_id: str, datasets: list[str] | None = None) -> list[dict]:
-    """Search Cognee memory. Returns list of result dicts."""
-    user = await get_user(UUID(user_id))
-    results = await cognee.recall(query, user=user, datasets=datasets)
-    return results  # list of {"text":..., "dataset_name":..., "source":..., "score":...}
-
-async def forget_dataset(dataset_name: str) -> dict:
-    """Delete a dataset from memory."""
-    await cognee.forget(dataset=dataset_name, memory_only=True)
-    return {"status": "ok"}
-
-# ---- Listing (direct SQLite queries — Cognee's built-in listing is scoped) ----
-async def list_datasets(user_id: str | None = None) -> list[dict]: ...
-async def list_tenants() -> list[dict]: ...
-```
-
-### `app/memory/router.py` — Memory API endpoints
-
-| Method | Path | Purpose |
-|--------|------|---------|
-| POST | `/api/memory/search` | Search employee + org memory |
-| POST | `/api/memory/ingest` | Ingest a fact |
-
-Router: `prefix="/api/memory"`, `tags=["memory"]`.
-
-**`POST /api/memory/search`**:
-```json
-// Request
-{"query": "what did we decide about the API?", "employee_id": "uuid"}
-// Response
-{"results": [{"text": "...", "dataset_name": "employee-{uuid}", "source": "graph", "score": null}], "query": "..."}
-```
-
-Implementation: look up `employee.cognee_user_id` + `employee.cognee_dataset_name` + `org.cognee_dataset_name`. Call `recall(query, cognee_user_id, datasets=[employee_dataset, org_dataset])`.
-
-**`POST /api/memory/ingest`**:
-```json
-// Request
-{"content": "Team decided REST over GraphQL", "employee_id": "uuid"}
-// Response
-{"status": "ok"}
-```
-
-Implementation: look up `employee.cognee_user_id` + `employee.cognee_dataset_name` + `employee.cognee_dataset_id`. Call `remember(content, dataset_name, user_id, dataset_id=dataset_id)`.
-
-### `app/memory/schemas.py`
-- `MemorySearchRequest(query: str, employee_id: str)`
-- `MemoryResult(text: str, dataset_name: str, source: str, score: float | None)`
-- `MemorySearchResponse(results: list[MemoryResult], query: str)`
-- `MemoryIngestRequest(content: str, employee_id: str)`
-- `MemoryIngestResponse(status: str)`
-
-### `app/documents/service.py` — File upload + Cognee ingest
-- Save uploaded file to disk (`storage_path` from config)
-- Create Document row in DB
-- For text files (txt, md): call `remember(file_content, org_dataset_name, system_user_id, dataset_id=org_dataset_id)`
-- PDF ingest deferred (needs PDF parser — follow-up)
-
-### `app/documents/router.py` — Updated with real implementation
-
-| Method | Path | Purpose |
-|--------|------|---------|
-| POST | `/api/documents/upload` | Upload file, store metadata, ingest to Cognee |
-| GET | `/api/documents` | List docs for org |
-| GET | `/api/documents/{doc_id}` | Get doc metadata |
-| DELETE | `/api/documents/{doc_id}` | Delete file + forget from Cognee |
-
-Router: `prefix="/api/documents"`, `tags=["documents"]`.
-
----
-
-## Integration Hooks (modify Phase 3 routes)
-
-### `POST /api/organizations` — after DB insert
-
-```python
-# After: org = await create_org(db, user_id, data)
-try:
-    admin = await get_or_create_admin()
-    tenant = await create_tenant(org.name, admin["id"])
-    sys_user = await create_system_user(tenant["id"], admin["id"])
-    await add_user_to_tenant(sys_user["id"], tenant["id"], admin["id"])
-    dataset = await create_dataset(f"company-{tenant['id']}", sys_user["id"])
-    await grant_tenant_read(dataset["id"], tenant["id"], sys_user["id"])
-    # Seed org config as a memory fact
-    await remember(
-        f"Organization: {org.name}", f"company-{tenant['id']}",
-        sys_user["id"], dataset_id=dataset["id"], background=True
-    )
-    # Update org with Cognee IDs
-    org.cognee_tenant_id = tenant["id"]
-    org.cognee_tenant_name = tenant["name"]
-    org.cognee_system_user_id = sys_user["id"]
-    org.cognee_system_user_name = sys_user["email"]
-    org.cognee_dataset_id = dataset["id"]
-    org.cognee_dataset_name = dataset["name"]
-    await db.commit()
-except Exception:
-    # Best-effort: org exists, Cognee can be provisioned later
-    logger.exception("Cognee org provisioning failed")
-```
-
-### `POST /api/organizations/{org_id}/employees` — after DB insert
-
-```python
-# After: emp = await create_employee(db, org_id, user_id, data)
-try:
-    org = await get_org_with_cognee(db, org_id)
-    if org and org.cognee_tenant_id:
-        admin = await get_or_create_admin()
-        cognee_user = await create_employee_user(org.cognee_tenant_id, emp.name)
-        await add_user_to_tenant(cognee_user["id"], org.cognee_tenant_id, admin["id"])
-        dataset = await create_dataset(f"employee-{emp.id}", cognee_user["id"])
-        await grant_tenant_read(dataset["id"], org.cognee_tenant_id, cognee_user["id"])
-        # Seed employee profile
-        profile = json.dumps({"name": emp.name, "role": emp.role, "personality": emp.personality})
-        await remember(profile, f"employee-{emp.id}", cognee_user["id"], dataset_id=dataset["id"], background=True)
-        # Update employee with Cognee IDs
-        emp.cognee_user_id = cognee_user["id"]
-        emp.cognee_user_name = cognee_user["email"]
-        emp.cognee_dataset_id = dataset["id"]
-        emp.cognee_dataset_name = dataset["name"]
-        await db.commit()
-except Exception:
-    logger.exception("Cognee employee provisioning failed")
-```
-
-### On employee update (PATCH)
-Re-seed profile if name/role/personality changed. Best-effort, fire-forget, logged on failure.
-
-### On employee delete
-Call `forget_dataset(f"employee-{emp.id}")` before deleting the DB row. Best-effort.
-
-### On org delete
-Call `forget_dataset(f"company-{org.cognee_tenant_id}")` before cascading delete. Best-effort.
-
----
-
-## `app/main.py` — Lifespan Update
-
-```python
-@asynccontextmanager
-async def lifespan(_app: FastAPI):
-    # Startup
-    await init_cognee()
-    yield
-    # Shutdown (nothing needed — Cognee is embedded)
-```
-
-Register memory and documents routers:
-```python
-from app.memory.router import router as memory_router
-from app.documents.router import router as documents_router
-app.include_router(memory_router)
-app.include_router(documents_router)
-```
-
----
-
-## Verification
-
-```bash
-# 1. Create org → Cognee tenant + system user + dataset created
-curl -X POST localhost:8000/api/organizations ...
-
-# Check DB: cognee_tenant_id, cognee_dataset_name populated
-psql -c "SELECT name, cognee_tenant_id, cognee_dataset_name FROM organizations;"
-
-# 2. Create employee → Cognee user + dataset created
-curl -X POST localhost:8000/api/organizations/$ORG_ID/employees ...
-
-# Check DB: cognee_user_id, cognee_dataset_name populated
-psql -c "SELECT name, cognee_user_id, cognee_dataset_name FROM employees;"
-
-# 3. Search memory
-curl -X POST localhost:8000/api/memory/search \
-  -d '{"query":"test","employee_id":"$EMP_ID"}'
-# → {"results": [...], "query": "test"}
-
-# 4. Ingest a fact
-curl -X POST localhost:8000/api/memory/ingest \
-  -d '{"content":"the sky is blue","employee_id":"$EMP_ID"}'
-
-# 5. Upload document
-curl -X POST localhost:8000/api/documents/upload \
-  -F "file=@test.txt" -F "organization_id=$ORG_ID"
-
-# 6. Delete employee → forget called
-curl -X DELETE localhost:8000/api/organizations/$ORG_ID/employees/$EMP_ID
-
-# 7. OpenAPI spec
-uv run python scripts/export_openapi.py
-cd ../../packages/api-client && bun run generate
-```
+| # | File | Change |
+|---|---|---|
+| 1 | `pyproject.toml` | Add `cognee`, move `aiosqlite` to main deps |
+| 2 | `app/core/config.py` | Add 8 Cognee env var fields |
+| 3 | `app/core/cognee.py` | **NEW** bootstrap (sets `os.environ` before `import cognee`) |
+| 4 | `app/memory/service.py` | Full rewrite — port all wrappers from old `cognee_service/` |
+| 5 | `app/memory/router.py` | Wire search/ingest to real `recall()`/`remember()` calls |
+| 6 | `app/organizations/service.py` | Cognee provisioning in `create_org()`, cleanup in `delete_org()` |
+| 7 | `app/employees/service.py` | Cognee provisioning in `create_employee()`, re-seed in `update_employee()`, cleanup in `delete_employee()` |
+| 8 | `app/documents/service.py` | Cognee ingest after `backend.save()`, no forget on delete |
+| 9 | `app/agent/tools/executor.py` | Real `search_memory`/`ingest_memory` implementations |
+| 10 | `app/main.py` | Bootstrap import + `init_cognee()` in lifespan |
+| 11 | `app/gateway/slack_bot.py` | Auto-ingest Slack messages into org dataset |
 
 ---
 
 ## Risks & Notes
 
-1. **Cognee is embedded** (SQLite + LanceDB + Kuzu). No cloud Cognee needed. Data lives in `cognee_data_dir`.
-2. **Background remember()** means data isn't instantly searchable. The profile seed is fire-and-forget — expected to appear within seconds.
-3. **best-effort provisioning**: Cognee failures never block org/employee creation. Cognee IDs are nullable. If Cognee is down at creation time, the org/employee exists without memory — can be fixed later.
-4. **Direct SQLite queries** for listing (datasets, tenants, users). Cognee's built-in `list_datasets()` is access-control-scoped and won't return everything. The direct approach from the old repo works — keep it.
-5. **No abstraction layer**. The `app/memory/service.py` is the thin wrapper. Agent tools call it directly. No interfaces, no providers, no dependency injection frameworks.
+1. **Embedded, no Docker**: Cognee runs in-process (SQLite + LanceDB + Kuzu). No separate service. Volume-mount `./cognee_data` in docker-compose for persistence.
+2. **Background remember()**: Data isn't instantly searchable. Profile seed and document/Slack ingest use `background=True` (fire-and-forget). Agent `ingest_memory` uses `background=False` for immediate availability.
+3. **Best-effort everywhere**: Cognee failures never block org/employee creation. IDs are nullable. If provisioning fails, the org exists without memory — can be fixed later.
+4. **No abstraction layer**: `app/memory/service.py` is the thin wrapper. Agent tools call it directly.
+5. **Import order critical**: `apply_cognee_config()` must set `os.environ` BEFORE any `import cognee`.
+6. **Cognee is a hard dependency**: `cognee>=1.2,<2.0` in pyproject.toml. Internal `cognee.modules.*` APIs (tenant/user/permission) are pinned to avoid breakage across major versions. If Cognee is not installed, the server won't start — not a soft dependency.
+7. **Service wrappers are NOT redundant**: v1 exposes memory ops but not tenant/user/permission management. We wrap both — adding UUID conversion, domain naming conventions, and best-effort error handling.
+8. **Slack deduplication handled by architecture**: one `WorkspaceSlackBot` per token, one employee per message via `_resolve_employee()`. No `event_ts`-based dedup — acceptable for v1.
+9. **Two-step document ingest**: file → storage backend (durable), then content → Cognee (best-effort). Decoupled for resilience. No file size guard for v1 — very large text files could OOM.
+10. **Single-worker recommended**: Cognee uses SQLite internally. Multiple uvicorn workers may cause `database is locked` errors. Use `--workers 1` or a single worker for the Cognee process.
+11. **Cross-employee memory not in v1**: `search_memory` searches the calling employee's dataset + org dataset, not other employees' datasets.
+12. **Org delete iterates employees**: `delete_org()` cleans up each employee's Cognee dataset before the cascade delete. Best-effort — if any forget fails, the remaining are still attempted.
+
+## Deferred
+
+- `search_memory` scope parameter (personal/org/all) — v1 searches both
+- Cross-employee memory search (`search_team_memory`) 
+- Slack message retention/forget policies
+- Per-channel Slack datasets for large orgs
+- Dashboard setup flows (API endpoints already exist; Cognee hooks into them)
