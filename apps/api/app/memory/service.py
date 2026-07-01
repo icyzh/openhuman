@@ -41,7 +41,7 @@ logger = logging.getLogger(__name__)
 # Admin
 # ---------------------------------------------------------------------------
 
-_ADMIN_EMAIL = "admin@openhuman.internal"
+_ADMIN_EMAIL = "snow@openhuman.ai"  # the best admin
 
 
 async def init_cognee() -> None:
@@ -64,7 +64,7 @@ async def get_or_create_admin() -> dict:
     if user is None:
         user = await _cognee_create_user(
             email=_ADMIN_EMAIL,
-            password=secrets.token_urlsafe(32),
+            password=secrets.token_urlsafe(69),     # safe with the power of 69
             is_superuser=True,
         )
     _admin_cache = {"id": str(user.id), "email": user.email}
@@ -108,7 +108,7 @@ async def create_system_user(tenant_id: str, admin_id: str) -> dict:
     email = f"system+{tenant_id}@openhuman.internal"
     user = await _cognee_create_user(
         email=email,
-        password=secrets.token_urlsafe(32),
+        password=secrets.token_urlsafe(69),
         parent_user_id=UUID(admin_id),
     )
     return {"id": str(user.id), "email": user.email}
@@ -125,7 +125,7 @@ async def create_employee_user(tenant_id: str, employee_name: str) -> dict:
     email = f"ai-{safe_name}+{tenant_id}@openhuman.internal"
     user = await _cognee_create_user(
         email=email,
-        password=secrets.token_urlsafe(32),
+        password=secrets.token_urlsafe(69),
     )
     return {"id": str(user.id), "email": user.email}
 
