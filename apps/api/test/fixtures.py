@@ -484,3 +484,42 @@ async def release_employee_slot(
         await release_slot(session, emp)
         await session.commit()
     return True
+
+
+# ---------------------------------------------------------------------------
+# Escalation policy helpers (Phase 5-6)
+# ---------------------------------------------------------------------------
+
+
+async def set_escalation_policy(
+    session_factory: async_sessionmaker,
+    employee_id: UUID,
+    policy: dict,
+) -> bool:
+    """Set the escalation_policy JSONB field on a seed employee.
+
+    *policy* should be a dict with keys like ``manager_slack_id``,
+    ``default_escalation_channel``, ``mode`` (``"fire_and_forget"`` or
+    ``"interactive"``).
+
+    Returns ``True`` if the employee was found and updated.
+    """
+    async with session_factory() as session:
+        emp = await session.get(Employee, employee_id)
+        if emp is None:
+            return False
+        emp.escalation_policy = policy
+        await session.commit()
+    return True
+
+
+async def get_escalation_policy(
+    session_factory: async_sessionmaker,
+    employee_id: UUID,
+) -> dict | None:
+    """Return the escalation policy for an employee, or ``None``."""
+    async with session_factory() as session:
+        emp = await session.get(Employee, employee_id)
+        if emp is None:
+            return None
+        return emp.escalation_policy

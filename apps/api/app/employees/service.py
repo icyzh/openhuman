@@ -88,6 +88,7 @@ def _to_response(emp: Employee) -> EmployeeResponse:
         specialization=emp.specialization,
         duties=emp.duties,
         memory_policy=emp.memory_policy,
+        escalation_policy=emp.escalation_policy,
         mcp_connections=emp.mcp_connections,
         status=emp.status,
         has_discord_token=emp.discord_token_enc is not None,

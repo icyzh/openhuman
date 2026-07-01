@@ -20,6 +20,7 @@ class CreateEmployeeRequest(BaseModel):
     specialization: str | None = None
     duties: list | None = None
     memory_policy: dict | None = None
+    escalation_policy: dict | None = None
 
 
 class UpdateEmployeeRequest(BaseModel):
@@ -34,6 +35,7 @@ class UpdateEmployeeRequest(BaseModel):
     specialization: str | None = None
     duties: list | None = None
     memory_policy: dict | None = None
+    escalation_policy: dict | None = None
     status: str | None = None
 
 
@@ -61,6 +63,7 @@ class EmployeeResponse(BaseModel):
     specialization: str | None = None
     duties: list | None = None
     memory_policy: dict | None = None
+    escalation_policy: dict | None = None
     mcp_connections: list | None = None
     status: str
     has_discord_token: bool

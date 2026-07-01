@@ -28,6 +28,14 @@ class Settings(BaseSettings):
     db_pool_size: int = 5
     db_max_overflow: int = 10
 
+    # Agent job worker
+    agent_worker_concurrency: int = 4
+    agent_job_poll_interval_seconds: float = 1.0
+
+    # Postgres checkpointer (Phase 4) — psycopg-style DSN; falls back to deriving
+    # from database_url if empty.
+    checkpoint_database_url: str = ""
+
     # Auth
     jwt_secret_key: str = DEFAULT_JWT_SECRET
     jwt_algorithm: str = "HS256"

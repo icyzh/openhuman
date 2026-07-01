@@ -5,6 +5,7 @@ import discord
 from langchain_core.messages import HumanMessage
 from sqlalchemy import select
 
+from app.agent.jobs.queue import cancel_active_jobs_for_thread, is_cancel_intent
 from app.agent.router import get_graph_for_employee
 from app.channel_assignments.models import ChannelAssignment
 from app.core.database import async_session_factory
@@ -89,9 +90,30 @@ class EmployeeDiscordBot(discord.Client):
             )
         content = content.strip()
 
+        # -- Phase 3: lightweight cancel keyword fast path -------------------
+        if is_cancel_intent(content):
+            channel_id = str(message.channel.id)
+            message_id = str(message.id)
+            thread_key = f"discord:{self.employee_id}:{channel_id}:{message_id}"
+            async with async_session_factory() as session:
+                cancelled = await cancel_active_jobs_for_thread(session, thread_key)
+            if cancelled:
+                names = ", ".join(j.job_type for j in cancelled)
+                await message.reply(f"🫡 Cancelled: {names}.")
+            else:
+                await message.reply(
+                    "Nothing to cancel — there are no active "
+                    "background tasks in this conversation."
+                )
+            return
+
         # Trigger typing indicator to show the bot is thinking
         async with message.channel.typing():
-            response_text = await self._run_agent(content)
+            response_text = await self._run_agent(
+                content,
+                channel_id=str(message.channel.id),
+                message_id=str(message.id),
+            )
 
         # Discord message character limit — chunk at 2000
         if not response_text:
@@ -104,12 +126,19 @@ class EmployeeDiscordBot(discord.Client):
     # Agent invocation
     # ------------------------------------------------------------------
 
-    async def _run_agent(self, content: str) -> str:
+    async def _run_agent(
+        self, content: str,
+        channel_id: str = "",
+        message_id: str = "",
+    ) -> str:
         """Run the LangGraph agent with a fresh DB session.
 
         Never leaks raw exception details to the caller — returns a safe
         fallback message on failure.
         """
+        root_id = message_id or "direct"
+        thread_key = f"discord:{self.employee_id}:{channel_id}:{root_id}"
+
         initial_state = {
             "messages": [HumanMessage(content=content)],
             "platform": "discord",
@@ -127,6 +156,9 @@ class EmployeeDiscordBot(discord.Client):
                         "db": session,
                         "employee_id": str(self.employee_id),
                         "all_tools": all_tools,
+                        "thread_id": thread_key,
+                        "platform": "discord",
+                        "channel_id": channel_id,
                     }
                 }
                 result = await graph.ainvoke(initial_state, config=config)

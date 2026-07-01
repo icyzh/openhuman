@@ -296,6 +296,11 @@ async def ingest_memory(content: str, config: RunnableConfig = None) -> str:
         return f"Error storing memory: {e}"
 
 
+from app.agent.tools.cancel_background_task import cancel_background_task  # noqa: E402
+from app.agent.tools.check_background_task import check_background_task  # noqa: E402
+from app.agent.tools.escalation import escalate_to_human  # noqa: E402
+from app.agent.tools.escalation import escalate_to_human_interactive  # noqa: E402
+
 # List of all built-in tools to export
 BUILT_IN_TOOLS = [
     search_web,
@@ -304,4 +309,8 @@ BUILT_IN_TOOLS = [
     fetch_url,
     search_memory,
     ingest_memory,
+    check_background_task,
+    cancel_background_task,
+    escalate_to_human,
+    escalate_to_human_interactive,
 ]

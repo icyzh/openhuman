@@ -11,14 +11,18 @@ path in ``manager.py`` is used instead.
 
 from __future__ import annotations
 
+import json
 import logging
 from uuid import UUID
 
 from langchain_core.messages import HumanMessage
+from langgraph.errors import GraphInterrupt
+from langgraph.types import Command
 from slack_bolt.adapter.socket_mode.async_handler import AsyncSocketModeHandler
 from slack_bolt.async_app import AsyncApp
 from sqlalchemy import select
 
+from app.agent.jobs.queue import cancel_active_jobs_for_thread, is_cancel_intent
 from app.agent.router import get_graph_for_employee
 from app.channel_assignments.models import ChannelAssignment
 from app.core.database import async_session_factory
@@ -59,6 +63,10 @@ class EmployeeSlackBot:
         # Register event handlers
         self.app.event("app_mention")(self.handle_mention)
         self.app.event("message")(self.handle_message)
+
+        # Phase 6 — interactive escalation Approve / Deny buttons
+        self.app.action("escalation_approve")(self._handle_escalation_approve)
+        self.app.action("escalation_deny")(self._handle_escalation_deny)
 
     # ------------------------------------------------------------------
     # Lifecycle
@@ -157,6 +165,30 @@ class EmployeeSlackBot:
             )
             return
 
+        # -- Phase 3: lightweight cancel keyword fast path -------------------
+        if is_cancel_intent(text):
+            root_ts = thread_ts or "direct"
+            thread_key = f"slack:{self.employee_id}:{channel}:{root_ts}"
+            async with async_session_factory() as session:
+                cancelled = await cancel_active_jobs_for_thread(session, thread_key)
+            if cancelled:
+                names = ", ".join(j.job_type for j in cancelled)
+                await say(
+                    text=f"🫡 Cancelled: {names}.",
+                    channel=channel,
+                    thread_ts=thread_ts,
+                )
+            else:
+                await say(
+                    text=(
+                        "Nothing to cancel — there are no active "
+                        "background tasks in this conversation."
+                    ),
+                    channel=channel,
+                    thread_ts=thread_ts,
+                )
+            return
+
         # ── Auto-ingest Slack message into org memory ────────────────────
         try:
             async with async_session_factory() as session:
@@ -195,7 +227,13 @@ class EmployeeSlackBot:
         # ── End auto-ingest ──────────────────────────────────────────────
 
         # Run the agent
-        response_text = await self._run_agent(text)
+        response_text = await self._run_agent(
+            text, channel_id=channel, thread_ts=thread_ts,
+        )
+        # Phase 6: None means the graph paused for interactive approval —
+        # the tool already posted a "waiting" message to the thread.
+        if response_text is None:
+            return
         if not response_text:
             response_text = "I processed your request but had no response."
 
@@ -241,11 +279,25 @@ class EmployeeSlackBot:
     # Agent invocation
     # ------------------------------------------------------------------
 
-    async def _run_agent(self, content: str) -> str:
+    async def _run_agent(
+        self, content: str,
+        channel_id: str = "",
+        thread_ts: str = "",
+    ) -> str | None:
         """Run the LangGraph agent as this employee.
+
+        Returns the agent's response text, or ``None`` when the graph paused
+        for interactive approval (Phase 6 — the escalation tool already posted
+        the "waiting" message to the user's thread, so the caller should
+        **not** post an additional reply).
 
         Never leaks raw exception details — returns a safe fallback on failure.
         """
+        # Build a stable thread_key for per-conversation job serialization
+        # and checkpointer routing (Phase 2-4).
+        root_ts = thread_ts or "direct"
+        thread_key = f"slack:{self.employee_id}:{channel_id}:{root_ts}"
+
         initial_state = {
             "messages": [HumanMessage(content=content)],
             "platform": "slack",
@@ -263,15 +315,148 @@ class EmployeeSlackBot:
                         "db": session,
                         "employee_id": str(self.employee_id),
                         "all_tools": all_tools,
+                        "thread_id": thread_key,
+                        "platform": "slack",
+                        "channel_id": channel_id,
+                        "thread_ts": thread_ts,
                     }
                 }
                 result = await graph.ainvoke(initial_state, config=config)
                 return result.get("response", "")
+        except GraphInterrupt:
+            # Phase 6 — graph paused waiting for human approval via
+            # interactive escalation button.  The tool already posted
+            # a "waiting for approval" message to the user's thread,
+            # so return None so the caller skips posting a duplicate.
+            logger.info(
+                "Graph paused for interactive approval (employee=%s, thread=%s)",
+                self.employee_id, thread_key,
+            )
+            return None
         except Exception:
             logger.exception(
                 "Agent graph failed for employee %s on Slack", self.employee_id,
             )
             return _SAFE_ERROR_MESSAGE
+
+    # ------------------------------------------------------------------
+    # Phase 6 — interactive escalation button handlers
+    # ------------------------------------------------------------------
+
+    async def _handle_escalation_approve(self, ack, body, client):
+        """Resume the paused graph with an **approved** decision."""
+        await self._handle_escalation_button(ack, body, client, approved=True)
+
+    async def _handle_escalation_deny(self, ack, body, client):
+        """Resume the paused graph with a **denied** decision."""
+        await self._handle_escalation_button(ack, body, client, approved=False)
+
+    async def _handle_escalation_button(self, ack, body, client, approved: bool) -> None:
+        """Shared logic for Approve / Deny button clicks."""
+        await ack()
+
+        action = body.get("actions", [{}])[0]
+        value_str = action.get("value", "{}")
+        try:
+            ctx = json.loads(value_str)
+        except json.JSONDecodeError:
+            logger.warning("Invalid escalation button value: %s", value_str)
+            return
+
+        thread_key: str = ctx.get("thread_key", "")
+        channel_id: str = ctx.get("channel_id", "")
+        thread_ts: str = ctx.get("thread_ts", "")
+        employee_id_str: str = ctx.get("employee_id", "")
+        platform: str = ctx.get("platform", "slack")
+
+        if not thread_key or not employee_id_str:
+            logger.warning("Escalation button missing thread_key or employee_id")
+            return
+
+        try:
+            employee_id = UUID(employee_id_str)
+        except (ValueError, TypeError):
+            logger.warning("Invalid employee_id in escalation button: %s", employee_id_str)
+            return
+
+        decision = {
+            "approved": approved,
+            "by": body.get("user", {}).get("id", "unknown"),
+            "note": "",
+        }
+
+        # -- Resume the paused graph -----------------------------------------
+        response_text = ""
+        try:
+            async with async_session_factory() as session:
+                graph, all_tools = await get_graph_for_employee(session, employee_id)
+                config = {
+                    "configurable": {
+                        "db": session,
+                        "employee_id": employee_id_str,
+                        "all_tools": all_tools,
+                        "thread_id": thread_key,
+                        "platform": platform,
+                        "channel_id": channel_id,
+                        "thread_ts": thread_ts,
+                    }
+                }
+                result = await graph.ainvoke(
+                    Command(resume=decision),
+                    config=config,
+                )
+                response_text = result.get("response", "")
+        except GraphInterrupt:
+            # The graph paused *again* — another interrupt() call downstream.
+            # That's fine; we already posted the user-facing message.
+            logger.info(
+                "Graph re-paused during escalation resume (thread=%s)", thread_key,
+            )
+        except Exception:
+            logger.exception(
+                "Failed to resume graph for escalation (thread=%s)", thread_key,
+            )
+            response_text = "Something went wrong processing the escalation decision."
+
+        # -- Update the manager's button message -----------------------------
+        decision_text = "✅ Approved" if approved else "❌ Denied"
+        decided_by = f"<@{decision['by']}>"
+        try:
+            await client.chat_update(
+                channel=body["channel"]["id"],
+                ts=body["message"]["ts"],
+                text=f"{decision_text} by {decided_by}: {ctx.get('reason', 'Escalation')}",
+                blocks=[
+                    {
+                        "type": "section",
+                        "text": {
+                            "type": "mrkdwn",
+                            "text": (
+                                f"{decision_text} by {decided_by}\n"
+                                f"*Reason:* {ctx.get('reason', 'Escalation request')}"
+                            ),
+                        },
+                    }
+                ],
+            )
+        except Exception:
+            logger.exception("Failed to update manager escalation message")
+
+        # -- Post the agent's response to the user's thread -------------------
+        if response_text and channel_id:
+            try:
+                await client.chat_postMessage(
+                    channel=channel_id,
+                    thread_ts=thread_ts,
+                    text=response_text,
+                )
+            except Exception:
+                logger.exception("Failed to post escalation response to user thread")
+
+        logger.info(
+            "Escalation resolved: approved=%s by=%s thread=%s",
+            approved, decision["by"], thread_key,
+        )
 
 
 class WorkspaceSlackBot:
@@ -300,6 +485,10 @@ class WorkspaceSlackBot:
         # Register event handlers
         self.app.event("app_mention")(self.handle_mention)
         self.app.event("message")(self.handle_message)
+
+        # Phase 6 — interactive escalation Approve / Deny buttons
+        self.app.action("escalation_approve")(self._handle_escalation_approve)
+        self.app.action("escalation_deny")(self._handle_escalation_deny)
 
     # ------------------------------------------------------------------
     # Lifecycle
@@ -437,7 +626,38 @@ class WorkspaceSlackBot:
                     )
                 # ── End auto-ingest ──────────────────────────────────────
 
-        response_text = await self._run_agent(employee_id, text)
+        # -- Phase 3: lightweight cancel keyword fast path -------------------
+        if is_cancel_intent(text):
+            root_ts = thread_ts or "direct"
+            thread_key = f"slack:{employee_id}:{channel}:{root_ts}"
+            async with async_session_factory() as session:
+                cancelled = await cancel_active_jobs_for_thread(session, thread_key)
+            if cancelled:
+                names = ", ".join(j.job_type for j in cancelled)
+                await say(
+                    text=f"🫡 Cancelled: {names}.",
+                    channel=channel,
+                    thread_ts=thread_ts,
+                    username=employee_name,
+                )
+            else:
+                await say(
+                    text=(
+                        "Nothing to cancel — there are no active "
+                        "background tasks in this conversation."
+                    ),
+                    channel=channel,
+                    thread_ts=thread_ts,
+                    username=employee_name,
+                )
+            return
+
+        response_text = await self._run_agent(
+            employee_id, text, channel_id=channel, thread_ts=thread_ts,
+        )
+        # Phase 6: None means the graph paused for interactive approval.
+        if response_text is None:
+            return
         if not response_text:
             response_text = "I processed your request but had no response."
 
@@ -502,8 +722,19 @@ class WorkspaceSlackBot:
     # Agent invocation
     # ------------------------------------------------------------------
 
-    async def _run_agent(self, employee_id: UUID, content: str) -> str:
-        """Run the LangGraph agent as *employee_id*."""
+    async def _run_agent(
+        self, employee_id: UUID, content: str,
+        channel_id: str = "",
+        thread_ts: str = "",
+    ) -> str | None:
+        """Run the LangGraph agent as *employee_id*.
+
+        Returns the agent's response text, or ``None`` when the graph paused
+        for interactive approval (Phase 6).
+        """
+        root_ts = thread_ts or "direct"
+        thread_key = f"slack:{employee_id}:{channel_id}:{root_ts}"
+
         initial_state = {
             "messages": [HumanMessage(content=content)],
             "platform": "slack",
@@ -521,12 +752,140 @@ class WorkspaceSlackBot:
                         "db": session,
                         "employee_id": str(employee_id),
                         "all_tools": all_tools,
+                        "thread_id": thread_key,
+                        "platform": "slack",
+                        "channel_id": channel_id,
+                        "thread_ts": thread_ts,
                     }
                 }
                 result = await graph.ainvoke(initial_state, config=config)
                 return result.get("response", "")
+        except GraphInterrupt:
+            # Phase 6 — graph paused waiting for human approval.
+            logger.info(
+                "Graph paused for interactive approval (employee=%s, thread=%s)",
+                employee_id, thread_key,
+            )
+            return None
         except Exception:
             logger.exception(
                 "Agent graph failed for employee %s on Slack", employee_id,
             )
             return _SAFE_ERROR_MESSAGE
+
+    # ------------------------------------------------------------------
+    # Phase 6 — interactive escalation button handlers (shared mode)
+    # ------------------------------------------------------------------
+
+    async def _handle_escalation_approve(self, ack, body, client):
+        """Resume the paused graph with an **approved** decision."""
+        await self._handle_escalation_button(ack, body, client, approved=True)
+
+    async def _handle_escalation_deny(self, ack, body, client):
+        """Resume the paused graph with a **denied** decision."""
+        await self._handle_escalation_button(ack, body, client, approved=False)
+
+    async def _handle_escalation_button(self, ack, body, client, approved: bool) -> None:
+        """Shared logic for Approve / Deny button clicks (shared mode)."""
+        await ack()
+
+        action = body.get("actions", [{}])[0]
+        value_str = action.get("value", "{}")
+        try:
+            ctx = json.loads(value_str)
+        except json.JSONDecodeError:
+            logger.warning("Invalid escalation button value: %s", value_str)
+            return
+
+        thread_key: str = ctx.get("thread_key", "")
+        channel_id: str = ctx.get("channel_id", "")
+        thread_ts: str = ctx.get("thread_ts", "")
+        employee_id_str: str = ctx.get("employee_id", "")
+        platform: str = ctx.get("platform", "slack")
+
+        if not thread_key or not employee_id_str:
+            logger.warning("Escalation button missing thread_key or employee_id")
+            return
+
+        try:
+            employee_id = UUID(employee_id_str)
+        except (ValueError, TypeError):
+            logger.warning("Invalid employee_id in escalation button: %s", employee_id_str)
+            return
+
+        decision = {
+            "approved": approved,
+            "by": body.get("user", {}).get("id", "unknown"),
+            "note": "",
+        }
+
+        # -- Resume the paused graph -----------------------------------------
+        response_text = ""
+        try:
+            async with async_session_factory() as session:
+                graph, all_tools = await get_graph_for_employee(session, employee_id)
+                config = {
+                    "configurable": {
+                        "db": session,
+                        "employee_id": employee_id_str,
+                        "all_tools": all_tools,
+                        "thread_id": thread_key,
+                        "platform": platform,
+                        "channel_id": channel_id,
+                        "thread_ts": thread_ts,
+                    }
+                }
+                result = await graph.ainvoke(
+                    Command(resume=decision),
+                    config=config,
+                )
+                response_text = result.get("response", "")
+        except GraphInterrupt:
+            logger.info(
+                "Graph re-paused during escalation resume (thread=%s)", thread_key,
+            )
+        except Exception:
+            logger.exception(
+                "Failed to resume graph for escalation (thread=%s)", thread_key,
+            )
+            response_text = "Something went wrong processing the escalation decision."
+
+        # -- Update the manager's button message -----------------------------
+        decision_text = "✅ Approved" if approved else "❌ Denied"
+        decided_by = f"<@{decision['by']}>"
+        try:
+            await client.chat_update(
+                channel=body["channel"]["id"],
+                ts=body["message"]["ts"],
+                text=f"{decision_text} by {decided_by}: {ctx.get('reason', 'Escalation')}",
+                blocks=[
+                    {
+                        "type": "section",
+                        "text": {
+                            "type": "mrkdwn",
+                            "text": (
+                                f"{decision_text} by {decided_by}\n"
+                                f"*Reason:* {ctx.get('reason', 'Escalation request')}"
+                            ),
+                        },
+                    }
+                ],
+            )
+        except Exception:
+            logger.exception("Failed to update manager escalation message")
+
+        # -- Post the agent's response to the user's thread -------------------
+        if response_text and channel_id:
+            try:
+                await client.chat_postMessage(
+                    channel=channel_id,
+                    thread_ts=thread_ts,
+                    text=response_text,
+                )
+            except Exception:
+                logger.exception("Failed to post escalation response to user thread")
+
+        logger.info(
+            "Escalation resolved (shared): approved=%s by=%s thread=%s",
+            approved, decision["by"], thread_key,
+        )

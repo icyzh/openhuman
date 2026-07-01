@@ -2,6 +2,7 @@ from langchain_core.messages import AIMessage
 from langgraph.graph import END, START, StateGraph
 from langgraph.graph.state import CompiledStateGraph
 
+from app.agent.checkpointer import get_checkpointer
 from app.agent.nodes import (
     CustomToolNode,
     build_prompt_node,
@@ -79,4 +80,5 @@ def build_graph(tools: list) -> CompiledStateGraph:
     workflow.add_edge("output_guardrail", "formatter")
     workflow.add_edge("formatter", END)
 
-    return workflow.compile()
+    return workflow.compile(checkpointer=get_checkpointer())
+

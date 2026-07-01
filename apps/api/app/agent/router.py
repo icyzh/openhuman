@@ -171,7 +171,9 @@ async def _resolve_mcp_tools(
                 )
                 continue
 
-        resolved.append(ResolvedConnection(slug=row.connector_slug, connector=spec, credentials=creds))
+        resolved.append(ResolvedConnection(
+            slug=row.connector_slug, connector=spec, credentials=creds,
+        ))
 
     if not resolved:
         return []
@@ -219,6 +221,10 @@ async def run_agent(
         "tool_round": 0,
     }
 
+    # Build a stable thread_key for per-conversation job serialization
+    # and checkpointer routing (Phase 2-4).
+    thread_key = f"{data.platform}:{employee_id}:{data.channel_id}"
+
     # Pass async DB session, employee context, and the FULL tool set so
     # llm_call_node can filter down to the employee-specific subset.
     config = {
@@ -226,6 +232,9 @@ async def run_agent(
             "db": db,
             "employee_id": str(employee_id),
             "all_tools": all_tools,
+            "thread_id": thread_key,
+            "platform": data.platform,
+            "channel_id": data.channel_id,
         }
     }
 

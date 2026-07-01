@@ -17,6 +17,7 @@ import logging
 from collections import defaultdict
 from uuid import UUID
 
+from app.agent.jobs.worker import AgentJobWorker, set_active_worker
 from app.core.config import settings
 from app.core.database import async_session_factory
 from app.core.security import decrypt_token
@@ -63,6 +64,9 @@ class BotGatewayManager:
         self.refresh_task: asyncio.Task[None] | None = None
         self.running: bool = False
 
+        # Agent job worker pool (Phase 1 — async background task execution)
+        self.agent_worker: AgentJobWorker = AgentJobWorker()
+
     # ------------------------------------------------------------------
     # Public lifecycle
     # ------------------------------------------------------------------
@@ -71,6 +75,8 @@ class BotGatewayManager:
         """Start the background refresh loop to poll active employee bots."""
         self.running = True
         self.refresh_task = asyncio.create_task(self._refresh_loop())
+        await self.agent_worker.start()
+        set_active_worker(self.agent_worker)
         logger.info("Bot Gateway Manager started.")
 
     async def stop(self) -> None:
@@ -96,6 +102,9 @@ class BotGatewayManager:
             shared_bots: dict[str, WorkspaceSlackBot] = self.slack_bots  # type: ignore[assignment]
             for token in list(shared_bots.keys()):
                 await self._stop_workspace_slack_bot(token)
+
+        await self.agent_worker.stop()
+        set_active_worker(None)
 
         logger.info("Bot Gateway Manager stopped.")
 

@@ -50,6 +50,8 @@ if _env_path.exists():
 import streamlit as st
 from langchain_core.messages import AIMessage as LCAIMessage
 from langchain_core.messages import HumanMessage, ToolMessage
+from langgraph.errors import GraphInterrupt
+from langgraph.types import Command
 
 from app.agent.build import build_graph
 from app.agent.tools import BUILT_IN_TOOLS
@@ -61,11 +63,13 @@ from test.fixtures import (
     assign_slot_to_employee,
     clear_slack_token,
     get_employee_slot_status,
+    get_escalation_policy,
     get_slack_token_status,
     get_slot_summary,
     print_banner,
     provision_test_slots,
     release_employee_slot,
+    set_escalation_policy,
     set_slack_token,
     setup_test_db,
 )
@@ -183,6 +187,9 @@ def _init_state():
         "use_api_db": False,
         "db_label": "",
         "message_counter": 0,
+        "thread_id": "",  # Phase 4: persistent conversation thread
+        "escalation_paused": False,  # Phase 6: graph paused waiting for resume
+        "pending_resume_ctx": None,  # dict with thread_id, employee_id for resume
     }
     for key, value in defaults.items():
         if key not in st.session_state:
@@ -192,8 +199,18 @@ def _init_state():
 # ---------------------------------------------------------------------------
 # Agent invocation
 # ---------------------------------------------------------------------------
-async def _invoke_agent(employee_id: UUID, message: str, platform: str, session_factory):
-    """Run the agent graph and return (result_state, elapsed_seconds, mcp_tool_count)."""
+async def _invoke_agent(
+    employee_id: UUID,
+    message: str,
+    platform: str,
+    session_factory,
+    thread_id: str = "",
+):
+    """Run the agent graph and return (result_or_none, elapsed_seconds, mcp_tool_count, paused).
+
+    When the graph calls ``interrupt()`` (Phase 6), returns ``(None, elapsed, count, True)``.
+    The caller should store the interrupt context for later resume.
+    """
     from sqlalchemy import select as sa_select
 
     from app.employees.models import Employee
@@ -226,14 +243,75 @@ async def _invoke_agent(employee_id: UUID, message: str, platform: str, session_
                 "db": session,
                 "employee_id": str(employee_id),
                 "all_tools": all_tools,
+                "thread_id": thread_id,
+                "platform": platform,
             }
         }
         t0 = time.monotonic()
-        result = await graph.ainvoke(initial_state, config=config)
-        elapsed = time.monotonic() - t0
+        try:
+            result = await graph.ainvoke(initial_state, config=config)
+            elapsed = time.monotonic() - t0
+            mcp_tool_count = sum(1 for t in all_tools if t.name.startswith("mcp__"))
+            return result, elapsed, mcp_tool_count, False
+        except GraphInterrupt:
+            elapsed = time.monotonic() - t0
+            mcp_tool_count = sum(1 for t in all_tools if t.name.startswith("mcp__"))
+            return None, elapsed, mcp_tool_count, True
 
-    mcp_tool_count = sum(1 for t in all_tools if t.name.startswith("mcp__"))
-    return result, elapsed, mcp_tool_count
+
+async def _resume_graph(
+    employee_id: UUID,
+    thread_id: str,
+    session_factory,
+    decision: dict,
+):
+    """Resume a paused graph with a human decision.
+
+    Returns the same tuple as _invoke_agent.
+    """
+    async with session_factory() as session:
+        graph, all_tools = await _resolve_graph(session, employee_id)
+
+        config = {
+            "configurable": {
+                "db": session,
+                "employee_id": str(employee_id),
+                "all_tools": all_tools,
+                "thread_id": thread_id,
+                "platform": "api",
+            }
+        }
+        t0 = time.monotonic()
+        try:
+            result = await graph.ainvoke(Command(resume=decision), config=config)
+            elapsed = time.monotonic() - t0
+            mcp_tool_count = sum(1 for t in all_tools if t.name.startswith("mcp__"))
+            return result, elapsed, mcp_tool_count, False
+        except GraphInterrupt:
+            elapsed = time.monotonic() - t0
+            mcp_tool_count = sum(1 for t in all_tools if t.name.startswith("mcp__"))
+            return None, elapsed, mcp_tool_count, True
+
+
+async def _resolve_graph(session, employee_id: UUID):
+    """Resolve the graph + tools for an employee in one session."""
+    from sqlalchemy import select as sa_select
+    from app.employees.models import Employee
+
+    emp = await session.scalar(
+        sa_select(Employee).where(Employee.id == employee_id)
+    )
+    template = get_template(emp.specialization if emp else "general")
+    mcp_tools: list = []
+    if emp is not None and template.allowed_mcp_servers and emp.org_id:
+        mcp_tools = await resolve_mcp_tools(
+            session, emp.org_id, employee_id, template.allowed_mcp_servers
+        )
+
+    all_tools = list(BUILT_IN_TOOLS) + mcp_tools
+    tool_names = sorted(t.name for t in all_tools)
+    graph, all_tools = _cached_graph(tool_names, all_tools)
+    return graph, all_tools
 
 
 # ---------------------------------------------------------------------------
@@ -506,6 +584,80 @@ def _render_sidebar():
                     else:
                         st.caption("No organization found.")
 
+    # --- Escalation Policy (Phase 5-6) ----------------------------------------
+    st.sidebar.header("🚨 Escalation Policy")
+
+    if employee_id is not None and session_factory is not None:
+        policy = _run_async(get_escalation_policy(session_factory, employee_id))
+
+        with st.sidebar.expander("Edit policy", expanded=policy is None):
+            if policy:
+                st.json(policy)
+            else:
+                st.caption("No escalation policy set — escalation tools will fail.")
+
+            # Quick-set presets
+            preset_col1, preset_col2 = st.columns(2)
+            if preset_col1.button("🔥 Fire & Forget", use_container_width=True, key="preset_ff"):
+                _run_async(set_escalation_policy(
+                    session_factory, employee_id,
+                    {"manager_slack_id": "U0123456789", "mode": "fire_and_forget"},
+                ))
+                st.success("Set to fire-and-forget mode!")
+                st.rerun()
+            if preset_col2.button("🎮 Interactive", use_container_width=True, key="preset_int"):
+                _run_async(set_escalation_policy(
+                    session_factory, employee_id,
+                    {
+                        "manager_slack_id": "U0123456789",
+                        "default_escalation_channel": "#escalations",
+                        "mode": "interactive",
+                    },
+                ))
+                st.success("Set to interactive mode (requires Slack)!")
+                st.rerun()
+
+            # Manual JSON editor
+            policy_json = st.text_area(
+                "Custom policy (JSON)",
+                value="""{\n  "manager_slack_id": "U0123456789",\n  "default_escalation_channel": "#escalations",\n  "mode": "interactive"\n}""",
+                height=120,
+                key="escalation_policy_editor",
+            )
+            if st.button("💾 Save policy", use_container_width=True, key="save_escalation_policy"):
+                import json as _json
+                try:
+                    parsed = _json.loads(policy_json)
+                    _run_async(set_escalation_policy(session_factory, employee_id, parsed))
+                    st.success("Escalation policy saved!")
+                    _clear_graph_cache()
+                    st.rerun()
+                except _json.JSONDecodeError as exc:
+                    st.error(f"Invalid JSON: {exc}")
+
+            if policy and st.button("🗑️ Clear policy", use_container_width=True, key="clear_escalation_policy"):
+                _run_async(set_escalation_policy(session_factory, employee_id, None))
+                st.success("Escalation policy cleared.")
+                _clear_graph_cache()
+                st.rerun()
+
+        # Seed all employees button
+        if st.button("🌱 Seed all test policies", use_container_width=True, key="seed_all_policies"):
+            async def _seed_all() -> None:
+                ids = st.session_state.get("employee_ids", {})
+                defaults = {
+                    "hr_specialist": {"manager_slack_id": "U0123456789", "default_escalation_channel": "#hr-escalations", "mode": "interactive"},
+                    "sales_rep": {"manager_slack_id": "U0123456789", "default_escalation_channel": "#sales-escalations", "mode": "fire_and_forget"},
+                    "support_agent": {"manager_slack_id": "U0123456789", "default_escalation_channel": "#support-escalations", "mode": "interactive"},
+                    "general": {"manager_slack_id": "U0123456789", "default_escalation_channel": "#general"},
+                }
+                for spec, eid in ids.items():
+                    await set_escalation_policy(sf, eid, defaults.get(spec, defaults["general"]))
+            _run_async(_seed_all())
+            st.success("Seeded escalation policies on all employees!")
+            _clear_graph_cache()
+            st.rerun()
+
     # --- MCP Connectors -------------------------------------------------------
     st.sidebar.header("🔌 MCP Connectors")
 
@@ -552,12 +704,18 @@ def _render_sidebar():
     if st.sidebar.button("🗑️  Clear chat", use_container_width=True):
         st.session_state.chat_history = []
         st.session_state.message_counter = 0
+        st.session_state.thread_id = ""
+        st.session_state.escalation_paused = False
+        st.session_state.pending_resume_ctx = None
         st.rerun()
 
     if st.sidebar.button("🔄 Reset database", use_container_width=True):
         _teardown_db()
         st.session_state.db_ready = False
         st.session_state.chat_history = []
+        st.session_state.thread_id = ""
+        st.session_state.escalation_paused = False
+        st.session_state.pending_resume_ctx = None
         _init_db()
         st.rerun()
 
@@ -583,11 +741,15 @@ def _render_sidebar():
             st.sidebar.caption("Start it: `cd apps/api && uv run uvicorn app.main:app --port 8000`")
 
     db_label = st.session_state.get("db_label", "?")
+    thread_id = st.session_state.get("thread_id", "")
+    paused_indicator = " ⏸️ PAUSED" if st.session_state.get("escalation_paused") else ""
     st.sidebar.caption(
-        f"Messages: {len(st.session_state.chat_history)} | "
+        f"Messages: {len(st.session_state.chat_history)}{paused_indicator} | "
         f"DB: {'✅' if st.session_state.db_ready else '❌'} "
         f"({db_label})"
     )
+    if thread_id:
+        st.sidebar.caption(f"🧵 Thread: `...{thread_id[-30:]}`" if len(thread_id) > 30 else f"🧵 Thread: `{thread_id}`")
     if use_api_db:
         st.sidebar.caption("🔄 Sharing API database — OAuth will work end-to-end")
 
@@ -762,11 +924,71 @@ def main():
     employee_id_str = str(employee_id)
     session_factory = st.session_state.db_session_factory
 
+    # Build a stable thread_id so conversation state persists (Phase 4).
+    if not st.session_state.thread_id:
+        st.session_state.thread_id = f"streamlit:{st.session_state.platform}:{employee_id_str}"
+    thread_id = st.session_state.thread_id
+
     # --- Render existing chat history -----------------------------------------
     for entry in st.session_state.chat_history:
         with st.chat_message(entry["role"]):
             st.markdown(entry["content"])
             _render_message_meta(entry.get("meta"))
+
+    # --- Resume UI (Phase 6) --------------------------------------------------
+    if st.session_state.escalation_paused:
+        ctx = st.session_state.pending_resume_ctx or {}
+        with st.container(border=True):
+            st.warning(f"⏸️  Graph is **paused** — waiting for escalation decision.")
+            st.caption(f"Thread: `{ctx.get('thread_id', '?')}`")
+            col1, col2 = st.columns(2)
+            if col1.button("✅ Approve", use_container_width=True, type="primary", key="resume_approve_btn"):
+                decision = {"approved": True, "by": "streamlit-user", "note": "Approved from Streamlit"}
+                with st.spinner("Resuming graph …"):
+                    result, elapsed, mcp_count, paused_again = _run_async(
+                        _resume_graph(employee_id, thread_id, session_factory, decision)
+                    )
+                if paused_again:
+                    st.session_state.escalation_paused = True
+                    st.session_state.pending_resume_ctx = {"thread_id": thread_id, "employee_id": employee_id_str}
+                    st.info("Graph paused again — another approval needed.")
+                elif result:
+                    response_text = result.get("response", "") or "<no response>"
+                    st.session_state.escalation_paused = False
+                    st.session_state.pending_resume_ctx = None
+                    st.session_state.chat_history.append({
+                        "role": "assistant",
+                        "content": response_text,
+                        "meta": _build_meta(result, elapsed, mcp_count),
+                        "timestamp": datetime.now(timezone.utc).isoformat(),
+                    })
+                    st.success("Graph resumed successfully!")
+                else:
+                    st.error("Resume failed — check logs.")
+                st.rerun()
+            if col2.button("❌ Deny", use_container_width=True, type="secondary", key="resume_deny_btn"):
+                decision = {"approved": False, "by": "streamlit-user", "note": "Denied from Streamlit"}
+                with st.spinner("Resuming graph …"):
+                    result, elapsed, mcp_count, paused_again = _run_async(
+                        _resume_graph(employee_id, thread_id, session_factory, decision)
+                    )
+                if paused_again:
+                    st.session_state.escalation_paused = True
+                    st.session_state.pending_resume_ctx = {"thread_id": thread_id, "employee_id": employee_id_str}
+                elif result:
+                    response_text = result.get("response", "") or "<no response>"
+                    st.session_state.escalation_paused = False
+                    st.session_state.pending_resume_ctx = None
+                    st.session_state.chat_history.append({
+                        "role": "assistant",
+                        "content": response_text,
+                        "meta": _build_meta(result, elapsed, mcp_count),
+                        "timestamp": datetime.now(timezone.utc).isoformat(),
+                    })
+                    st.success("Graph resumed (denied)!")
+                else:
+                    st.error("Resume failed — check logs.")
+                st.rerun()
 
     # --- Chat input -----------------------------------------------------------
     message_key = f"chat_input_{st.session_state.message_counter}"
@@ -791,12 +1013,13 @@ def main():
             placeholder.markdown("⏳ *Running agent graph …*")
 
             try:
-                result, elapsed, mcp_tool_count = _run_async(
+                result, elapsed, mcp_tool_count, paused = _run_async(
                     _invoke_agent(
                         UUID(employee_id_str),
                         user_input,
                         st.session_state.platform,
                         session_factory,
+                        thread_id,
                     )
                 )
             except Exception as exc:
@@ -809,48 +1032,64 @@ def main():
                 })
                 st.rerun()
 
-            # Parse results
-            response_text = result.get("response", "") or "<no response>"
-            error = result.get("error")
-            tool_rounds = result.get("tool_round", 0)
-            input_blocked = result.get("input_blocked", False)
-            block_reason = result.get("block_reason")
-            output_guardrail_passed = result.get("output_guardrail_passed", True)
-            citations = result.get("citations", [])
-            messages = result.get("messages", [])
-            tool_calls = _extract_tool_calls(messages)
-            tool_results = _extract_tool_results(messages)
-            system_prompt = result.get("system_prompt", "")
+            # Handle pause (Phase 6)
+            if paused:
+                st.session_state.escalation_paused = True
+                st.session_state.pending_resume_ctx = {
+                    "thread_id": thread_id,
+                    "employee_id": employee_id_str,
+                }
+                placeholder.warning(
+                    "⏸️  Agent graph **paused** for human approval.\n\n"
+                    "The escalation tool has posted a request. Use the **Approve** "
+                    "or **Deny** buttons above to resume the conversation."
+                )
+                st.session_state.chat_history.append({
+                    "role": "assistant",
+                    "content": "⏸️ *Waiting for escalation approval…*",
+                    "meta": {"elapsed": elapsed, "tool_rounds": 0, "paused": True},
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                })
+                st.rerun()
 
-            # Build meta for the chat entry
-            meta = {
-                "elapsed": elapsed,
-                "tool_rounds": tool_rounds,
-                "tool_calls": tool_calls,
-                "tool_results": tool_results,
-                "input_blocked": input_blocked,
-                "block_reason": block_reason,
-                "output_guardrail_passed": output_guardrail_passed,
-                "citations": citations,
-                "error": error,
-                "system_prompt": system_prompt,
-                "messages": messages,
-                "mcp_tool_count": mcp_tool_count,
-            }
+            # Parse results
+            meta = _build_meta(result, elapsed, mcp_tool_count)
 
             # Display the final response
-            placeholder.markdown(response_text)
+            placeholder.markdown(meta["response_text"])
             _render_message_meta(meta)
 
             # Append to history
             st.session_state.chat_history.append({
                 "role": "assistant",
-                "content": response_text,
+                "content": meta["response_text"],
                 "meta": meta,
                 "timestamp": datetime.now(timezone.utc).isoformat(),
             })
 
             st.rerun()
+
+
+def _build_meta(result: dict, elapsed: float, mcp_tool_count: int) -> dict:
+    """Build a metadata dict from an agent result for chat history."""
+    response_text = result.get("response", "") or "<no response>"
+    messages = result.get("messages", [])
+    return {
+        "elapsed": elapsed,
+        "tool_rounds": result.get("tool_round", 0),
+        "tool_calls": _extract_tool_calls(messages),
+        "tool_results": _extract_tool_results(messages),
+        "input_blocked": result.get("input_blocked", False),
+        "block_reason": result.get("block_reason"),
+        "output_guardrail_passed": result.get("output_guardrail_passed", True),
+        "citations": result.get("citations", []),
+        "error": result.get("error"),
+        "system_prompt": result.get("system_prompt", ""),
+        "messages": messages,
+        "mcp_tool_count": mcp_tool_count,
+        "response_text": response_text,
+        "paused": False,
+    }
 
 
 # ---------------------------------------------------------------------------

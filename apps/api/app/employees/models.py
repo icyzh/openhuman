@@ -71,6 +71,7 @@ class Employee(Base):
 
     mcp_connections: Mapped[list | None] = mapped_column(JSONB, nullable=True)
     memory_policy: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    escalation_policy: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
 
     # Cognee IDs — populated in Phase 4 fork
     cognee_user_id: Mapped[str | None] = mapped_column(String(255), nullable=True)

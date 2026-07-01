@@ -42,7 +42,11 @@ HR_TEMPLATE = EmployeeTemplate(
         "3. Be supportive, empathetic, and professional.\n"
         "Use tools when you need information. Don't use tools for simple greetings or opinions."
     ),
-    allowed_tools=["search_memory", "ingest_memory", "fetch_url"],
+    allowed_tools=[
+        "search_memory", "ingest_memory", "fetch_url",
+        "check_background_task", "cancel_background_task",
+        "escalate_to_human", "escalate_to_human_interactive",
+    ],
     suggested_mcp_servers=["bamboohr", "rippling"],
     guardrail_config={"block_pii": True, "require_citations": True},
     suggested_duties=[
@@ -69,7 +73,11 @@ SALES_TEMPLATE = EmployeeTemplate(
         "3. Do not negotiate pricing or offer custom discounts without human approval.\n"
         "Use tools when you need information. Don't use tools for simple greetings or opinions."
     ),
-    allowed_tools=["search_memory", "ingest_memory", "search_web"],
+    allowed_tools=[
+        "search_memory", "ingest_memory", "search_web",
+        "check_background_task", "cancel_background_task",
+        "escalate_to_human", "escalate_to_human_interactive",
+    ],
     allowed_mcp_servers=["web_search"],
     suggested_mcp_servers=["hubspot", "salesforce", "github"],
     guardrail_config={"block_pii": False, "require_citations": False},
@@ -95,7 +103,11 @@ SUPPORT_TEMPLATE = EmployeeTemplate(
         "3. Escalate complex technical issues to a human — never guess.\n"
         "Use tools when you need information. Don't use tools for simple greetings or opinions."
     ),
-    allowed_tools=["search_memory", "ingest_memory", "search_web", "fetch_url"],
+    allowed_tools=[
+        "search_memory", "ingest_memory", "search_web", "fetch_url",
+        "check_background_task", "cancel_background_task",
+        "escalate_to_human", "escalate_to_human_interactive",
+    ],
     allowed_mcp_servers=["web_search"],
     suggested_mcp_servers=["github", "zendesk", "intercom"],
     guardrail_config={"block_pii": True, "require_citations": True},
@@ -125,6 +137,7 @@ GENERAL_TEMPLATE = EmployeeTemplate(
     allowed_tools=[
         "search_memory", "ingest_memory", "search_web",
         "calculate", "fetch_url", "get_datetime",
+        "check_background_task", "cancel_background_task",
     ],
     allowed_mcp_servers=["web_search"],
     suggested_mcp_servers=["github"],

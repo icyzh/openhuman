@@ -20,6 +20,7 @@ import app.employees.models  # noqa: F401
 import app.organizations.models  # noqa: F401
 import app.agent.tools.mcp.models  # noqa: F401
 import app.gateway.models  # noqa: F401
+from app.agent.checkpointer import close_checkpointer, init_checkpointer
 from app.agent.router import router as agent_router
 from app.auth.router import router as auth_router
 from app.channel_assignments.router import router as ca_router
@@ -48,7 +49,6 @@ def custom_generate_unique_id(route: APIRoute) -> str:
 @asynccontextmanager
 async def lifespan(_app: FastAPI) -> AsyncGenerator[None, None]:
     """Application lifespan — initialize and teardown resources here."""
-
     # ── Cognee startup ──────────────────────────────────────────────────
     try:
         await init_cognee()
@@ -57,7 +57,8 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None, None]:
         logger.exception(
             "Cognee initialization failed — continuing without memory"
         )
-    # ── Gateway ──────────────────────────────────────────────────────────
+    # Phase 4: Postgres checkpointer for agent thread memory / pause-resume.
+    await init_checkpointer()
 
     gateway_manager = BotGatewayManager()
     if settings.gateway_enabled:
@@ -65,8 +66,10 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None, None]:
     try:
         yield
     finally:
+        # -- Shutdown ----------------------------------------------------------
         if settings.gateway_enabled:
             await gateway_manager.stop()
+        await close_checkpointer()
 
 
 app = FastAPI(

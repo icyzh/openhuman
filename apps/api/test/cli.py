@@ -49,6 +49,7 @@ if _env_path.exists():
 
 
 from langchain_core.messages import HumanMessage  # noqa: E402
+from langgraph.errors import GraphInterrupt  # noqa: E402
 
 from app.agent.build import build_graph  # noqa: E402
 from app.agent.tools import BUILT_IN_TOOLS  # noqa: E402
@@ -59,11 +60,13 @@ from test.fixtures import (  # noqa: E402
     assign_slot_to_employee,
     clear_slack_token,
     get_employee_slot_status,
+    get_escalation_policy,
     get_slack_token_status,
     get_slot_summary,
     print_banner,
     provision_test_slots,
     release_employee_slot,
+    set_escalation_policy,
     set_slack_token,
     setup_test_db,
 )
@@ -138,8 +141,13 @@ async def run_agent(
         print(f"\n⚠️  Employee {employee_id} not found in seed data. Using 'general' fallback.")
         employee_id = employee_ids.get("general", list(employee_ids.values())[0])
 
+    # Build a stable thread_id so the checkpointer (Phase 4) persists
+    # conversation state across invocations.
+    thread_id = f"cli:{platform}:{employee_id}"
+
     print_banner()
     print(f"🎯 Using employee : {employee_id}")
+    print(f"🧵 Thread ID      : {thread_id}")
     print(f"📨 Message        : {message!r}")
     print(f"📡 Platform       : {platform}")
     print(f"🔑 OpenAI key : {_redact_key(os.getenv('OPENAI_API_KEY', ''))}")
@@ -164,6 +172,8 @@ async def run_agent(
                 "db": session,
                 "employee_id": str(employee_id),
                 "all_tools": all_tools,
+                "thread_id": thread_id,
+                "platform": platform,
             }
         }
 
@@ -172,6 +182,17 @@ async def run_agent(
 
         try:
             result = await graph.ainvoke(initial_state, config=config)
+        except GraphInterrupt:
+            # Phase 6 — graph paused for interactive escalation.
+            # The tool already printed / logged the interrupt details.
+            elapsed = time.monotonic() - t0
+            print(f"\n⏸️  Graph PAUSED for human approval (Phase 6).")
+            print(f"   Use 'python -m test.cli --resume {thread_id} --approve'")
+            print(f"   or  'python -m test.cli --resume {thread_id} --deny'")
+            print(f"   to resume the conversation.")
+            print(f"   Elapsed: {elapsed:.1f}s (graph paused — not failed)")
+            await _engine.dispose()
+            return
         except Exception as exc:
             print(f"\n❌ Agent execution failed: {exc!r}")
             raise
@@ -274,7 +295,7 @@ def _pick_employee() -> UUID | None:
 
 
 async def _interactive() -> None:
-    """Interactive chat loop with employee selection."""
+    """Interactive chat loop with employee selection and conversation memory."""
     print("🤖 OpenHuman Agent Test CLI\n")
 
     # Seed the DB first (also sets fixtures.SEED_EMPLOYEE_IDS as a side effect)
@@ -284,8 +305,13 @@ async def _interactive() -> None:
     if employee_id is None:
         return
 
+    # Build a stable thread_id so conversation state persists across messages.
+    thread_id = f"cli:api:{employee_id}"
+
     print(f"\n🎯 Employee: {employee_id}")
-    print('Type your message (or "quit" to exit, "switch" to change employee).\n')
+    print(f"🧵 Thread  : {thread_id}")
+    print('Type your message (or "quit" to exit, "switch" to change employee,')
+    print(' "clear" to reset conversation memory).\n')
 
     try:
         while True:
@@ -299,7 +325,12 @@ async def _interactive() -> None:
                 employee_id = _pick_employee()
                 if employee_id is None:
                     break
-                print(f"🎯 Switched to: {employee_id}")
+                thread_id = f"cli:api:{employee_id}"
+                print(f"🎯 Switched to: {employee_id}  (new thread: {thread_id})")
+                continue
+            if message.lower() == "clear":
+                thread_id = f"cli:api:{employee_id}"
+                print(f"🧹 Conversation memory cleared. New thread: {thread_id}")
                 continue
 
             initial_state = {
@@ -317,12 +348,20 @@ async def _interactive() -> None:
                         "db": session,
                         "employee_id": str(employee_id),
                         "all_tools": all_tools,
+                        "thread_id": thread_id,
+                        "platform": "api",
                     }
                 }
 
                 t0 = time.monotonic()
                 try:
                     result = await graph.ainvoke(initial_state, config=config)
+                except GraphInterrupt:
+                    elapsed = time.monotonic() - t0
+                    print(f"⏸️  Graph PAUSED ({elapsed:.1f}s) — waiting for human approval.")
+                    print(f"   Resume with: python -m test.cli --resume")
+                    print()
+                    continue
                 except Exception as exc:
                     print(f"❌ Error: {exc!r}\n")
                     continue
@@ -445,6 +484,46 @@ def main() -> None:
         "--release-slot",
         action="store_true",
         help="Release the Slack app slot from the employee (use with --employee-id).",
+    )
+
+    # ---- Escalation policy (Phase 5-6) ---------------------------------------
+    parser.add_argument(
+        "--set-escalation-policy",
+        type=str,
+        default=None,
+        metavar="JSON",
+        help="Set the escalation_policy JSON for an employee. "
+             "Example: '{\"manager_slack_id\":\"U123\",\"mode\":\"interactive\"}' "
+             "(use with --employee-id).",
+    )
+    parser.add_argument(
+        "--show-escalation-policy",
+        action="store_true",
+        help="Print the escalation policy for the given employee (use with --employee-id).",
+    )
+    parser.add_argument(
+        "--seed-escalation-policies",
+        action="store_true",
+        help="Seed sensible test escalation policies on all 4 employees for testing.",
+    )
+
+    # ---- Graph resume (Phase 6 interactive escalation) -----------------------
+    parser.add_argument(
+        "--resume",
+        type=str,
+        default=None,
+        metavar="THREAD_ID",
+        help="Resume a paused graph for the given thread_id. Requires --approve or --deny.",
+    )
+    parser.add_argument(
+        "--approve",
+        action="store_true",
+        help="Approve the pending escalation (use with --resume).",
+    )
+    parser.add_argument(
+        "--deny",
+        action="store_true",
+        help="Deny the pending escalation (use with --resume).",
     )
 
     # ---- MCP management flags ------------------------------------------------
@@ -916,6 +995,152 @@ def main() -> None:
             await engine.dispose()
 
         asyncio.run(_slot_op())
+        return
+
+    # ---- Escalation policy: show ----------------------------------------------
+    if args.show_escalation_policy:
+        if not args.employee_id:
+            print("❌ --employee-id is required for escalation policy operations.")
+            sys.exit(1)
+
+        async def _show_policy() -> None:
+            engine, sf, ids = await setup_test_db(args.db_path)
+            policy = await get_escalation_policy(sf, UUID(args.employee_id))
+            if policy:
+                import json as _json
+                print(f"\n📋 Escalation policy for {args.employee_id}:\n")
+                print(_json.dumps(policy, indent=2))
+                print()
+            else:
+                print(f"\n⚠️  No escalation policy set for {args.employee_id}.\n")
+            await engine.dispose()
+
+        asyncio.run(_show_policy())
+        return
+
+    # ---- Escalation policy: set -----------------------------------------------
+    if args.set_escalation_policy is not None:
+        if not args.employee_id:
+            print("❌ --employee-id is required for --set-escalation-policy.")
+            sys.exit(1)
+
+        async def _set_policy() -> None:
+            import json as _json
+            try:
+                policy = _json.loads(args.set_escalation_policy)
+            except _json.JSONDecodeError as exc:
+                print(f"❌ Invalid JSON: {exc}")
+                return
+            engine, sf, ids = await setup_test_db(args.db_path)
+            ok = await set_escalation_policy(sf, UUID(args.employee_id), policy)
+            if ok:
+                print(f"✅ Escalation policy set for {args.employee_id}")
+            else:
+                print(f"❌ Employee {args.employee_id} not found.")
+            await engine.dispose()
+
+        asyncio.run(_set_policy())
+        return
+
+    # ---- Escalation policy: seed defaults ------------------------------------
+    if args.seed_escalation_policies:
+        async def _seed_policies() -> None:
+            engine, sf, ids = await setup_test_db(args.db_path)
+            # Seed sensible defaults for all employees so escalation tools work.
+            defaults = {
+                "hr_specialist": {
+                    "manager_slack_id": "U0123456789",
+                    "default_escalation_channel": "#hr-escalations",
+                    "mode": "interactive",
+                },
+                "sales_rep": {
+                    "manager_slack_id": "U0123456789",
+                    "default_escalation_channel": "#sales-escalations",
+                    "mode": "fire_and_forget",
+                },
+                "support_agent": {
+                    "manager_slack_id": "U0123456789",
+                    "default_escalation_channel": "#support-escalations",
+                    "mode": "interactive",
+                },
+                "general": {
+                    "manager_slack_id": "U0123456789",
+                    "default_escalation_channel": "#general",
+                },
+            }
+            for spec, eid in ids.items():
+                policy = defaults.get(spec, defaults["general"])
+                await set_escalation_policy(sf, eid, policy)
+                print(f"  ✅ {spec} → mode={policy.get('mode', 'fire_and_forget')} "
+                      f"target={policy.get('default_escalation_channel', policy.get('manager_slack_id'))}")
+            print(f"\n✅ Seeded escalation policies on {len(ids)} employees.\n")
+            await engine.dispose()
+
+        asyncio.run(_seed_policies())
+        return
+
+    # ---- Graph resume (Phase 6) ----------------------------------------------
+    if args.resume:
+        if not (args.approve or args.deny):
+            print("❌ --resume requires --approve or --deny.")
+            sys.exit(1)
+
+        async def _resume_graph() -> None:
+            from langgraph.types import Command
+
+            engine, sf, ids = await setup_test_db(args.db_path)
+            thread_id = args.resume
+
+            # Parse employee_id from thread_id (format: cli:platform:employee_id)
+            parts = thread_id.split(":")
+            if len(parts) >= 3:
+                try:
+                    employee_id = UUID(parts[2])
+                except (ValueError, TypeError):
+                    employee_id = ids.get("general", list(ids.values())[0])
+            else:
+                employee_id = ids.get("general", list(ids.values())[0])
+
+            decision = {
+                "approved": bool(args.approve),
+                "by": os.environ.get("USER", "cli-user"),
+                "note": "Resumed from CLI",
+            }
+
+            print(f"\n▶️  Resuming graph for thread {thread_id}")
+            print(f"   Decision: {'✅ Approved' if args.approve else '❌ Denied'}\n")
+
+            async with sf() as session:
+                graph, all_tools = await _get_or_build_graph(session, employee_id)
+                config = {
+                    "configurable": {
+                        "db": session,
+                        "employee_id": str(employee_id),
+                        "all_tools": all_tools,
+                        "thread_id": thread_id,
+                        "platform": "api",
+                    }
+                }
+                t0 = time.monotonic()
+                try:
+                    result = await graph.ainvoke(Command(resume=decision), config=config)
+                except GraphInterrupt:
+                    print(f"\n⏸️  Graph paused AGAIN (another interrupt).")
+                    return
+                except Exception as exc:
+                    print(f"\n❌ Resume failed: {exc!r}")
+                    return
+                elapsed = time.monotonic() - t0
+
+            response = result.get("response", "<no response>")
+            tool_rounds = result.get("tool_round", 0)
+            print(f"🤖 Bot → ({tool_rounds} tool rounds, {elapsed:.1f}s)")
+            print(f"{response}")
+            print()
+
+            await engine.dispose()
+
+        asyncio.run(_resume_graph())
         return
 
     if args.message:

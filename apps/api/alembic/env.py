@@ -23,6 +23,7 @@ import app.employees.models  # noqa: F401, E402
 import app.organizations.models  # noqa: F401, E402
 import app.agent.tools.mcp.models  # noqa: F401, E402
 import app.gateway.models  # noqa: F401, E402
+import app.agent.jobs.models  # noqa: F401, E402
 
 # this is the Alembic Config object
 config = context.config
