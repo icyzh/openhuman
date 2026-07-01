@@ -49,8 +49,8 @@ After the file is safely in the bucket and the DB row exists, we attempt Cognee 
 
 - **Best-effort**: failure is logged, never blocks the upload response
 - **Background**: `run_in_background=True` — the Cognee pipeline (chunk → embed → graph) runs async
-- **Text-only for v1**: txt, md, csv, json, xml files. PDF/Office deferred.
-- **Into org dataset**: ingested as the system user so all employees can search
+- **All file formats supported**: Cognee natively parses PDFs, docx, xlsx, pptx, txt, md, csv, json, html, and more. We pass the file path directly to `cognee.remember()` rather than decoding text ourselves.
+- **Routed by context**: If `employee_id` is provided, the file is ingested into the **employee's** personal dataset using their Cognee user. If no `employee_id`, it goes into the **org** dataset using the system user. (Updated 2026-07-02 — was previously always org dataset.)
 
 If Cognee is down or the ingest fails, the document still exists in the bucket and the DB row shows `status="uploaded"`. It can be re-ingested later.
 
@@ -88,13 +88,16 @@ Admin (superuser: admin@openhuman.internal)
 | Content source | Dataset | Cognee user | Trigger |
 |---|---|---|---|
 | Org config | `company-{tenantId}` | System user | Org creation |
+| Org website (ScrapeGraphAI) | `company-{tenantId}` | System user | Org creation/update (if `website_url` set) |
 | Employee profile | `employee-{empUuid}` | Employee user | Employee create/update |
-| Uploaded documents | `company-{tenantId}` | System user | File upload (after storage backend save) |
+| Uploaded documents (org-level) | `company-{tenantId}` | System user | File upload without `employee_id` |
+| Uploaded documents (employee-level) | `employee-{empUuid}` | Employee user | File upload with `employee_id` |
 | Slack messages | `company-{tenantId}` | System user | Gateway (every incoming msg, auto) |
+| Slack file attachments | `company-{tenantId}` | System user | Gateway (best-effort, when Cognee-parseable) |
 | Agent-decided facts | `employee-{empUuid}` | Employee user | Agent calls `ingest_memory` tool |
 | API ingest | `employee-{empUuid}` | Employee user | `POST /api/memory/ingest` |
 
-Two-step ingest for documents: 1) file → `StorageBackend` (durable bucket, prevents data loss), 2) content → Cognee `remember()` (best-effort memory, non-blocking).
+Two-step ingest for documents: 1) file → `StorageBackend` (durable bucket, prevents data loss), 2) content → Cognee `remember()` (best-effort memory, non-blocking). When `employee_id` is provided on upload, the file is ingested into the employee's personal dataset instead of the org dataset (changed 2026-07-02).
 
 ### ORM Columns (already in migration)
 
@@ -320,6 +323,56 @@ See `/home/sno/.claude/plans/fizzy-hatching-shore.md` for the full plan. Quick s
 11. **Cross-employee memory not in v1**: `search_memory` searches the calling employee's dataset + org dataset, not other employees' datasets.
 12. **Org delete iterates employees**: `delete_org()` cleans up each employee's Cognee dataset before the cascade delete. Best-effort — if any forget fails, the remaining are still attempted.
 
+---
+
+## ScrapeGraphAI Integration (added 2026-07-02)
+
+During organization creation, if a `website_url` is provided, we use Cognee's ScrapeGraphAI integration to crawl the website and ingest content into the company dataset.
+
+### How it works
+
+```python
+from cognee_community_tasks_scrapegraph import scrape_and_add
+
+await scrape_and_add(
+    urls=[data.website_url],
+    user_prompt="Extract the company description, products/services, mission, key features, target audience, and any other relevant business information",
+    dataset_name=f"company-{tenant['id']}",
+)
+```
+
+### Requirements
+
+- **Package**: `cognee-community-tasks-scrapegraph` (added to `pyproject.toml`)
+- **Env var**: `SGAI_API_KEY` — ScrapeGraphAI API key (configured in `app/core/config.py`)
+- **Behavior**: Best-effort, non-blocking. If `SGAI_API_KEY` is missing or the scrape fails, org creation proceeds normally. The scrape is an enrichment, not a requirement.
+- **On update**: If the org's `website_url` changes, the new URL is re-scraped into the dataset (old content is not explicitly forgotten — accepted limitation).
+
+### Cognee's `remember()` with file paths
+
+Cognee natively parses many file formats when given a file path:
+- PDF, DOCX, XLSX, PPTX, ODT, RTF
+- TXT, MD, CSV, JSON, XML, HTML
+- And more
+
+We write uploaded files to a temp file after storage backend save, pass the path to `cognee.remember()`, then clean up the temp file. This replaces the previous text-only approach.
+
+---
+
+## Accepted Limitations (updated 2026-07-02)
+
+1. **Per-document Cognee deletion is not supported.** Cognee's `forget()` works at the dataset level. Deleting a single document from the knowledge graph is not currently possible via the Cognee SDK. When a document is deleted from storage/DB, stale knowledge may persist in the graph until the entire dataset is forgotten (org/employee deletion). This is acceptable for v1. See [[snowsplan]].
+
+2. **ScrapeGraphAI runs in the foreground during org creation.** This blocks the HTTP response for a few seconds. Can be moved to a background job later.
+
+3. **Admin Cognee user is stored in Cognee's internal SQLite** (under `./cognee_data/`). It survives restarts but would be lost if the data directory is wiped. Acceptable for now — the admin is lazily recreated if missing.
+
+4. **No cross-employee memory search in v1.** Agents can search their own dataset + the org dataset, but not other employees' datasets.
+
+5. **Website re-scrape on update does not forget old content.** When updating an org's `website_url`, the old scrape remains in the graph. Cognee's `forget()` is dataset-level, so we'd need to forget and re-ingest the entire dataset to clean it. Not worth the complexity for v1.
+
+---
+
 ## Deferred
 
 - `search_memory` scope parameter (personal/org/all) — v1 searches both
@@ -327,3 +380,5 @@ See `/home/sno/.claude/plans/fizzy-hatching-shore.md` for the full plan. Quick s
 - Slack message retention/forget policies
 - Per-channel Slack datasets for large orgs
 - Dashboard setup flows (API endpoints already exist; Cognee hooks into them)
+- Background ScrapeGraphAI jobs (currently synchronous in request)
+- Per-document Cognee forget tracking (requires Cognee SDK support or document ID tracking)
