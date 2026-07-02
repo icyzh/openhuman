@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
   Activity,
+  BookOpen,
   Building2,
   HardDrive,
   LayoutDashboard,
@@ -31,6 +32,7 @@ const NAV_ITEMS = [
   { label: "Activity", href: "/activity", icon: Activity },
   { label: "Storage", href: "/storage", icon: HardDrive },
   { label: "Organization", href: "/organization", icon: Building2 },
+  { label: "Documentation", href: "/docs", icon: BookOpen },
   { label: "Settings", href: "/settings", icon: Settings },
 ];
 
