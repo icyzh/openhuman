@@ -7,6 +7,7 @@ from app.core.config import settings
 
 connect_args = {}
 if settings.database_url.startswith("postgresql+asyncpg"):
+    connect_args["statement_cache_size"] = 0
     connect_args["prepared_statement_cache_size"] = 0
 
 engine = create_async_engine(
