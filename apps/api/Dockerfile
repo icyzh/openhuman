@@ -10,7 +10,7 @@ WORKDIR /app
 ENV UV_COMPILE_BYTECODE=1
 
 # Copy dependency definition files
-COPY pyproject.toml ./
+COPY pyproject.toml uv.lock ./
 
 # Install dependencies only (cached if files do not change)
 RUN --mount=type=cache,target=/root/.cache/uv \
