@@ -43,6 +43,12 @@ class Settings(BaseSettings):
     def clerk_authorized_parties_list(self) -> list[str]:
         return [p.strip() for p in self.clerk_authorized_parties.split(",") if p.strip()]
 
+    @model_validator(mode="after")
+    def validate_db_urls(self) -> "Settings":
+        if self.database_url.startswith("postgresql://"):
+            self.database_url = self.database_url.replace("postgresql://", "postgresql+asyncpg://", 1)
+        return self
+
     # Encryption for bot tokens (AES-256-GCM, 32-byte key)
     encryption_key: str = ""
 
