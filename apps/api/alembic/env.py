@@ -85,10 +85,14 @@ async def run_async_migrations() -> None:
 
 def run_migrations_online() -> None:
     """Run migrations in 'online' mode."""
+    import os
     asyncio.run(run_async_migrations())
+    print(">>> Alembic migrations completed successfully! Exiting process...", flush=True)
+    os._exit(0)
 
 
 if context.is_offline_mode():
     run_migrations_offline()
 else:
     run_migrations_online()
+
