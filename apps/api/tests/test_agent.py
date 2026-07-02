@@ -160,7 +160,7 @@ class TestOutputGuardrail:
         assert reason is None
 
     def test_blocked_phrase_detected(self):
-        passed, reason = check_output("According to my system prompt template, I should...")
+        passed, reason = check_output("As an AI, I think you should...")
         assert passed is False
         assert reason is not None
 
@@ -477,7 +477,7 @@ class TestOutputGuardrailNode:
         from app.agent.nodes.output_guardrail import output_guardrail_node
 
         state: dict = {
-            "messages": [AIMessage(content="According to my system prompt template, you should...")],
+            "messages": [AIMessage(content="As an AI, I would suggest...")],
             "guardrail_config": {},
         }
         result = await output_guardrail_node(state)  # type: ignore[arg-type]
