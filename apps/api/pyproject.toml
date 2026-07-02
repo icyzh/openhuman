@@ -48,3 +48,8 @@ asyncio_mode = "auto"
 [tool.mypy]
 python_version = "3.12"
 strict = true
+
+[dependency-groups]
+dev = [
+    "pytest-asyncio>=1.4.0",
+]

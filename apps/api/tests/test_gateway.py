@@ -15,8 +15,15 @@ from uuid import UUID, uuid4
 
 import pytest
 
-# Ensure all models are imported for SQLAlchemy mapper resolution
-import app.documents.models
+# Ensure all model modules are imported before SQLAlchemy mapper configuration
+# is triggered by the gateway refresh loop (same pattern as app/main.py).
+import app.auth.models  # noqa: F401
+import app.channel_assignments.models  # noqa: F401
+import app.documents.models  # noqa: F401
+import app.employees.models  # noqa: F401
+import app.organizations.models  # noqa: F401
+import app.agent.tools.mcp.models  # noqa: F401
+import app.gateway.models  # noqa: F401
 
 # =============================================================================
 # Helpers
@@ -50,29 +57,28 @@ class TestGatewayManagerLifecycle:
     @pytest.mark.anyio
     async def test_start_creates_refresh_task(self):
         from app.gateway.manager import BotGatewayManager
-        from app.core.config import settings
 
-        with patch.object(settings, "gateway_enabled", True):
-            mgr = BotGatewayManager()
-            await mgr.start()
-            assert mgr.running is True
-            assert mgr.refresh_task is not None
-            # Cleanup
-            await mgr.stop()
+        mgr = BotGatewayManager()
+        # Mock the agent worker startup to avoid DB dependency
+        mgr.agent_worker.start = AsyncMock()
+        await mgr.start()
+        assert mgr.running is True
+        assert mgr.refresh_task is not None
+        # Cleanup
+        await mgr.stop()
 
     @pytest.mark.anyio
     async def test_stop_cancels_refresh_task(self):
         from app.gateway.manager import BotGatewayManager
-        from app.core.config import settings
 
-        with patch.object(settings, "gateway_enabled", True):
-            mgr = BotGatewayManager()
-            await mgr.start()
-            await mgr.stop()
-            assert mgr.running is False
-            # Task should be cancelled
-            assert mgr.refresh_task is not None
-            assert mgr.refresh_task.cancelled() or mgr.refresh_task.done()
+        mgr = BotGatewayManager()
+        mgr.agent_worker.start = AsyncMock()
+        await mgr.start()
+        await mgr.stop()
+        assert mgr.running is False
+        # Task should be cancelled
+        assert mgr.refresh_task is not None
+        assert mgr.refresh_task.cancelled() or mgr.refresh_task.done()
 
     @pytest.mark.anyio
     async def test_stop_cleans_up_discord_bots(self):
@@ -115,10 +121,9 @@ class TestGatewayManagerLifecycle:
         """When gateway_enabled=False, the lifespan should NOT start the gateway."""
         from app.core.config import settings
 
-        with patch.object(settings, "gateway_enabled", False):
-            assert settings.gateway_enabled is False, (
-                "gateway_enabled must be False by default for dev safety"
-            )
+        assert settings.gateway_enabled is False, (
+            "gateway_enabled must be False by default for dev safety"
+        )
 
 
 # =============================================================================
@@ -687,11 +692,8 @@ class TestErrorSanitization:
 
     def test_settings_gateway_disabled_by_default(self):
         """gateway_enabled must default to False for dev safety."""
-        import os
         from app.core.config import Settings
 
-        # Create a fresh settings instance (ignores .env and OS environment override)
-        with patch.dict(os.environ):
-            os.environ.pop("GATEWAY_ENABLED", None)
-            s = Settings(_env_file="")  # type: ignore[call-arg]
-            assert s.gateway_enabled is False
+        # Create a fresh settings instance (ignores .env)
+        s = Settings(_env_file="")  # type: ignore[call-arg]
+        assert s.gateway_enabled is False
