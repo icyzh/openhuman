@@ -13,7 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.agent.build import build_graph
 from app.agent.schemas import AgentResponse, MessageInput
-from app.agent.tools import BUILT_IN_TOOLS
+from app.agent.tools.executor import BUILT_IN_TOOLS
 from app.agent.tools.mcp.client import MCPClientManager, ResolvedConnection
 from app.agent.tools.mcp.connectors import REGISTRY
 from app.agent.tools.mcp.models import McpConnection

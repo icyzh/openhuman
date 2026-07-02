@@ -814,7 +814,7 @@ class TestEmployeeToolAllowlist:
 
     def test_tool_names_match_templates(self):
         """All tool names referenced in templates must exist in BUILT_IN_TOOLS."""
-        from app.agent.tools import BUILT_IN_TOOLS
+        from app.agent.tools.executor import BUILT_IN_TOOLS
         from app.employees.templates import TEMPLATES
 
         built_in_names = {t.name for t in BUILT_IN_TOOLS}
@@ -828,7 +828,7 @@ class TestEmployeeToolAllowlist:
 
     def test_hr_template_has_restricted_tools(self):
         """HR template must NOT include all built-in tools (no escalation)."""
-        from app.agent.tools import BUILT_IN_TOOLS
+        from app.agent.tools.executor import BUILT_IN_TOOLS
         from app.employees.templates import HR_TEMPLATE
 
         all_names = {t.name for t in BUILT_IN_TOOLS}
@@ -840,7 +840,7 @@ class TestEmployeeToolAllowlist:
         )
 
     def test_sales_template_has_restricted_tools(self):
-        from app.agent.tools import BUILT_IN_TOOLS
+        from app.agent.tools.executor import BUILT_IN_TOOLS
         from app.employees.templates import SALES_TEMPLATE
 
         all_names = {t.name for t in BUILT_IN_TOOLS}
@@ -849,7 +849,7 @@ class TestEmployeeToolAllowlist:
         assert sales_tools != all_names
 
     def test_support_template_has_restricted_tools(self):
-        from app.agent.tools import BUILT_IN_TOOLS
+        from app.agent.tools.executor import BUILT_IN_TOOLS
         from app.employees.templates import SUPPORT_TEMPLATE
 
         all_names = {t.name for t in BUILT_IN_TOOLS}
@@ -859,7 +859,7 @@ class TestEmployeeToolAllowlist:
 
     def test_general_template_may_have_all_tools(self):
         """General assistant may have the full tool set — it's the fallback."""
-        from app.agent.tools import BUILT_IN_TOOLS
+        from app.agent.tools.executor import BUILT_IN_TOOLS
         from app.employees.templates import GENERAL_TEMPLATE
 
         all_names = {t.name for t in BUILT_IN_TOOLS}
@@ -990,7 +990,7 @@ class TestBuiltInTools:
     """BUILT_IN_TOOLS list must contain the expected tools."""
 
     def test_contains_expected_tools(self):
-        from app.agent.tools import BUILT_IN_TOOLS
+        from app.agent.tools.executor import BUILT_IN_TOOLS
 
         names = {t.name for t in BUILT_IN_TOOLS}
         expected = {
@@ -1008,14 +1008,14 @@ class TestBuiltInTools:
         assert names == expected
 
     def test_tool_names_are_unique(self):
-        from app.agent.tools import BUILT_IN_TOOLS
+        from app.agent.tools.executor import BUILT_IN_TOOLS
 
         names = [t.name for t in BUILT_IN_TOOLS]
         assert len(names) == len(set(names)), f"Duplicate tool names: {names}"
 
     def test_memory_tools_exist(self):
         """Memory tools exist in BUILT_IN_TOOLS."""
-        from app.agent.tools import BUILT_IN_TOOLS
+        from app.agent.tools.executor import BUILT_IN_TOOLS
 
         names = [t.name for t in BUILT_IN_TOOLS]
         assert "search_memory" in names

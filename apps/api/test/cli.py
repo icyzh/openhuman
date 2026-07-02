@@ -52,7 +52,7 @@ from langchain_core.messages import HumanMessage  # noqa: E402
 from langgraph.errors import GraphInterrupt  # noqa: E402
 
 from app.agent.build import build_graph  # noqa: E402
-from app.agent.tools import BUILT_IN_TOOLS  # noqa: E402
+from app.agent.tools.executor import BUILT_IN_TOOLS  # noqa: E402
 from app.agent.tools.mcp.connectors import REGISTRY as MCP_REGISTRY  # noqa: E402
 from app.employees.templates import get_template  # noqa: E402
 from test.fixtures import (  # noqa: E402

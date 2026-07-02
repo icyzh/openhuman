@@ -53,7 +53,7 @@ from langgraph.errors import GraphInterrupt
 from langgraph.types import Command
 
 from app.agent.build import build_graph
-from app.agent.tools import BUILT_IN_TOOLS
+from app.agent.tools.executor import BUILT_IN_TOOLS
 from app.employees.templates import get_template
 from test.fixtures import (
     SEED_EMPLOYEES,

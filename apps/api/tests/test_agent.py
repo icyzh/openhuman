@@ -291,7 +291,7 @@ class TestGraphBuilder:
     def test_graph_compiles(self):
         """build_graph should return a CompiledStateGraph."""
         from app.agent.build import build_graph
-        from app.agent.tools import BUILT_IN_TOOLS
+        from app.agent.tools.executor import BUILT_IN_TOOLS
 
         graph = build_graph(BUILT_IN_TOOLS)
         assert graph is not None
@@ -311,7 +311,7 @@ class TestGraphBuilder:
     def test_graph_shape_matches_spec(self):
         """The graph edges must match the documented topology."""
         from app.agent.build import build_graph
-        from app.agent.tools import BUILT_IN_TOOLS
+        from app.agent.tools.executor import BUILT_IN_TOOLS
 
         graph = build_graph(BUILT_IN_TOOLS)
         edges = list(graph.get_graph().edges)

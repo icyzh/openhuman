@@ -693,7 +693,7 @@ class TestPhase4Checkpointer:
         """build_graph compiles with the checkpointer attached."""
         from app.agent.build import build_graph
         from app.agent.checkpointer import close_checkpointer, init_checkpointer
-        from app.agent.tools import BUILT_IN_TOOLS
+        from app.agent.tools.executor import BUILT_IN_TOOLS
 
         await init_checkpointer()
 
@@ -707,7 +707,7 @@ class TestPhase4Checkpointer:
         """Agent state is persisted and restored across invocations via thread_id."""
         from app.agent.build import build_graph
         from app.agent.checkpointer import close_checkpointer, init_checkpointer
-        from app.agent.tools import BUILT_IN_TOOLS
+        from app.agent.tools.executor import BUILT_IN_TOOLS
 
         await init_checkpointer()
 
@@ -1543,7 +1543,7 @@ class TestTemplatesAndToolBinding:
 
     def test_built_in_tools_includes_all_new_tools(self):
         """BUILT_IN_TOOLS includes escalation and background task tools."""
-        from app.agent.tools import BUILT_IN_TOOLS
+        from app.agent.tools.executor import BUILT_IN_TOOLS
 
         tool_names = {t.name for t in BUILT_IN_TOOLS}
 
