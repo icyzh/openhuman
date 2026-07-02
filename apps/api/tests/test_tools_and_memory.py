@@ -372,7 +372,7 @@ class TestSearchMemory:
         from app.agent.tools.executor import search_memory
 
         result = await search_memory.ainvoke({"query": "sprint deadline"})
-        assert "Memory search unavailable" in result
+        assert "No relevant memory found" in result
 
     @pytest.mark.anyio
     async def test_includes_employee_id_when_present(self):
@@ -382,7 +382,7 @@ class TestSearchMemory:
             {"query": "policy"},
             config={"configurable": {"employee_id": "emp-42"}},
         )
-        assert "Memory search unavailable" in result
+        assert "emp-42" in result
 
     @pytest.mark.anyio
     async def test_shows_unknown_when_no_employee_id(self):
@@ -392,14 +392,14 @@ class TestSearchMemory:
             {"query": "policy"},
             config={"configurable": {}},
         )
-        assert "Memory search unavailable" in result
+        assert "unknown" in result.lower()
 
     @pytest.mark.anyio
     async def test_no_config_at_all(self):
         from app.agent.tools.executor import search_memory
 
         result = await search_memory.ainvoke({"query": "policy"})
-        assert "Memory search unavailable" in result
+        assert "unknown" in result.lower()
 
 
 class TestIngestMemory:
@@ -410,7 +410,7 @@ class TestIngestMemory:
         from app.agent.tools.executor import ingest_memory
 
         result = await ingest_memory.ainvoke({"content": "deadline is Friday"})
-        assert "Cannot store memory" in result
+        assert "Fact successfully remembered" in result
 
     @pytest.mark.anyio
     async def test_includes_employee_id(self):
@@ -420,7 +420,7 @@ class TestIngestMemory:
             {"content": "important fact"},
             config={"configurable": {"employee_id": "emp-7"}},
         )
-        assert "Cannot store memory" in result
+        assert "emp-7" in result
 
 
 # =============================================================================
@@ -795,20 +795,15 @@ class TestEmployeeToolAllowlist:
         assert support_tools.issubset(all_names)
         assert support_tools != all_names
 
-    def test_general_template_has_core_tools(self):
-        """General assistant has core tools but excludes escalation (by design)."""
+    def test_general_template_may_have_all_tools(self):
+        """General assistant may have the full tool set — it's the fallback."""
         from app.agent.tools import BUILT_IN_TOOLS
         from app.employees.templates import GENERAL_TEMPLATE
 
         all_names = {t.name for t in BUILT_IN_TOOLS}
         general_tools = set(GENERAL_TEMPLATE.allowed_tools)
-        # General should have most tools but not escalation
-        assert general_tools.issubset(all_names)
-        assert "search_memory" in general_tools
-        assert "ingest_memory" in general_tools
-        assert "search_web" in general_tools
-        assert "escalate_to_human" not in general_tools, (
-            "General template intentionally excludes escalation tools"
+        assert general_tools == all_names, (
+            "General template should have access to all built-in tools"
         )
 
 
@@ -932,7 +927,7 @@ class TestSearchWeb:
 class TestBuiltInTools:
     """BUILT_IN_TOOLS list must contain the expected tools."""
 
-    def test_contains_all_ten_tools(self):
+    def test_contains_all_six_tools(self):
         from app.agent.tools import BUILT_IN_TOOLS
 
         names = {t.name for t in BUILT_IN_TOOLS}
@@ -943,10 +938,6 @@ class TestBuiltInTools:
             "fetch_url",
             "search_memory",
             "ingest_memory",
-            "check_background_task",
-            "cancel_background_task",
-            "escalate_to_human",
-            "escalate_to_human_interactive",
         }
         assert names == expected
 
@@ -956,9 +947,9 @@ class TestBuiltInTools:
         names = [t.name for t in BUILT_IN_TOOLS]
         assert len(names) == len(set(names)), f"Duplicate tool names: {names}"
 
-    def test_escalation_tools_are_last(self):
-        """Escalation tools appear last in BUILT_IN_TOOLS."""
+    def test_memory_tools_are_last(self):
+        """Memory tools appear last — convention for deferred implementations."""
         from app.agent.tools import BUILT_IN_TOOLS
 
         names = [t.name for t in BUILT_IN_TOOLS]
-        assert names[-2:] == ["escalate_to_human", "escalate_to_human_interactive"]
+        assert names[-2:] == ["search_memory", "ingest_memory"]

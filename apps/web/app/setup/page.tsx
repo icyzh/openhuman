@@ -42,7 +42,6 @@ export default function SetupPage() {
             name: data.name,
             description: data.description || undefined,
             what_it_does: data.what_it_does || undefined,
-            website_url: data.website_url || undefined,
           },
         });
         setCreatedOrgId(org.id);
