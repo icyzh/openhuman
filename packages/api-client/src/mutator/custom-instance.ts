@@ -26,14 +26,36 @@ export const customInstance = async <T>(
     next?: { revalidate?: number; tags?: string[] };
   },
 ): Promise<T> => {
-  const { url, method, headers: configHeaders, data, signal } = config;
+  const { url, method, headers: configHeaders, params, data, signal } = config;
 
   const token =
     typeof window !== "undefined"
       ? localStorage.getItem("oh_token")
       : null;
 
-  const response = await fetch(`${API_BASE_URL}${url}`, {
+  let queryParams = "";
+  if (params) {
+    const searchParams = new URLSearchParams();
+    for (const [key, value] of Object.entries(params as Record<string, unknown>)) {
+      if (value !== undefined && value !== null) {
+        if (Array.isArray(value)) {
+          value.forEach((v) => {
+            if (v !== undefined && v !== null) {
+              searchParams.append(key, String(v));
+            }
+          });
+        } else {
+          searchParams.append(key, String(value));
+        }
+      }
+    }
+    const str = searchParams.toString();
+    if (str) {
+      queryParams = `?${str}`;
+    }
+  }
+
+  const response = await fetch(`${API_BASE_URL}${url}${queryParams}`, {
     ...options,
     method,
     signal,
