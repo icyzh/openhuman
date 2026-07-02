@@ -190,10 +190,16 @@ class EmployeeSlackBot:
             return
 
         # ── Auto-ingest Slack message into org memory ────────────────────
+        employee_name = "OpenHuman Agent"
         try:
             async with async_session_factory() as session:
                 emp = await session.get(Employee, self.employee_id)
                 if emp:
+                    if emp.role:
+                        employee_name = f"{emp.name} ({emp.role})"
+                    else:
+                        employee_name = emp.name
+
                     org = await session.scalar(
                         select(Organization).where(
                             Organization.id == emp.org_id
@@ -237,11 +243,12 @@ class EmployeeSlackBot:
         if not response_text:
             response_text = "I processed your request but had no response."
 
-        # Reply in thread — bot's display name is already correct (set at provisioning)
+        # Reply in thread — dynamically set username
         await say(
             text=response_text,
             channel=channel,
             thread_ts=thread_ts,
+            username=employee_name,
         )
 
     # ------------------------------------------------------------------
