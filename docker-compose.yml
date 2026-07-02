@@ -34,7 +34,7 @@ services:
       API_PORT: 8000
       DATABASE_URL: postgresql+asyncpg://postgres:production-password-here@postgres:5432/openhuman
       JWT_SECRET_KEY: ${JWT_SECRET_KEY:-change-me-in-production-must-be-very-long}
-      ENCRYPTION_KEY: ${ENCRYPTION_KEY:-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef}
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY:-change-me-64-char-hex-string}
       OPENAI_API_KEY: ${OPENAI_API_KEY}
       COGNEE_DATA_DIR: /app/cognee_data
       STORAGE_BACKEND: local

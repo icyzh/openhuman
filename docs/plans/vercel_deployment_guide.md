@@ -50,8 +50,8 @@ To store documents uploaded by users:
 | Key | Example Value | Description |
 | :--- | :--- | :--- |
 | `ENVIRONMENT` | `production` | Triggers production constraints. |
-| `DATABASE_URL` | `postgresql+asyncpg://postgres.ktbvumfxlfzewzrltjkh:3FW5CDMI6z8ViF0g@aws-1-ap-south-1.pooler.supabase.com:6543/postgres` | Connection URI to Supabase Postgres. |
-| `RELATIONAL_DATABASE_URL` | `postgresql://postgres.ktbvumfxlfzewzrltjkh:3FW5CDMI6z8ViF0g@aws-1-ap-south-1.pooler.supabase.com:6543/postgres` | Sync connection string for Cognee metadata. |
+| `DATABASE_URL` | `postgresql+asyncpg://<your-supabase-user>:<your-supabase-password>@<your-supabase-host>:6543/postgres` | Connection URI to Supabase Postgres. |
+| `RELATIONAL_DATABASE_URL` | `postgresql://<your-supabase-user>:<your-supabase-password>@<your-supabase-host>:6543/postgres` | Sync connection string for Cognee metadata. |
 | `JWT_SECRET_KEY` | `your-long-secure-random-jwt-key` | Token signing secret ($\ge$ 32 chars). |
 | `ENCRYPTION_KEY` | `your-64-character-hex-aes-key` | Key for encrypting user Discord/Slack tokens in DB. |
 
@@ -60,16 +60,16 @@ To store documents uploaded by users:
 | :--- | :--- | :--- |
 | `COGNEE_DATA_DIR` | `/tmp/cognee_data` | Temp directory for Cognee local runtime files. |
 | `GRAPH_DATABASE_PROVIDER` | `neo4j` | Explicitly targets Neo4j Aura. |
-| `GRAPH_DATABASE_URL` | `neo4j+s://73aa578c.databases.neo4j.io` | Your Neo4j Aura endpoint. |
-| `GRAPH_DATABASE_NAME` | `73aa578c` | Aura database name. |
-| `GRAPH_DATABASE_USERNAME` | `73aa578c` | Aura username. |
-| `GRAPH_DATABASE_PASSWORD` | `Hhd3k9UXCskEfcjkO-vus2YzHePJQAeZr345B0KJQgk` | Aura password. |
+| `GRAPH_DATABASE_URL` | `neo4j+s://<your-neo4j-id>.databases.neo4j.io` | Your Neo4j Aura endpoint. |
+| `GRAPH_DATABASE_NAME` | `<your-neo4j-id>` | Aura database name. |
+| `GRAPH_DATABASE_USERNAME` | `<your-neo4j-id>` | Aura username. |
+| `GRAPH_DATABASE_PASSWORD` | `<your-neo4j-password>` | Aura password. |
 | `VECTOR_DB_PROVIDER` | `pgvector` | Explicitly targets PostgreSQL vector search. |
-| `VECTOR_DB_HOST` | `aws-1-ap-south-1.pooler.supabase.com` | Supabase host. |
+| `VECTOR_DB_HOST` | `<your-supabase-host>` | Supabase host. |
 | `VECTOR_DB_PORT` | `6543` | Postgres port. |
 | `VECTOR_DB_NAME` | `postgres` | Database name. |
-| `VECTOR_DB_USERNAME` | `postgres.ktbvumfxlfzewzrltjkh` | Database user. |
-| `VECTOR_DB_PASSWORD` | `3FW5CDMI6z8ViF0g` | Database password. |
+| `VECTOR_DB_USERNAME` | `<your-supabase-user>` | Database user. |
+| `VECTOR_DB_PASSWORD` | `<your-supabase-password>` | Database password. |
 
 ### 3. AI Providers
 | Key | Example Value | Description |
@@ -127,21 +127,21 @@ From your local terminal inside `apps/api/`:
 
 ### A. Postgres SQL Migrations (Alembic)
 ```bash
-DATABASE_URL="postgresql+asyncpg://postgres.ktbvumfxlfzewzrltjkh:3FW5CDMI6z8ViF0g@aws-1-ap-south-1.pooler.supabase.com:6543/postgres" uv run alembic upgrade head
+DATABASE_URL="postgresql+asyncpg://<your-supabase-user>:<your-supabase-password>@<your-supabase-host>:6543/postgres" uv run alembic upgrade head
 ```
 
 ### B. Cognee Memory Graph & Table Migrations
 ```bash
 GRAPH_DATABASE_PROVIDER="neo4j" \
-GRAPH_DATABASE_URL="neo4j+s://73aa578c.databases.neo4j.io" \
-GRAPH_DATABASE_USERNAME="73aa578c" \
-GRAPH_DATABASE_PASSWORD="Hhd3k9UXCskEfcjkO-vus2YzHePJQAeZr345B0KJQgk" \
-RELATIONAL_DATABASE_URL="postgresql://postgres.ktbvumfxlfzewzrltjkh:3FW5CDMI6z8ViF0g@aws-1-ap-south-1.pooler.supabase.com:6543/postgres" \
+GRAPH_DATABASE_URL="neo4j+s://<your-neo4j-id>.databases.neo4j.io" \
+GRAPH_DATABASE_USERNAME="<your-neo4j-id>" \
+GRAPH_DATABASE_PASSWORD="<your-neo4j-password>" \
+RELATIONAL_DATABASE_URL="postgresql://<your-supabase-user>:<your-supabase-password>@<your-supabase-host>:6543/postgres" \
 VECTOR_DB_PROVIDER="pgvector" \
-VECTOR_DB_HOST="aws-1-ap-south-1.pooler.supabase.com" \
+VECTOR_DB_HOST="<your-supabase-host>" \
 VECTOR_DB_NAME="postgres" \
-VECTOR_DB_USERNAME="postgres.ktbvumfxlfzewzrltjkh" \
-VECTOR_DB_PASSWORD="3FW5CDMI6z8ViF0g" \
+VECTOR_DB_USERNAME="<your-supabase-user>" \
+VECTOR_DB_PASSWORD="<your-supabase-password>" \
 uv run python -c "import cognee; import asyncio; asyncio.run(cognee.prune_data()); asyncio.run(cognee.run_migrations())"
 ```
 
