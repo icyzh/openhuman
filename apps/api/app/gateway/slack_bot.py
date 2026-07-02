@@ -15,6 +15,7 @@ import json
 import logging
 from uuid import UUID
 
+import httpx
 from langchain_core.messages import HumanMessage
 from langgraph.errors import GraphInterrupt
 from langgraph.types import Command
@@ -25,10 +26,13 @@ from sqlalchemy import select
 from app.agent.jobs.queue import cancel_active_jobs_for_thread, is_cancel_intent
 from app.agent.router import get_graph_for_employee
 from app.channel_assignments.models import ChannelAssignment
+from app.core.config import settings
 from app.core.database import async_session_factory
+from app.documents.models import Document
 from app.employees.models import Employee
 from app.memory.service import remember
 from app.organizations.models import Organization
+from app.storage import get_storage_backend
 
 logger = logging.getLogger(__name__)
 
@@ -231,6 +235,86 @@ class EmployeeSlackBot:
                 exc_info=True,
             )
         # ── End auto-ingest ──────────────────────────────────────────────
+
+        # ── Handle file attachments — download → bucket → Cognee ──────────
+        files = event.get("files", [])
+        _MAX_SLACK_FILE_SIZE = 10 * 1024 * 1024  # 10 MB
+
+        if files and org and org.cognee_dataset_name and org.cognee_system_user_id:
+            backend = get_storage_backend()
+            async with httpx.AsyncClient(timeout=30) as http_client:
+                for file_info in files:
+                    try:
+                        file_url = file_info.get("url_private")
+                        if not file_url:
+                            continue
+
+                        # SSRF guard: only download from Slack's CDN
+                        if not file_url.startswith("https://files.slack.com/"):
+                            logger.warning(
+                                "Rejected non-Slack file URL for employee %s: %s",
+                                self.employee_id, file_url,
+                            )
+                            continue
+
+                        file_size = file_info.get("size", 0)
+                        if file_size > _MAX_SLACK_FILE_SIZE:
+                            logger.debug(
+                                "Slack file %s (%d bytes) exceeds size limit — skipping",
+                                file_info.get("name"), file_size,
+                            )
+                            continue
+
+                        # 1. Download from Slack
+                        headers = {"Authorization": f"Bearer {self.bot_token}"}
+                        resp = await http_client.get(file_url, headers=headers)
+                        resp.raise_for_status()
+                        file_bytes = resp.content
+
+                        # 2. Save to bucket
+                        storage_path = await backend.save(
+                            org_id=emp.org_id,
+                            filename=file_info.get("name", "slack_file"),
+                            content=file_bytes,
+                            content_type=file_info.get("mimetype"),
+                        )
+
+                        # 3. Create Document DB row
+                        async with async_session_factory() as doc_session:
+                            doc = Document(
+                                org_id=emp.org_id,
+                                employee_id=self.employee_id,
+                                filename=file_info.get("name", "slack_file"),
+                                content_type=file_info.get("mimetype"),
+                                size_bytes=len(file_bytes),
+                                storage_path=storage_path,
+                                storage_backend=settings.storage_backend,
+                                status="uploaded",
+                            )
+                            doc_session.add(doc)
+                            await doc_session.commit()
+
+                        # 4. Cognee ingest via bucket path (local or S3 URL)
+                        if settings.storage_backend == "s3":
+                            cognee_input = f"s3://{settings.s3_bucket_name}/{storage_path}"
+                        else:
+                            cognee_input = storage_path
+                        await remember(
+                            cognee_input,
+                            org.cognee_dataset_name,
+                            org.cognee_system_user_id,
+                            dataset_id=org.cognee_dataset_id,
+                            background=True,
+                        )
+
+                    except Exception:
+                        logger.debug(
+                            "Slack file attachment ingest skipped (employee=%s, file=%s)",
+                            self.employee_id,
+                            file_info.get("name", "unknown"),
+                            exc_info=True,
+                        )
+        # ── End file attachments ──────────────────────────────────────────
 
         # Run the agent
         response_text = await self._run_agent(
@@ -632,6 +716,86 @@ class WorkspaceSlackBot:
                         exc_info=True,
                     )
                 # ── End auto-ingest ──────────────────────────────────────
+
+                # ── Handle file attachments — download → bucket → Cognee ──
+                files = event.get("files", [])
+                _MAX_SLACK_FILE_SIZE = 10 * 1024 * 1024  # 10 MB
+
+                if files and org and org.cognee_dataset_name and org.cognee_system_user_id:
+                    backend = get_storage_backend()
+                    async with httpx.AsyncClient(timeout=30) as http_client:
+                        for file_info in files:
+                            try:
+                                file_url = file_info.get("url_private")
+                                if not file_url:
+                                    continue
+
+                                # SSRF guard: only download from Slack's CDN
+                                if not file_url.startswith("https://files.slack.com/"):
+                                    logger.warning(
+                                        "Rejected non-Slack file URL for employee %s: %s",
+                                        employee_id, file_url,
+                                    )
+                                    continue
+
+                                file_size = file_info.get("size", 0)
+                                if file_size > _MAX_SLACK_FILE_SIZE:
+                                    logger.debug(
+                                        "Slack file %s (%d bytes) exceeds size limit — skipping",
+                                        file_info.get("name"), file_size,
+                                    )
+                                    continue
+
+                                # 1. Download from Slack
+                                headers = {"Authorization": f"Bearer {self.bot_token}"}
+                                resp = await http_client.get(file_url, headers=headers)
+                                resp.raise_for_status()
+                                file_bytes = resp.content
+
+                                # 2. Save to bucket
+                                storage_path = await backend.save(
+                                    org_id=emp.org_id,
+                                    filename=file_info.get("name", "slack_file"),
+                                    content=file_bytes,
+                                    content_type=file_info.get("mimetype"),
+                                )
+
+                                # 3. Create Document DB row
+                                async with async_session_factory() as doc_session:
+                                    doc = Document(
+                                        org_id=emp.org_id,
+                                        employee_id=employee_id,
+                                        filename=file_info.get("name", "slack_file"),
+                                        content_type=file_info.get("mimetype"),
+                                        size_bytes=len(file_bytes),
+                                        storage_path=storage_path,
+                                        storage_backend=settings.storage_backend,
+                                        status="uploaded",
+                                    )
+                                    doc_session.add(doc)
+                                    await doc_session.commit()
+
+                                # 4. Cognee ingest via bucket path (local or S3 URL)
+                                if settings.storage_backend == "s3":
+                                    cognee_input = f"s3://{settings.s3_bucket_name}/{storage_path}"
+                                else:
+                                    cognee_input = storage_path
+                                await remember(
+                                    cognee_input,
+                                    org.cognee_dataset_name,
+                                    org.cognee_system_user_id,
+                                    dataset_id=org.cognee_dataset_id,
+                                    background=True,
+                                )
+
+                            except Exception:
+                                logger.debug(
+                                    "Slack file attachment ingest skipped (employee=%s, file=%s)",
+                                    employee_id,
+                                    file_info.get("name", "unknown"),
+                                    exc_info=True,
+                                )
+                # ── End file attachments ────────────────────────────────────
 
         # -- Phase 3: lightweight cancel keyword fast path -------------------
         if is_cancel_intent(text):

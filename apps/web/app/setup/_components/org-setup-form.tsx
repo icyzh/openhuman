@@ -11,6 +11,7 @@ export interface OrgSetupFormData {
   name: string;
   description: string;
   what_it_does: string;
+  website_url: string;
 }
 
 interface Props {
@@ -70,6 +71,19 @@ export function OrgSetupForm({ onSubmit, isSubmitting, error }: Props) {
           rows={3}
           disabled={isSubmitting}
           {...register("what_it_does")}
+        />
+      </div>
+
+      <div className="space-y-1.5">
+        <Label htmlFor="website_url">
+          Company website
+        </Label>
+        <Input
+          id="website_url"
+          type="url"
+          placeholder="https://acme.com"
+          disabled={isSubmitting}
+          {...register("website_url")}
         />
       </div>
 

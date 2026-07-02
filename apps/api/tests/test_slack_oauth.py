@@ -105,13 +105,16 @@ async def test_slack_callback_redirects_to_custom_url(client: TestClient) -> Non
         patch("app.gateway.slack_oauth.settings") as mock_settings,
         patch("app.gateway.slack_oauth.async_session_factory") as mock_session_factory,
         patch("app.gateway.slack_oauth.AsyncWebClient") as mock_slack_client,
+        patch("app.gateway.slack_oauth.encrypt_token") as mock_encrypt,
     ):
+        mock_encrypt.return_value = "encrypted-mock-token"
         mock_settings.slack_client_id = "test-client-id"
         mock_settings.slack_client_secret = "test-client-secret"
         mock_settings.slack_oauth_redirect_uri = "https://example.com/callback"
         mock_settings.slack_identity_mode = "shared"
         mock_settings.jwt_secret_key = "secret"
         mock_settings.jwt_algorithm = "HS256"
+        mock_settings.encryption_key = "a" * 64  # 32-byte hex = 64 hex chars
 
         # Mock Slack OAuth Response
         mock_client_inst = MagicMock()

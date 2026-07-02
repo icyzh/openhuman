@@ -15,6 +15,16 @@ from uuid import UUID, uuid4
 
 import pytest
 
+# Ensure all model modules are imported before SQLAlchemy mapper configuration
+# is triggered by the gateway refresh loop (same pattern as app/main.py).
+import app.auth.models  # noqa: F401
+import app.channel_assignments.models  # noqa: F401
+import app.documents.models  # noqa: F401
+import app.employees.models  # noqa: F401
+import app.organizations.models  # noqa: F401
+import app.agent.tools.mcp.models  # noqa: F401
+import app.gateway.models  # noqa: F401
+
 # =============================================================================
 # Helpers
 # =============================================================================
@@ -49,6 +59,8 @@ class TestGatewayManagerLifecycle:
         from app.gateway.manager import BotGatewayManager
 
         mgr = BotGatewayManager()
+        # Mock the agent worker startup to avoid DB dependency
+        mgr.agent_worker.start = AsyncMock()
         await mgr.start()
         assert mgr.running is True
         assert mgr.refresh_task is not None
@@ -60,6 +72,7 @@ class TestGatewayManagerLifecycle:
         from app.gateway.manager import BotGatewayManager
 
         mgr = BotGatewayManager()
+        mgr.agent_worker.start = AsyncMock()
         await mgr.start()
         await mgr.stop()
         assert mgr.running is False
