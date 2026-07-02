@@ -59,8 +59,7 @@ class TestCreateOrgCurrentBehavior:
         assert result.name == "Test Org"
         assert result.description == "A test org"
         assert result.what_it_does == "Testing"
-        # No website_url field yet (Phase 3a will add it)
-        assert not hasattr(result, "website_url") or result.website_url is None
+        assert result.website_url is None  # Phase 3a: field exists, not set
         # Cognee IDs should be set after successful provisioning
         assert result.cognee_tenant_id == "tenant-1"
 

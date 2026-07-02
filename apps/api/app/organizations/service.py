@@ -32,6 +32,7 @@ async def create_org(
         name=data.name,
         description=data.description,
         what_it_does=data.what_it_does,
+        website_url=data.website_url,
     )
     db.add(org)
     await db.commit()
@@ -77,7 +78,26 @@ async def create_org(
         )
     # ── End Cognee ──────────────────────────────────────────────────────
 
+    # ── Website URL ingest (best-effort, only if Cognee succeeded) ──────────
+    # Cognee's remember() natively accepts HTTP/HTTPS URLs — it fetches and
+    # ingests page content automatically. No extra scraping package needed.
+    if data.website_url and org.cognee_dataset_name and org.cognee_system_user_id:
+        try:
+            await remember(
+                data.website_url,
+                org.cognee_dataset_name,
+                org.cognee_system_user_id,
+                dataset_id=org.cognee_dataset_id,
+                background=True,
+            )
+        except Exception:
+            logger.exception(
+                "Website URL ingest failed for org %s (non-blocking)", org.id
+            )
+    # ── End website ingest ─────────────────────────────────────────────────
+
     return org
+
 
 
 async def get_org(db: AsyncSession, org_id: UUID, user_id: UUID) -> Organization | None:
@@ -111,6 +131,23 @@ async def update_org(
         org.description = data.description
     if data.what_it_does is not None:
         org.what_it_does = data.what_it_does
+    if data.website_url is not None:
+        old_url = org.website_url
+        org.website_url = data.website_url
+        # Re-ingest if URL changed and Cognee is provisioned
+        if data.website_url != old_url and org.cognee_dataset_name and org.cognee_system_user_id:
+            try:
+                await remember(
+                    data.website_url,
+                    org.cognee_dataset_name,
+                    org.cognee_system_user_id,
+                    dataset_id=org.cognee_dataset_id,
+                    background=True,
+                )
+            except Exception:
+                logger.exception(
+                    "Website URL re-ingest failed for org %s (non-blocking)", org.id
+                )
     await db.commit()
     await db.refresh(org)
     return org
