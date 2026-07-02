@@ -1,10 +1,7 @@
 from __future__ import annotations
 
 import logging
-import os
-import tempfile
 from collections.abc import AsyncGenerator
-from pathlib import Path
 from uuid import UUID
 
 from fastapi import UploadFile
@@ -75,8 +72,10 @@ async def save_document(
     await db.commit()
     await db.refresh(doc)
 
-    # ── Cognee ingest — all file formats, path-based (best-effort, non-blocking) ─
-    _COGNEE_MAX_SIZE = 500_000  # bytes
+    # ── Cognee ingest — all file formats via bucket path (best-effort, non-blocking) ─
+    # Cognee's remember() accepts local file paths, s3:// URLs, raw text, and more.
+    # We pass the storage path directly — no temp files. Cognee reads from wherever
+    # the bucket stored the file (local disk or S3).
 
     # Determine target dataset: employee docs go to employee dataset (Phase 1a)
     if employee_id:
@@ -117,31 +116,22 @@ async def save_document(
             "Cognee ingest skipped for doc %s — Cognee not provisioned for %s",
             doc.filename, target_label,
         )
-    elif size > _COGNEE_MAX_SIZE:
-        logger.debug(
-            "Cognee ingest skipped for %s (%d bytes exceeds %d limit)",
-            doc.filename, size, _COGNEE_MAX_SIZE,
-        )
     else:
+        # Build the path Cognee should read: local path or S3 URL
+        if doc.storage_backend == "s3":
+            cognee_input = f"s3://{settings.s3_bucket_name}/{doc.storage_path}"
+        else:
+            cognee_input = doc.storage_path
+
         try:
-            suffix = Path(doc.filename).suffix
-            with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
-                tmp.write(content)
-                tmp_path = tmp.name
-            try:
-                await remember(
-                    tmp_path,
-                    target_dataset,
-                    target_user_id,
-                    dataset_id=target_dataset_id,
-                    background=True,
-                )
-                doc.status = "indexed"
-            except Exception:
-                doc.status = "failed"
-                raise
-            finally:
-                os.unlink(tmp_path)
+            await remember(
+                cognee_input,
+                target_dataset,
+                target_user_id,
+                dataset_id=target_dataset_id,
+                background=True,
+            )
+            doc.status = "indexed"
         except Exception:
             logger.exception(
                 "Cognee ingest failed for doc %s (%s, %d bytes, target=%s)",

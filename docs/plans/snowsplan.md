@@ -152,74 +152,56 @@ else:
 
 **Problem:** Currently only `text/plain`, `text/markdown`, `text/csv`, `application/json`, `application/xml` are ingested via `content.decode("utf-8")`. All other formats are silently skipped.
 
-**Approach:** Cognee's `remember()` accepts file paths and handles parsing internally. Instead of decoding text ourselves, write the uploaded bytes to a temp file and pass the path to `remember()`.
+**Approach:** Cognee's `remember()` accepts file paths, `s3://` URLs, raw text, and FastAPI `UploadFile` objects natively. Instead of decoding text ourselves or creating temp files, we pass the **bucket storage path** directly — Cognee reads from wherever the file was stored.
 
-**Important verification (from code-reviewer B2):** Before implementing, verify that Cognee's `remember(data, ...)` actually detects file paths vs. plain text strings. If Cognee treats the path string as literal text content, we need to read the file bytes ourselves and pass them appropriately. The safe fallback is:
-- For text formats → decode and pass as string (current behavior, known to work)
-- For binary formats → pass temp file path (assumes Cognee handles it)
-- Add an integration test that uploads a known PDF and verifies it's searchable
+- **Local backend**: pass `storage_path` directly (local filesystem path)
+- **S3 backend**: pass `f"s3://{bucket}/{storage_path}"` (Cognee uses `s3fs`)
 
-**Change in `save_document()`:** Replace the entire `TEXT_TYPES` / `is_text` block (lines 75-103) with:
+No temp files, no redundant copies. The bucket-first pattern stays pure — Cognee reads from the same durable store we wrote to.
+
+**Change in `save_document()`:** Replace the entire `TEXT_TYPES` / `is_text` block with:
 
 ```python
-# Cognee ingest — all file formats, path-based (best-effort, non-blocking)
-_COGNEE_MAX_SIZE = 500_000  # bytes; can be raised later
+# Cognee ingest — all file formats via bucket path (best-effort, non-blocking)
+# Cognee's remember() accepts local paths, s3:// URLs, raw text natively.
+
+# Determine target dataset (Phase 1a) — see logic above
+...
 
 if not target_dataset or not target_user_id:
-    logger.warning(
-        "Cognee ingest skipped for doc %s — %s not provisioned",
-        doc.filename, target_label,
-    )
-elif size > _COGNEE_MAX_SIZE:
-    logger.debug(
-        "Cognee ingest skipped for %s (%d bytes exceeds %d limit)",
-        doc.filename, size, _COGNEE_MAX_SIZE,
-    )
+    logger.warning(...)  # Gap 10 fix
 else:
+    # Pass bucket path directly — Cognee reads from local disk or S3
+    if doc.storage_backend == "s3":
+        cognee_input = f"s3://{settings.s3_bucket_name}/{doc.storage_path}"
+    else:
+        cognee_input = doc.storage_path
+
     try:
-        import tempfile, os
-        suffix = Path(doc.filename).suffix
-        with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
-            tmp.write(content)
-            tmp_path = tmp.name
-        try:
-            await remember(
-                tmp_path,
-                target_dataset,
-                target_user_id,
-                dataset_id=target_dataset_id,
-                background=True,
-            )
-            doc.status = "indexed"
-        except Exception:
-            doc.status = "failed"
-            raise
-        finally:
-            os.unlink(tmp_path)
-    except Exception:
-        logger.exception(
-            "Cognee ingest failed for doc %s (%s, %d bytes, target=%s)",
-            doc.id, doc.filename, size, target_label,
+        await remember(
+            cognee_input, target_dataset, target_user_id,
+            dataset_id=target_dataset_id, background=True,
         )
+        doc.status = "indexed"
+    except Exception:
+        logger.exception(...)
         doc.status = "failed"
 
-# Persist status update
-await db.commit()
+    await db.commit()
 ```
 
 **Key changes from current code:**
 - No `TEXT_TYPES` whitelist — all files go to Cognee
-- Uses `tempfile.NamedTemporaryFile` for clean temp file management
-- Passes file **path** to `remember()` instead of decoded text
+- No temp files — passes bucket `storage_path` (local) or `s3://` URL directly to `remember()`
+- No size limit — Cognee reads from disk/object storage, not our memory
 - `doc.status` updated to `"indexed"` on success, `"failed"` on error
 - `logger.warning` when Cognee is skipped because org/employee isn't provisioned (Gap 10 fix)
-- Temp file cleanup in `finally` block (prevents disk leaks — addresses code-reviewer concern)
 
 **Tests to add:**
 - `test_save_document_pdf` → verify stored in bucket, Cognee ingest attempted
 - `test_save_document_over_size_limit` → verify stored but Cognee skipped with log
 - `test_save_document_cognee_down` → verify stored with status="failed", no crash
-- `test_save_document_temp_file_cleanup` → verify no leftover temp files after success AND failure
+- `test_save_document_s3_path` → verify s3:// URL passed to Cognee when using S3 backend
 - `test_save_document_status_progresses_to_indexed` → verify status updated on success
 - `test_save_document_no_extension` → verify handled gracefully
 
@@ -262,8 +244,7 @@ files = event.get("files", [])
 _MAX_SLACK_FILE_SIZE = 10 * 1024 * 1024  # 10 MB
 
 if files and org and org.cognee_dataset_name and org.cognee_system_user_id:
-    import tempfile, os, httpx
-    from pathlib import Path
+    import httpx
     from app.storage import get_storage_backend
     from app.documents.models import Document
 
@@ -321,21 +302,18 @@ if files and org and org.cognee_dataset_name and org.cognee_system_user_id:
                     ingest_session.add(doc)
                     await ingest_session.commit()
 
-                # 4. Cognee ingest via file path
-                suffix = Path(doc.filename).suffix
-                with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
-                    tmp.write(file_bytes)
-                    tmp_path = tmp.name
-                try:
-                    await remember(
-                        tmp_path,
-                        org.cognee_dataset_name,
-                        org.cognee_system_user_id,
-                        dataset_id=org.cognee_dataset_id,
-                        background=True,
-                    )
-                finally:
-                    os.unlink(tmp_path)
+                # 4. Cognee ingest via bucket path (local or S3 URL)
+                if settings.storage_backend == "s3":
+                    cognee_input = f"s3://{settings.s3_bucket_name}/{storage_path}"
+                else:
+                    cognee_input = storage_path
+                await remember(
+                    cognee_input,
+                    org.cognee_dataset_name,
+                    org.cognee_system_user_id,
+                    dataset_id=org.cognee_dataset_id,
+                    background=True,
+                )
 
             except Exception:
                 logger.debug(
@@ -358,11 +336,10 @@ Same logic, but adapted for WorkspaceSlackBot's variable names:
 **Tests to add (in `tests/test_gateway.py`):**
 - New test class `TestSlackFileAttachments`:
   - `test_file_attachment_downloaded_and_stored` — mock Slack HTTP response, verify `backend.save()` called
-  - `test_file_attachment_cognee_ingested` — verify `remember()` called with temp file path
+  - `test_file_attachment_cognee_ingested` — verify `remember()` called with bucket path
   - `test_file_attachment_non_slack_url_rejected` — SSRF guard: non-`files.slack.com` URL → skipped
   - `test_file_attachment_over_size_limit` — oversized file → skipped
   - `test_file_attachment_download_error` — Slack returns 403 → caught, no crash
-  - `test_file_attachment_temp_file_cleaned_up` — verify `os.unlink()` called in finally
   - `test_multiple_attachments` — 3 files in one message → all processed
   - `test_message_with_files_and_text` — both text ingest AND file ingest run
 
@@ -608,7 +585,7 @@ Phase 6  (verification)                     ───  manual test run
 
 7. **`cognee_document_id` left as reserved** — column exists but never populated. Kept for future Cognee per-document tracking support.
 
-8. **Temp files for Cognee ingest** — files written to `tempfile.NamedTemporaryFile`, passed to Cognee by path, cleaned up in `finally`. Risk of orphaned files on process crash is accepted.
+8. **Bucket path passed directly to Cognee** — Cognee's `remember()` natively accepts local file paths and `s3://` URLs. We pass the bucket's `storage_path` directly (local) or as an `s3://bucket/key` URL (S3). No temp files, no redundant copies. Cognee reads from the same durable store we wrote to.
 
 9. **`status = "indexed"` with `background=True`** — "indexed" means "successfully submitted to Cognee's background pipeline," not "fully indexed and searchable." Switching to `background=False` would give accurate status at the cost of slower uploads. Tracked for future improvement.
 

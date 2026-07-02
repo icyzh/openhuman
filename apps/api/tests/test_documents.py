@@ -148,8 +148,8 @@ class TestSaveDocumentPhase1:
         assert "incomplete cognee provisioning" in mock_warn.call_args[0][0].lower()
 
     @pytest.mark.anyio
-    async def test_all_file_formats_ingested_via_temp_file(self):
-        """Phase 1b: all files (including PDFs) go to Cognee via temp file path."""
+    async def test_all_file_formats_ingested_via_bucket_path(self):
+        """Phase 1b: all files (including PDFs) go to Cognee via bucket path."""
         from app.documents.service import save_document
 
         org = _make_org()
@@ -169,9 +169,9 @@ class TestSaveDocumentPhase1:
 
         assert result is not None
         assert mock_remember.called
-        # Verify a temp file path was passed (not decoded text)
+        # Verify the bucket storage path was passed (not a temp file, not decoded text)
         data_arg = mock_remember.call_args[0][0]
-        assert data_arg.endswith(".pdf")  # temp file with .pdf suffix
+        assert data_arg == "org-123/report.pdf"  # direct bucket path
 
     @pytest.mark.anyio
     async def test_status_progresses_to_indexed_on_success(self):
@@ -259,27 +259,60 @@ class TestSaveDocumentPhase1:
         assert "cognee not provisioned" in mock_warn.call_args[0][0].lower()
 
     @pytest.mark.anyio
-    async def test_over_size_limit_skipped(self):
-        """Files over 500KB skip Cognee ingest, still stored in bucket."""
+    async def test_storage_path_passed_directly_to_cognee(self):
+        """Cognee receives the bucket storage_path (or S3 URL), not a temp file copy."""
         from app.documents.service import save_document
 
         org = _make_org()
         file = MagicMock()
-        file.filename = "large.txt"
+        file.filename = "doc.txt"
         file.content_type = "text/plain"
-        file.read = AsyncMock(return_value=b"x" * 500_001)
+        file.read = AsyncMock(return_value=b"Hello world")
 
         mock_db = AsyncMock(spec=AsyncSession)
         mock_db.scalar = AsyncMock(return_value=org)
 
         with patch("app.documents.service.get_storage_backend") as mock_bf:
-            mock_bf.return_value.save = AsyncMock(return_value="org-123/large.txt")
+            mock_bf.return_value.save = AsyncMock(return_value="org-123/doc.txt")
 
             with patch("app.documents.service.remember") as mock_remember:
                 result = await save_document(mock_db, org.id, uuid4(), file)
 
         assert result is not None
-        assert not mock_remember.called
+        assert mock_remember.called
+        # First positional arg should be the storage path (not a temp path)
+        data_arg = mock_remember.call_args[0][0]
+        assert data_arg == "org-123/doc.txt"
+
+
+    @pytest.mark.anyio
+    async def test_s3_storage_uses_s3_url_for_cognee(self):
+        """When storage_backend is 's3', Cognee receives s3://bucket/key URL."""
+        from app.documents.service import save_document
+
+        org = _make_org()
+        file = MagicMock()
+        file.filename = "report.pdf"
+        file.content_type = "application/pdf"
+        file.read = AsyncMock(return_value=b"%PDF-1.4 content")
+
+        mock_db = AsyncMock(spec=AsyncSession)
+        mock_db.scalar = AsyncMock(return_value=org)
+
+        with patch("app.documents.service.settings") as mock_settings:
+            mock_settings.storage_backend = "s3"
+            mock_settings.s3_bucket_name = "my-bucket"
+
+            with patch("app.documents.service.get_storage_backend") as mock_bf:
+                mock_bf.return_value.save = AsyncMock(return_value="org-123/abc123_report.pdf")
+
+                with patch("app.documents.service.remember") as mock_remember:
+                    result = await save_document(mock_db, org.id, uuid4(), file)
+
+        assert result is not None
+        assert mock_remember.called
+        data_arg = mock_remember.call_args[0][0]
+        assert data_arg == "s3://my-bucket/org-123/abc123_report.pdf"
 
 
 class TestDeleteDocumentPhase1:
