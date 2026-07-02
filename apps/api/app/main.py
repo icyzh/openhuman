@@ -49,27 +49,36 @@ def custom_generate_unique_id(route: APIRoute) -> str:
 @asynccontextmanager
 async def lifespan(_app: FastAPI) -> AsyncGenerator[None, None]:
     """Application lifespan — initialize and teardown resources here."""
+    print(">>> LIFESPAN STARTING...", flush=True)
     # ── Cognee startup ──────────────────────────────────────────────────
     try:
+        print(">>> Initializing Cognee...", flush=True)
         await init_cognee()
-        logger.info("Cognee initialized successfully")
-    except Exception:
+        print(">>> Cognee initialized successfully!", flush=True)
+    except Exception as e:
+        print(f">>> Cognee initialization failed: {e}", flush=True)
         logger.exception(
             "Cognee initialization failed — continuing without memory"
         )
     # Phase 4: Postgres checkpointer for agent thread memory / pause-resume.
+    print(">>> Initializing checkpointer...", flush=True)
     await init_checkpointer()
+    print(">>> Checkpointer initialized successfully!", flush=True)
 
+    print(">>> Starting bot gateway...", flush=True)
     gateway_manager = BotGatewayManager()
     if settings.gateway_enabled:
         await gateway_manager.start()
+    print(">>> Lifespan startup completed successfully!", flush=True)
     try:
         yield
     finally:
         # -- Shutdown ----------------------------------------------------------
+        print(">>> Lifespan shutting down...", flush=True)
         if settings.gateway_enabled:
             await gateway_manager.stop()
         await close_checkpointer()
+        print(">>> Lifespan shutdown completed!", flush=True)
 
 
 app = FastAPI(
