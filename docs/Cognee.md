@@ -288,9 +288,32 @@ COGNEE_SKIP_CONNECTION_TEST=true
 
 ---
 
+---
+
+## Slack File Attachment Handling (added 2026-07-02)
+
+When a user sends a file in Slack (PDF, image, docx, etc.), the bot:
+
+1. **Downloads** the file from Slack's API using the bot token (`url_private` with `Authorization: Bearer` header)
+2. **Saves to bucket** via `StorageBackend.save()` (same two-step pattern as dashboard uploads)
+3. **Creates a Document DB row** linked to the employee who received it
+4. **Ingests into Cognee** via bucket path (local path or `s3://` URL) passed to `cognee.remember()`, targeting the **org dataset** (since it's a team conversation)
+
+This is best-effort and non-blocking — if the download, storage, or Cognee ingest fails, the message is still processed by the agent normally. File content is ingested in addition to (not instead of) the message text.
+
+### File types supported
+
+Same as document uploads — Cognee natively parses PDFs, docx, xlsx, pptx, txt, md, csv, json, html, and more. No format whitelist.
+
+### Code location
+
+`apps/api/app/gateway/slack_bot.py` — both `EmployeeSlackBot._process_slack_message()` and `WorkspaceSlackBot._process_slack_message()`. The file handling block runs after text auto-ingest and before the agent invocation.
+
+---
+
 ## Implementation Plan Summary
 
-See `/home/sno/.claude/plans/fizzy-hatching-shore.md` for the full plan. Quick summary of files to change:
+See `docs/plans/snowsplan.md` for the current implementation plan (2026-07-02). Quick summary of files to change:
 
 | # | File | Change |
 |---|---|---|
@@ -355,7 +378,7 @@ Cognee natively parses many file formats when given a file path:
 - TXT, MD, CSV, JSON, XML, HTML
 - And more
 
-We write uploaded files to a temp file after storage backend save, pass the path to `cognee.remember()`, then clean up the temp file. This replaces the previous text-only approach.
+We pass the bucket's `storage_path` directly to `cognee.remember()`. For local storage this is a filesystem path; for S3 we construct an `s3://bucket/key` URL. Cognee reads from wherever the file was durably stored — no temp files, no redundant copies.
 
 ---
 
