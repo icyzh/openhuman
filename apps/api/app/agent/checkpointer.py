@@ -48,6 +48,21 @@ def get_checkpointer() -> AsyncPostgresSaver | None:
     return _saver
 
 
+from contextlib import asynccontextmanager
+import psycopg
+from psycopg.rows import dict_row
+
+@asynccontextmanager
+async def _custom_conn_context(conn_string: str):
+    async with await psycopg.AsyncConnection.connect(
+        conn_string,
+        autocommit=True,
+        prepare_threshold=None,
+        row_factory=dict_row,
+    ) as conn:
+        yield AsyncPostgresSaver(conn=conn)
+
+
 async def init_checkpointer() -> None:
     """Create the AsyncPostgresSaver singleton and run migrations.
 
@@ -66,9 +81,10 @@ async def init_checkpointer() -> None:
     dsn = _derive_psycopg_dsn()
     logger.info("Initializing Postgres checkpointer (db=%s...)", _redact_dsn(dsn))
 
-    # from_conn_string is an @asynccontextmanager — we enter it manually so
-    # the underlying connection lives for the full application lifespan.
-    _context = AsyncPostgresSaver.from_conn_string(dsn)
+    # We manually establish connection with prepare_threshold=None to prevent
+    # psycopg from using prepared statements, which ensures compatibility
+    # with PgBouncer in transaction mode (Supabase pooled port 6543).
+    _context = _custom_conn_context(dsn)
     _saver = await _context.__aenter__()
     await _saver.setup()
 
