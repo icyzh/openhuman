@@ -12,6 +12,7 @@ def check_output(
     blocked_patterns = [
         "system prompt template",
         "according to my instructions",
+        "as an ai",
     ]
     for pattern in blocked_patterns:
         if pattern.lower() in response.lower():

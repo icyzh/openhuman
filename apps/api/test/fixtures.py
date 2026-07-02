@@ -167,7 +167,7 @@ async def seed_data(session: AsyncSession) -> dict[str, UUID]:
     user = User(
         id=user_id,
         email="test@openhuman.local",
-        password_hash="test-hash-not-real",
+        clerk_id="user_test_123",
         name="Test User",
         is_active=True,
     )

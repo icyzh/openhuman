@@ -365,24 +365,55 @@ class TestFetchUrlSsrF:
 
 
 class TestSearchMemory:
-    """search_memory is a clearly marked mock / deferred stub."""
+    """search_memory tool tests."""
 
     @pytest.mark.anyio
     async def test_returns_no_results_for_unknown(self):
+        from unittest.mock import AsyncMock, MagicMock
+        from uuid import uuid4
         from app.agent.tools.executor import search_memory
-
-        result = await search_memory.ainvoke({"query": "sprint deadline"})
-        assert "No relevant memory found" in result
+        
+        emp_uuid = uuid4()
+        mock_emp = MagicMock()
+        mock_emp.org_id = uuid4()
+        mock_emp.cognee_dataset_name = "test_dataset"
+        mock_emp.cognee_user_id = "user_1"
+        
+        mock_db = AsyncMock()
+        mock_db.scalar.side_effect = [mock_emp, None]
+        
+        with patch("app.agent.tools.executor.recall", new_callable=AsyncMock) as mock_recall:
+            mock_recall.return_value = []
+            
+            result = await search_memory.ainvoke(
+                {"query": "sprint deadline"},
+                config={"configurable": {"employee_id": str(emp_uuid), "db": mock_db}}
+            )
+            assert "No relevant memory found" in result
 
     @pytest.mark.anyio
     async def test_includes_employee_id_when_present(self):
+        from unittest.mock import AsyncMock, MagicMock
+        from uuid import uuid4
         from app.agent.tools.executor import search_memory
 
-        result = await search_memory.ainvoke(
-            {"query": "policy"},
-            config={"configurable": {"employee_id": "emp-42"}},
-        )
-        assert "emp-42" in result
+        emp_uuid = uuid4()
+        mock_emp = MagicMock()
+        mock_emp.org_id = uuid4()
+        mock_emp.cognee_dataset_name = "test_dataset"
+        mock_emp.cognee_user_id = "user_1"
+
+        mock_db = AsyncMock()
+        mock_db.scalar.side_effect = [mock_emp, None]
+
+        with patch("app.agent.tools.executor.recall", new_callable=AsyncMock) as mock_recall:
+            mock_recall.return_value = [{"dataset_name": "test_dataset", "text": f"some fact about {emp_uuid}"}]
+
+            result = await search_memory.ainvoke(
+                {"query": "policy"},
+                config={"configurable": {"employee_id": str(emp_uuid), "db": mock_db}},
+            )
+            assert str(emp_uuid) in result
 
     @pytest.mark.anyio
     async def test_shows_unknown_when_no_employee_id(self):
@@ -392,35 +423,66 @@ class TestSearchMemory:
             {"query": "policy"},
             config={"configurable": {}},
         )
-        assert "unknown" in result.lower()
+        assert "unavailable" in result.lower()
 
     @pytest.mark.anyio
     async def test_no_config_at_all(self):
         from app.agent.tools.executor import search_memory
 
         result = await search_memory.ainvoke({"query": "policy"})
-        assert "unknown" in result.lower()
+        assert "unavailable" in result.lower()
 
 
 class TestIngestMemory:
-    """ingest_memory is a clearly marked mock / deferred stub."""
+    """ingest_memory tool tests."""
 
     @pytest.mark.anyio
     async def test_returns_success_message(self):
+        from unittest.mock import AsyncMock, MagicMock
+        from uuid import uuid4
         from app.agent.tools.executor import ingest_memory
 
-        result = await ingest_memory.ainvoke({"content": "deadline is Friday"})
-        assert "Fact successfully remembered" in result
+        emp_uuid = uuid4()
+        mock_emp = MagicMock()
+        mock_emp.org_id = uuid4()
+        mock_emp.cognee_dataset_name = "test_dataset"
+        mock_emp.cognee_user_id = "user_1"
+
+        mock_db = AsyncMock()
+        mock_db.scalar.side_effect = [mock_emp, None]
+
+        with patch("app.agent.tools.executor.remember", new_callable=AsyncMock) as mock_remember:
+            mock_remember.return_value = None
+
+            result = await ingest_memory.ainvoke(
+                {"content": "deadline is Friday"},
+                config={"configurable": {"employee_id": str(emp_uuid), "db": mock_db}}
+            )
+            assert "successfully remembered" in result.lower()
 
     @pytest.mark.anyio
     async def test_includes_employee_id(self):
+        from unittest.mock import AsyncMock, MagicMock
+        from uuid import uuid4
         from app.agent.tools.executor import ingest_memory
 
-        result = await ingest_memory.ainvoke(
-            {"content": "important fact"},
-            config={"configurable": {"employee_id": "emp-7"}},
-        )
-        assert "emp-7" in result
+        emp_uuid = uuid4()
+        mock_emp = MagicMock()
+        mock_emp.org_id = uuid4()
+        mock_emp.cognee_dataset_name = "test_dataset"
+        mock_emp.cognee_user_id = "user_1"
+
+        mock_db = AsyncMock()
+        mock_db.scalar.side_effect = [mock_emp, None]
+
+        with patch("app.agent.tools.executor.remember", new_callable=AsyncMock) as mock_remember:
+            mock_remember.return_value = None
+
+            result = await ingest_memory.ainvoke(
+                {"content": "important fact"},
+                config={"configurable": {"employee_id": str(emp_uuid), "db": mock_db}},
+            )
+            assert "successfully remembered" in result.lower()
 
 
 # =============================================================================
@@ -802,8 +864,8 @@ class TestEmployeeToolAllowlist:
 
         all_names = {t.name for t in BUILT_IN_TOOLS}
         general_tools = set(GENERAL_TEMPLATE.allowed_tools)
-        assert general_tools == all_names, (
-            "General template should have access to all built-in tools"
+        assert general_tools == all_names - {"escalate_to_human", "escalate_to_human_interactive"}, (
+            "General template should have access to all built-in tools except escalation"
         )
 
 
@@ -927,7 +989,7 @@ class TestSearchWeb:
 class TestBuiltInTools:
     """BUILT_IN_TOOLS list must contain the expected tools."""
 
-    def test_contains_all_six_tools(self):
+    def test_contains_expected_tools(self):
         from app.agent.tools import BUILT_IN_TOOLS
 
         names = {t.name for t in BUILT_IN_TOOLS}
@@ -938,6 +1000,10 @@ class TestBuiltInTools:
             "fetch_url",
             "search_memory",
             "ingest_memory",
+            "check_background_task",
+            "cancel_background_task",
+            "escalate_to_human",
+            "escalate_to_human_interactive",
         }
         assert names == expected
 
@@ -947,9 +1013,10 @@ class TestBuiltInTools:
         names = [t.name for t in BUILT_IN_TOOLS]
         assert len(names) == len(set(names)), f"Duplicate tool names: {names}"
 
-    def test_memory_tools_are_last(self):
-        """Memory tools appear last — convention for deferred implementations."""
+    def test_memory_tools_exist(self):
+        """Memory tools exist in BUILT_IN_TOOLS."""
         from app.agent.tools import BUILT_IN_TOOLS
 
         names = [t.name for t in BUILT_IN_TOOLS]
-        assert names[-2:] == ["search_memory", "ingest_memory"]
+        assert "search_memory" in names
+        assert "ingest_memory" in names

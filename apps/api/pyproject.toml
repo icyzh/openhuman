@@ -33,6 +33,7 @@ dev = [
     "ruff>=0.8.0",
     "mypy>=1.13.0",
     "pytest>=8.3.0",
+    "pytest-asyncio",
     "httpx>=0.28.0",
 ]
 
