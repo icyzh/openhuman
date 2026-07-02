@@ -11,16 +11,36 @@ def apply_cognee_config() -> None:
     """
     from app.core.config import settings
 
+    llm_api_key = settings.cognee_llm_api_key or settings.openai_api_key
+    llm_endpoint = settings.cognee_llm_endpoint or settings.openai_base_url
+    
+    llm_model = settings.cognee_llm_model
+    if not settings.cognee_llm_api_key and settings.openai_model:
+        # Cognee expects provider prefix in model name: "openai/model_name"
+        llm_model = f"openai/{settings.openai_model}"
+
+    embedding_api_key = settings.cognee_embedding_endpoint or settings.openai_api_key
+    embedding_endpoint = settings.cognee_embedding_endpoint or settings.openai_base_url
+    
+    embedding_model = settings.cognee_embedding_model
+    if not settings.cognee_embedding_endpoint and settings.openai_model:
+        # Use same model for embeddings if compatible, or keep default
+        pass
+
     os.environ.setdefault("LLM_PROVIDER", settings.cognee_llm_provider)
-    if settings.cognee_llm_endpoint:
-        os.environ["LLM_ENDPOINT"] = settings.cognee_llm_endpoint
-    if settings.cognee_llm_api_key:
-        os.environ["LLM_API_KEY"] = settings.cognee_llm_api_key
-    os.environ.setdefault("LLM_MODEL", settings.cognee_llm_model)
+    if llm_endpoint:
+        os.environ["LLM_ENDPOINT"] = llm_endpoint
+    if llm_api_key:
+        os.environ["LLM_API_KEY"] = llm_api_key
+    os.environ["LLM_MODEL"] = llm_model
+
     os.environ.setdefault("EMBEDDING_PROVIDER", settings.cognee_embedding_provider)
-    if settings.cognee_embedding_endpoint:
-        os.environ["EMBEDDING_ENDPOINT"] = settings.cognee_embedding_endpoint
+    if embedding_endpoint:
+        os.environ["EMBEDDING_ENDPOINT"] = embedding_endpoint
+    if embedding_api_key:
+        os.environ["EMBEDDING_API_KEY"] = embedding_api_key
     os.environ.setdefault("EMBEDDING_MODEL", settings.cognee_embedding_model)
+
     os.environ.setdefault(
         "COGNEE_SKIP_CONNECTION_TEST",
         str(settings.cognee_skip_connection_test).lower(),
