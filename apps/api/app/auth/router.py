@@ -15,12 +15,20 @@ from app.core.dependencies import get_current_user
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
 
+import traceback
+
 @router.post("/register", response_model=TokenResponse, status_code=status.HTTP_201_CREATED)
 async def register_route(data: RegisterRequest, db: AsyncSession = Depends(get_db)):
     try:
         user = await register(db, data)
     except ValueError:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Email already registered")
+    except Exception as e:
+        tb = traceback.format_exc()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Registration failed: {str(e)}\nTraceback:\n{tb}"
+        )
     return make_token_response(user)
 
 
