@@ -1,14 +1,17 @@
 from uuid import UUID
 
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
-from jose import JWTError
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from clerk_backend_api.security import authenticate_request
+from clerk_backend_api.security.types import AuthenticateRequestOptions
+
 from app.auth.models import User
+from app.auth.service import get_or_create_user
+from app.core.config import settings
 from app.core.database import get_db
-from app.core.security import decode_access_token
 
 _bearer_scheme = HTTPBearer(auto_error=False)
 
@@ -23,28 +26,37 @@ def _unauthorized(detail: str = "Invalid token") -> HTTPException:
 
 async def get_current_user(
     credentials: HTTPAuthorizationCredentials | None = Depends(_bearer_scheme),
+    request: Request = None,  # type: ignore[assignment]
     db: AsyncSession = Depends(get_db),
 ) -> User:
-    """Extract JWT from Authorization header, validate, and return the User.
+    """Validate the Clerk session token and return the local User.
 
-    Raises 401 if the token is missing, expired, or belongs to a deleted user.
+    On first login the local User row is created automatically by syncing
+    the Clerk user profile.
     """
     if credentials is None:
         raise _unauthorized("Missing bearer token")
 
-    try:
-        payload = decode_access_token(credentials.credentials)
-        user_id: str | None = payload.get("sub")
-        if user_id is None:
-            raise _unauthorized()
-        user_uuid = UUID(user_id)
-    except JWTError:
-        raise _unauthorized()
-    except ValueError:
-        raise _unauthorized()
+    token = credentials.credentials
 
-    user = await db.scalar(select(User).where(User.id == user_uuid))
-    if user is None or not user.is_active:
+    request_state = authenticate_request(
+        request,
+        AuthenticateRequestOptions(
+            secret_key=settings.clerk_secret_key,
+            authorized_parties=settings.clerk_authorized_parties_list,
+            jwt_key=settings.clerk_jwt_key,
+        ),
+    )
+
+    if not request_state.is_signed_in:
+        raise _unauthorized(request_state.message or "Invalid token")
+
+    clerk_user_id: str | None = request_state.payload.get("sub")
+    if not clerk_user_id:
+        raise _unauthorized("Token missing sub claim")
+
+    user = await get_or_create_user(db, clerk_user_id, request_state.payload)
+    if not user.is_active:
         raise _unauthorized("User not found")
 
     return user

@@ -45,7 +45,7 @@ const CardNav: React.FC<CardNavProps> = ({
   buttonBgColor,
   buttonTextColor,
   ctaLabel = 'Get Started',
-  ctaHref = '/signup',
+  ctaHref = '/sign-up',
 }) => {
   const [isHamburgerOpen, setIsHamburgerOpen] = useState(false);
   const [isExpanded, setIsExpanded] = useState(false);

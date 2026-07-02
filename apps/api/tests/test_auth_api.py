@@ -1,12 +1,11 @@
 from collections.abc import AsyncGenerator, Generator
-from datetime import UTC, datetime, timedelta
+from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
 
 import anyio
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
-from jose import jwt
 from sqlalchemy import event
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
@@ -55,100 +54,92 @@ def client(tmp_path) -> Generator[TestClient, None, None]:
     anyio.run(engine.dispose)
 
 
-def test_register_login_and_me(client: TestClient) -> None:
-    register_response = client.post(
-        "/api/auth/register",
-        json={
-            "email": "ada@example.com",
-            "password": "correct horse battery staple",
-            "name": "Ada Lovelace",
-        },
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+
+def _mock_clerk_auth(test_app: FastAPI, clerk_user_id: str, email: str, name: str):
+    """Patch ``authenticate_request`` to return a signed-in Clerk user."""
+    mock_request_state = MagicMock()
+    mock_request_state.is_signed_in = True
+    mock_request_state.message = None
+    mock_request_state.payload = {
+        "sub": clerk_user_id,
+        "email": email,
+        "name": name,
+    }
+
+    patcher = patch(
+        "app.core.dependencies.authenticate_request",
+        return_value=mock_request_state,
     )
+    patcher.start()
 
-    assert register_response.status_code == 201
-    token_payload = register_response.json()
-    assert token_payload["token_type"] == "bearer"
-    assert token_payload["access_token"]
-    assert "password_hash" not in token_payload
+    # Also set a valid secret key so authenticate_request doesn't fail early
+    settings.clerk_secret_key = "sk_test_mock"
 
-    login_response = client.post(
-        "/api/auth/login",
-        json={
-            "email": "ada@example.com",
-            "password": "correct horse battery staple",
-        },
-    )
+    return patcher
 
-    assert login_response.status_code == 200
-    login_token = login_response.json()["access_token"]
 
-    me_response = client.get(
-        "/api/auth/me",
-        headers={"Authorization": f"Bearer {login_token}"},
-    )
+# ---------------------------------------------------------------------------
+# Tests
+# ---------------------------------------------------------------------------
 
-    assert me_response.status_code == 200
-    user_payload = me_response.json()
-    assert user_payload["email"] == "ada@example.com"
-    assert user_payload["name"] == "Ada Lovelace"
+
+def test_me_rejects_missing_token(client: TestClient) -> None:
+    """Without a Bearer token the /me endpoint returns 401."""
+    response = client.get("/api/auth/me")
+    assert response.status_code == 401
+
+
+def test_me_returns_user_when_authenticated(client: TestClient) -> None:
+    """With a valid Clerk token, /me returns the user profile (auto-creating
+    the local User row on first call)."""
+    clerk_id = "user_mock_123"
+    email = "ada@example.com"
+    name = "Ada Lovelace"
+
+    patcher = _mock_clerk_auth(client.app, clerk_id, email, name)
+
+    try:
+        response = client.get(
+            "/api/auth/me",
+            headers={"Authorization": f"Bearer mock-session-token"},
+        )
+    finally:
+        patcher.stop()
+
+    assert response.status_code == 200
+    user_payload = response.json()
+    assert user_payload["email"] == email
+    assert user_payload["name"] == name
+    assert user_payload["clerk_id"] == clerk_id
     assert user_payload["is_active"] is True
     assert "password_hash" not in user_payload
 
 
-def test_duplicate_email_is_rejected(client: TestClient) -> None:
-    payload = {
-        "email": "grace@example.com",
-        "password": "correct horse battery staple",
-        "name": "Grace Hopper",
-    }
+def test_me_idempotent_across_calls(client: TestClient) -> None:
+    """Calling /me twice with the same Clerk user returns the same local User."""
+    clerk_id = "user_mock_456"
+    email = "grace@example.com"
+    name = "Grace Hopper"
 
-    assert client.post("/api/auth/register", json=payload).status_code == 201
-    duplicate_response = client.post("/api/auth/register", json=payload)
+    patcher = _mock_clerk_auth(client.app, clerk_id, email, name)
 
-    assert duplicate_response.status_code == 409
+    try:
+        first = client.get(
+            "/api/auth/me",
+            headers={"Authorization": "Bearer t1"},
+        )
+        second = client.get(
+            "/api/auth/me",
+            headers={"Authorization": "Bearer t2"},
+        )
+    finally:
+        patcher.stop()
 
-
-def test_me_rejects_missing_invalid_and_expired_tokens(client: TestClient) -> None:
-    missing_response = client.get("/api/auth/me")
-    invalid_response = client.get(
-        "/api/auth/me",
-        headers={"Authorization": "Bearer not-a-valid-jwt"},
-    )
-
-    expired_token = jwt.encode(
-        {
-            "sub": str(uuid4()),
-            "iat": datetime.now(UTC) - timedelta(hours=2),
-            "exp": datetime.now(UTC) - timedelta(hours=1),
-        },
-        settings.jwt_secret_key,
-        algorithm=settings.jwt_algorithm,
-    )
-    expired_response = client.get(
-        "/api/auth/me",
-        headers={"Authorization": f"Bearer {expired_token}"},
-    )
-
-    assert missing_response.status_code == 401
-    assert invalid_response.status_code == 401
-    assert expired_response.status_code == 401
-
-
-def test_me_rejects_deleted_or_inactive_user(client: TestClient) -> None:
-    """Token for a user ID that does not exist must be rejected (covers
-    both deleted-user and never-existed paths through get_current_user)."""
-    ghost_token = jwt.encode(
-        {
-            "sub": str(uuid4()),
-            "iat": datetime.now(UTC),
-            "exp": datetime.now(UTC) + timedelta(minutes=60),
-        },
-        settings.jwt_secret_key,
-        algorithm=settings.jwt_algorithm,
-    )
-    ghost_response = client.get(
-        "/api/auth/me",
-        headers={"Authorization": f"Bearer {ghost_token}"},
-    )
-    assert ghost_response.status_code == 401
-    assert ghost_response.json()["detail"] == "User not found"
+    assert first.status_code == 200
+    assert second.status_code == 200
+    assert first.json()["id"] == second.json()["id"]
+    assert first.json()["email"] == email

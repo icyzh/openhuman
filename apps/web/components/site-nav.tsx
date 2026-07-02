@@ -1,14 +1,13 @@
 "use client";
 
 import Link from "next/link";
+import { useAuth } from "@clerk/nextjs";
 
 import CardNav from "@/components/CardNav";
 import { Logo } from "@/components/logo";
-import { useAuthStore } from "@/stores/auth";
 
 export function SiteNav() {
-  const { token, user, isLoading } = useAuthStore();
-  const loggedIn = !!token && !!user && !isLoading;
+  const { isSignedIn, isLoaded } = useAuth();
 
   return (
     <CardNav
@@ -17,9 +16,8 @@ export function SiteNav() {
           href="/"
           className="flex items-center gap-1.5 text-white no-underline"
         >
-          Open
           <Logo className="h-7 w-7 text-white" />
-          Human
+          OpenHuman
         </Link>
       }
       items={[
@@ -59,8 +57,8 @@ export function SiteNav() {
       menuColor="#e8ecd0"
       buttonBgColor="#ffffff"
       buttonTextColor="#1a1717"
-      ctaLabel={loggedIn ? "Dashboard" : "Get Started"}
-      ctaHref={loggedIn ? "/dashboard" : "/signup"}
+      ctaLabel={isLoaded && isSignedIn ? "Dashboard" : "Get Started"}
+      ctaHref={isLoaded && isSignedIn ? "/dashboard" : "/sign-up"}
     />
   );
 }

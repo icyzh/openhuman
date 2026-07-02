@@ -1,10 +1,11 @@
 "use client";
 
 import Link from "next/link";
-import { AgentCarousel } from "@/components/agent-carousel";
-import { ArrowDiagonal } from "@/components/ui/button-arrow";
 import Image from "next/image";
-import { useAuthStore } from "@/stores/auth";
+import { useAuth } from "@clerk/nextjs";
+import { AgentCarousel } from "@/components/agent-carousel";
+import { FlowerDivider } from "@/components/flower-divider";
+import { ArrowDiagonal, ArrowRight } from "@/components/ui/button-arrow";
 
 const features = [
   {
@@ -40,7 +41,7 @@ const features = [
 ];
 
 export default function Home() {
-  const loggedIn = !!useAuthStore((s) => s.token);
+  const { isSignedIn, isLoaded } = useAuth();
 
   return (
     <main className="flex min-h-screen flex-col items-center">
@@ -48,9 +49,10 @@ export default function Home() {
         <h1 className="text-center text-8xl font-base tracking-tight text-foreground">
           Your next favorite AI employee.
         </h1>
-        <p className="mt-4 max-w-xl text-center text-lg leading-relaxed text-muted-foreground">
-          Create AI employees with perfect memory. Specialize each one on a domain and it learns
-          from every conversation your team has.
+        <p className="mt-4 max-w-3xl text-center text-lg leading-relaxed text-muted-foreground">
+          Build your own AI coworkers with their own memory. They learn and remember over time,
+          handle the boring tasks without complaining, and actually remember what matters
+          across every session. Powered by Cognee's memory layer.
         </p>
         <p className="mt-4 text-sm text-muted-foreground/60">
           Powered by{" "}
@@ -65,15 +67,24 @@ export default function Home() {
         </p>
         <div className="mt-10">
           <Link
-            href={loggedIn ? "/dashboard" : "/signup"}
-            className="inline-flex items-center gap-3 rounded-lg bg-primary px-10 py-5 text-lg font-medium text-primary-foreground shadow-lg shadow-foreground/10 no-underline"
+            href={isLoaded && isSignedIn ? "/dashboard" : "/sign-up"}
+            className="group/button inline-flex items-center gap-3 rounded-lg bg-primary px-10 py-5 text-lg font-medium text-primary-foreground shadow-lg shadow-foreground/10 no-underline"
           >
-            {loggedIn ? "Dashboard" : "Get started"}
+            {isLoaded && isSignedIn ? "Dashboard" : "Get started"}
+            <ArrowRight size={16} />
           </Link>
         </div>
       </section>
 
-      <AgentCarousel linkTo="/signup" />
+      <div className="w-full px-6">
+        <div className="mx-auto h-px w-full max-w-7xl bg-gradient-to-r from-transparent via-border to-transparent" />
+      </div>
+
+      <AgentCarousel linkTo="/sign-up" />
+
+      <div className="flex w-full justify-center py-12">
+        <FlowerDivider width={320} />
+      </div>
 
       <section className="w-full max-w-7xl px-6 pb-24">
         <h2 className="text-center text-7xl font-base tracking-tight text-foreground">

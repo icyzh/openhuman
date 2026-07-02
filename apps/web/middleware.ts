@@ -1,46 +1,42 @@
+import { clerkMiddleware, createRouteMatcher } from "@clerk/nextjs/server";
 import { NextResponse } from "next/server";
-import type { NextRequest } from "next/server";
 
-const protectedPaths = [
-  "/dashboard",
+const isProtectedRoute = createRouteMatcher([
+  "/dashboard/:path*",
   "/onboard",
   "/setup",
-  "/organization",
-  "/activity",
-  "/storage",
-  "/settings",
-];
-const authPaths = ["/login", "/signup"];
+  "/organization/:path*",
+  "/activity/:path*",
+  "/storage/:path*",
+  "/settings/:path*",
+]);
 
-export function middleware(request: NextRequest) {
-  const token = request.cookies.get("oh_token")?.value;
-  const { pathname } = request.nextUrl;
+const isLegacyAuthRoute = createRouteMatcher(["/login", "/signup"]);
 
-  // Redirect authenticated users away from auth pages
-  if (token && authPaths.includes(pathname)) {
-    return NextResponse.redirect(new URL("/dashboard", request.url));
+export default clerkMiddleware(async (auth, req) => {
+  // Redirect legacy auth routes to Clerk equivalents
+  if (isLegacyAuthRoute(req)) {
+    const { userId } = await auth();
+    if (userId) {
+      return NextResponse.redirect(new URL("/dashboard", req.url));
+    }
+    const clerkPath = req.nextUrl.pathname === "/login" ? "/sign-in" : "/sign-up";
+    return NextResponse.redirect(new URL(clerkPath, req.url));
   }
 
-  // Redirect unauthenticated users away from protected pages
-  if (!token && protectedPaths.some((p) => pathname.startsWith(p))) {
-    const loginUrl = new URL("/login", request.url);
-    loginUrl.searchParams.set("redirect", pathname);
-    return NextResponse.redirect(loginUrl);
+  // Protect dashboard and app routes
+  if (isProtectedRoute(req)) {
+    await auth.protect();
   }
-
-  return NextResponse.next();
-}
+});
 
 export const config = {
   matcher: [
-    "/dashboard/:path*",
-    "/onboard",
-    "/setup",
-    "/organization",
-    "/activity",
-    "/storage",
-    "/settings",
-    "/login",
-    "/signup",
+    // Skip Next.js internals and static files
+    "/((?!_next|[^?]*\\.(?:html?|css|js(?!on)|jpe?g|webp|png|gif|svg|ttf|woff2?|ico|csv|docx?|xlsx?|zip|webmanifest)).*)",
+    // Always run for API routes
+    "/(api|trpc)(.*)",
+    // Include Clerk proxy path
+    "/__clerk/:path*",
   ],
 };

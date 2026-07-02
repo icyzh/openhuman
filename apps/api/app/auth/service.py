@@ -2,20 +2,26 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.models import User
-from app.auth.schemas import RegisterRequest
-from app.core.security import create_access_token, hash_password, verify_password
 
 
-async def register(db: AsyncSession, data: RegisterRequest) -> User:
-    """Create a new user. Raises ValueError if email is taken."""
-    existing = await db.scalar(select(User).where(User.email == data.email))
-    if existing is not None:
-        raise ValueError("A user with this email already exists")
+async def get_or_create_user(db: AsyncSession, clerk_id: str, clerk_payload: dict) -> User:
+    """Look up a local User by Clerk ID, creating one on first login."""
+    user = await db.scalar(select(User).where(User.clerk_id == clerk_id))
+    if user is not None:
+        return user
+
+    # Extract info from Clerk's JWT payload
+    email = clerk_payload.get("email") or clerk_payload.get("email_address", "")
+    name = (
+        clerk_payload.get("name")
+        or f"{clerk_payload.get('first_name', '')} {clerk_payload.get('last_name', '')}".strip()
+        or email
+    )
 
     user = User(
-        email=data.email,
-        password_hash=hash_password(data.password),
-        name=data.name,
+        clerk_id=clerk_id,
+        email=email,
+        name=name,
     )
     db.add(user)
     await db.commit()
@@ -23,22 +29,6 @@ async def register(db: AsyncSession, data: RegisterRequest) -> User:
     return user
 
 
-async def authenticate(db: AsyncSession, email: str, password: str) -> User | None:
-    """Return the User if credentials are valid, otherwise None."""
-    user = await db.scalar(select(User).where(User.email == email))
-    if user is None or not verify_password(password, user.password_hash):
-        return None
-    return user
-
-
 async def get_user_by_id(db: AsyncSession, user_id: str) -> User | None:
     """Fetch a user by their UUID string."""
     return await db.scalar(select(User).where(User.id == user_id))
-
-
-def make_token_response(user: User) -> dict:
-    """Build a TokenResponse dict from a User."""
-    return {
-        "access_token": create_access_token(str(user.id)),
-        "token_type": "bearer",
-    }

@@ -2,8 +2,8 @@
 
 import { Suspense, useEffect } from "react";
 import { useRouter } from "next/navigation";
+import { useAuth } from "@clerk/nextjs";
 import { useOrganizationsListOrganizations } from "@repo/api-client";
-import { useAuthStore } from "@/stores/auth";
 import { useOrgStore } from "@/stores/org";
 import { DashboardShell } from "@/app/(dashboard)/_components/dashboard-shell";
 import { Button } from "@/components/ui/button";
@@ -11,8 +11,7 @@ import { Spinner } from "@/components/ui/spinner";
 
 function OrgInitializer({ children }: { children: React.ReactNode }) {
   const router = useRouter();
-  const token = useAuthStore((s) => s.token);
-  const isLoadingAuth = useAuthStore((s) => s.isLoading);
+  const { isSignedIn, isLoaded } = useAuth();
   const { orgId, setOrg } = useOrgStore();
 
   const {
@@ -21,7 +20,7 @@ function OrgInitializer({ children }: { children: React.ReactNode }) {
     isError,
     refetch,
   } = useOrganizationsListOrganizations({
-    query: { enabled: !isLoadingAuth && !!token && !orgId },
+    query: { enabled: isLoaded && isSignedIn && !orgId },
   });
 
   useEffect(() => {
@@ -35,7 +34,7 @@ function OrgInitializer({ children }: { children: React.ReactNode }) {
     }
   }, [orgs, listLoading, setOrg, router, orgId]);
 
-  if (isLoadingAuth || listLoading) {
+  if (!isLoaded || listLoading) {
     return (
       <div className="flex h-screen items-center justify-center">
         <Spinner />

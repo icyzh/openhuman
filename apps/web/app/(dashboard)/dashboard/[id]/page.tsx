@@ -59,6 +59,8 @@ import {
 } from "@/components/ui/alert-dialog";
 import { cn } from "@/lib/utils";
 
+import { useAuth } from "@clerk/nextjs";
+
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
 function slackInstallUrl(employeeId: string, orgId: string): string {
@@ -77,9 +79,7 @@ function formatSize(bytes: number | null | undefined): string {
   return `${size.toFixed(i === 0 ? 0 : 1)} ${units[i]}`;
 }
 
-async function downloadDocument(docId: string, filename: string) {
-  const token =
-    typeof window !== "undefined" ? localStorage.getItem("oh_token") : null;
+async function downloadDocument(docId: string, filename: string, token: string | null) {
   const response = await fetch(`${API_URL}/api/documents/${docId}/download`, {
     headers: { Authorization: `Bearer ${token}` },
   });
@@ -126,6 +126,7 @@ export default function EmployeeDetailPage() {
   const router = useRouter();
   const queryClient = useQueryClient();
   const orgId = useOrgStore((s) => s.orgId);
+  const { getToken } = useAuth();
 
   const {
     data: apiEmployee,
@@ -290,14 +291,19 @@ export default function EmployeeDetailPage() {
     async (docId: string, filename: string) => {
       setDownloadingId(docId);
       try {
-        await downloadDocument(docId, filename);
+        const token = await getToken();
+        if (!token) {
+          toast.error("Session expired. Please sign in again.");
+          return;
+        }
+        await downloadDocument(docId, filename, token);
       } catch {
         toast.error("Failed to download file");
       } finally {
         setDownloadingId(null);
       }
     },
-    [],
+    [getToken],
   );
 
   useEffect(() => {

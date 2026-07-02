@@ -1,8 +1,38 @@
 @import "tailwindcss";
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
+@import "@clerk/ui/themes/shadcn.css";
 
 @custom-variant dark (&:is(.dark *));
+
+/* Auth page view transitions */
+::view-transition-old(auth-image) {
+  animation: fade-out 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+::view-transition-new(auth-image) {
+  animation: fade-in 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+}
+::view-transition-old(auth-form) {
+  animation: fade-out-slide 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+::view-transition-new(auth-form) {
+  animation: fade-in-slide 0.35s 0.05s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+@keyframes fade-out {
+  to { opacity: 0; }
+}
+@keyframes fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes fade-out-slide {
+  to { opacity: 0; transform: translateX(-8px); }
+}
+@keyframes fade-in-slide {
+  from { opacity: 0; transform: translateX(8px); }
+  to { opacity: 1; transform: translateX(0); }
+}
 
 @theme inline {
   --color-background: var(--background);

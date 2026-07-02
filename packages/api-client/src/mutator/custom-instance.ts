@@ -13,6 +13,24 @@ export class ApiError extends Error {
   }
 }
 
+async function getAuthToken(): Promise<string | null> {
+  // Use Clerk session token when available
+  if (typeof window !== "undefined" && window.Clerk?.session) {
+    try {
+      return await window.Clerk.session.getToken();
+    } catch {
+      // Clerk session may not be ready yet
+    }
+  }
+
+  // Fallback: legacy token during transition period
+  if (typeof window !== "undefined") {
+    return localStorage.getItem("oh_token");
+  }
+
+  return null;
+}
+
 export const customInstance = async <T>(
   config: {
     url: string;
@@ -28,10 +46,7 @@ export const customInstance = async <T>(
 ): Promise<T> => {
   const { url, method, headers: configHeaders, params, data, signal } = config;
 
-  const token =
-    typeof window !== "undefined"
-      ? localStorage.getItem("oh_token")
-      : null;
+  const token = await getAuthToken();
 
   let queryParams = "";
   if (params) {
@@ -69,14 +84,8 @@ export const customInstance = async <T>(
   });
 
   if (response.status === 401 && !url.startsWith("/api/auth/")) {
-    if (typeof window !== "undefined") {
-      localStorage.removeItem("oh_token");
-      localStorage.removeItem("oh-auth");
-      localStorage.removeItem("oh-org");
-      document.cookie = "oh_token=; path=/; max-age=0; SameSite=Lax";
-      window.location.href = "/login";
-    }
-    throw new ApiError(401, "Unauthorized", "Session expired");
+    const errorBody = await response.text().catch(() => "");
+    throw new ApiError(401, "Unauthorized", errorBody || "Session expired");
   }
 
   if (!response.ok) {

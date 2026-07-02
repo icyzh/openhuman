@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useClerk } from "@clerk/nextjs";
 import {
   Activity,
   BookOpen,
@@ -13,7 +14,6 @@ import {
 } from "lucide-react";
 
 import { Logo } from "@/components/logo";
-import { useAuthStore } from "@/stores/auth";
 import { useOrgStore } from "@/stores/org";
 import {
   Sidebar,
@@ -38,7 +38,7 @@ const NAV_ITEMS = [
 
 export function DashboardSidebar() {
   const pathname = usePathname();
-  const logout = useAuthStore((s) => s.logout);
+  const { signOut } = useClerk();
   const clearOrg = useOrgStore((s) => s.clearOrg);
 
   return (
@@ -84,8 +84,7 @@ export function DashboardSidebar() {
                   tooltip="Logout"
                   onClick={() => {
                     clearOrg();
-                    logout();
-                    window.location.href = "/";
+                    signOut({ redirectUrl: "/" });
                   }}
                 >
                   <LogOut />

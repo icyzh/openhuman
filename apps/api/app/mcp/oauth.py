@@ -6,20 +6,20 @@ OAuth-based MCP connector shares the same plumbing:
 * ``build_authorize_url`` — redirect the browser to the provider's consent page.
 * ``exchange_code`` — trade the temporary code for access + refresh tokens.
 * ``refresh_access_token`` — lazily refresh an expired OAuth2 access token.
-* JWT-signed ``state`` parameter — ties the OAuth callback back to the right
+* Signed ``state`` parameter — ties the OAuth callback back to the right
   employee, org, and connector without a server-side session.
 """
 
 from __future__ import annotations
 
 import logging
-from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING
 from urllib.parse import quote_plus, urlencode
 from uuid import UUID
 
 import httpx
 from fastapi.responses import RedirectResponse
+from itsdangerous import BadData, URLSafeTimedSerializer
 
 from app.core.config import settings
 from app.core.security import decrypt_token, encrypt_token
@@ -34,62 +34,63 @@ logger = logging.getLogger(__name__)
 # Constants
 # ---------------------------------------------------------------------------
 
-# How long the OAuth state JWT is valid (minutes).
-_STATE_EXPIRE_MINUTES = 10
+# How long the OAuth state token is valid (seconds).
+_STATE_MAX_AGE = 600  # 10 minutes
 
 # ---------------------------------------------------------------------------
-# JWT state helpers
+# Signed state helpers
 # ---------------------------------------------------------------------------
 
 
-def _encode_oauth_state_jwt(
+def _get_state_secret() -> str:
+    """Return a secret key for signing OAuth state tokens."""
+    return settings.encryption_key or settings.clerk_secret_key or "change-me"
+
+
+def _get_serializer() -> URLSafeTimedSerializer:
+    return URLSafeTimedSerializer(_get_state_secret(), salt="mcp-oauth-state")
+
+
+def _encode_oauth_state(
     employee_id: UUID,
     org_id: UUID,
     connector_slug: str,
     redirect_to: str | None = None,
 ) -> str:
-    """Create a short-lived JWT for the OAuth ``state`` parameter.
+    """Create a short-lived signed token for the OAuth ``state`` parameter.
 
-    The JWT survives the round-trip through the provider so the callback
-    can recover *who* initiated the flow and for *which connector* — no
-    server-side session storage needed.
+    Survives the round-trip through the provider so the callback can recover
+    *who* initiated the flow and for *which connector* — no server-side
+    session storage needed.
     """
-    from jose import jwt as jose_jwt
-
-    now = datetime.now(UTC)
-    payload = {
+    payload: dict[str, str] = {
         "employee_id": str(employee_id),
         "org_id": str(org_id),
         "connector_slug": connector_slug,
-        "iat": now,
-        "exp": now + timedelta(minutes=_STATE_EXPIRE_MINUTES),
-        "purpose": "mcp_oauth",
     }
     if redirect_to:
         payload["redirect_to"] = redirect_to
-    return jose_jwt.encode(
-        payload, settings.jwt_secret_key, algorithm=settings.jwt_algorithm
-    )
+    return _get_serializer().dumps(payload)
 
 
 def _decode_oauth_state(state: str) -> dict | None:
-    """Decode and validate the OAuth state JWT.
+    """Decode and validate the OAuth state token.
 
-    Returns the payload dict or ``None`` if the JWT is expired, tampered
-    with, or has the wrong purpose claim.
+    Returns the payload dict or ``None`` if the token is expired, tampered
+    with, or has missing fields.
     """
-    from jose import JWTError, jwt as jose_jwt
-
     try:
-        payload = jose_jwt.decode(
-            state, settings.jwt_secret_key, algorithms=[settings.jwt_algorithm]
-        )
-    except JWTError:
-        logger.warning("MCP OAuth state JWT is invalid")
+        payload = _get_serializer().loads(state, max_age=_STATE_MAX_AGE)
+    except BadData:
+        logger.warning("MCP OAuth state token is invalid or expired")
         return None
 
-    if payload.get("purpose") != "mcp_oauth":
-        logger.warning("MCP OAuth state JWT has wrong purpose")
+    if not isinstance(payload, dict):
+        return None
+
+    required = {"employee_id", "org_id", "connector_slug"}
+    if not required.issubset(payload.keys()):
+        logger.warning("MCP OAuth state token missing required fields")
         return None
 
     return payload
@@ -125,7 +126,7 @@ def build_authorize_url(
     if not settings.mcp_oauth_redirect_uri:
         raise ValueError("MCP_OAUTH_REDIRECT_URI is not configured.")
 
-    state = _encode_oauth_state_jwt(employee_id, org_id, spec.slug, redirect_to)
+    state = _encode_oauth_state(employee_id, org_id, spec.slug, redirect_to)
 
     params: dict[str, str] = {
         "client_id": creds["client_id"],

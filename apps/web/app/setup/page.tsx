@@ -2,11 +2,11 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import { useAuth } from "@clerk/nextjs";
 import {
   useOrganizationsCreateOrganization,
   useOrganizationsListOrganizations,
 } from "@repo/api-client";
-import { useAuthStore } from "@/stores/auth";
 import { useOrgStore } from "@/stores/org";
 import { Spinner } from "@/components/ui/spinner";
 import { OrgSetupForm } from "./_components/org-setup-form";
@@ -17,7 +17,7 @@ type Step = "form" | "upload";
 
 export default function SetupPage() {
   const router = useRouter();
-  const token = useAuthStore((s) => s.token);
+  const { isSignedIn, isLoaded } = useAuth();
   const { setOrg, orgId } = useOrgStore();
   const [step, setStep] = useState<Step>("form");
   const [createdOrgId, setCreatedOrgId] = useState<string | null>(null);
@@ -29,7 +29,7 @@ export default function SetupPage() {
 
   const { data: orgs, isLoading: listLoading } =
     useOrganizationsListOrganizations({
-      query: { enabled: !!token && !orgId },
+      query: { enabled: isLoaded && isSignedIn && !orgId },
     });
 
   const handleOrgCreated = useCallback(
@@ -81,6 +81,15 @@ export default function SetupPage() {
       router.replace("/dashboard");
     }
   }, [orgs, orgId, setOrg, router]);
+
+  // Still loading Clerk auth state
+  if (!isLoaded) {
+    return (
+      <div className="flex justify-center">
+        <Spinner />
+      </div>
+    );
+  }
 
   // Still loading org list or org already exists
   if (orgId || (orgs && orgs.length > 0)) {

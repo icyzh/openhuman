@@ -3,8 +3,6 @@ from pathlib import Path
 from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-DEFAULT_JWT_SECRET = "change-me-in-production"
-
 # Resolve .env relative to the project root (apps/api/) regardless of CWD
 _PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 _ENV_FILE = _PROJECT_ROOT / ".env"
@@ -36,10 +34,14 @@ class Settings(BaseSettings):
     # from database_url if empty.
     checkpoint_database_url: str = ""
 
-    # Auth
-    jwt_secret_key: str = DEFAULT_JWT_SECRET
-    jwt_algorithm: str = "HS256"
-    jwt_expire_minutes: int = 60
+    # Clerk authentication
+    clerk_secret_key: str = ""
+    clerk_jwt_key: str | None = None
+    clerk_authorized_parties: str = "http://localhost:3000"
+
+    @property
+    def clerk_authorized_parties_list(self) -> list[str]:
+        return [p.strip() for p in self.clerk_authorized_parties.split(",") if p.strip()]
 
     # Encryption for bot tokens (AES-256-GCM, 32-byte key)
     encryption_key: str = ""
@@ -145,10 +147,9 @@ class Settings(BaseSettings):
     def validate_production_secrets(self) -> "Settings":
         """Fail fast if production is configured with development-only secrets."""
         if self.environment.lower() in {"production", "prod"}:
-            if self.jwt_secret_key == DEFAULT_JWT_SECRET or len(self.jwt_secret_key) < 32:
+            if not self.clerk_secret_key:
                 raise ValueError(
-                    "jwt_secret_key must be set to a non-default value of at least "
-                    "32 characters in production"
+                    "clerk_secret_key must be set in production"
                 )
             if not self.encryption_key or len(self.encryption_key) != 64:
                 raise ValueError(

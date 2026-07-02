@@ -13,6 +13,7 @@ import {
   XIcon,
 } from "lucide-react";
 import { format } from "date-fns";
+import { useAuth } from "@clerk/nextjs";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import {
@@ -71,10 +72,7 @@ function formatSize(bytes: number | null | undefined): string {
   return `${size.toFixed(i === 0 ? 0 : 1)} ${units[i]}`;
 }
 
-async function downloadDocument(docId: string, filename: string) {
-  const token =
-    typeof window !== "undefined" ? localStorage.getItem("oh_token") : null;
-
+async function downloadDocument(docId: string, filename: string, token: string | null) {
   const response = await fetch(`${API_URL}/api/documents/${docId}/download`, {
     headers: { Authorization: `Bearer ${token}` },
   });
@@ -188,6 +186,7 @@ function DocumentTable({
 
 export default function StoragePage() {
   const orgId = useOrgStore((s) => s.orgId);
+  const { getToken } = useAuth();
   const queryClient = useQueryClient();
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -347,14 +346,19 @@ export default function StoragePage() {
     async (docId: string, filename: string) => {
       setDownloadingId(docId);
       try {
-        await downloadDocument(docId, filename);
+        const token = await getToken();
+        if (!token) {
+          toast.error("Session expired. Please sign in again.");
+          return;
+        }
+        await downloadDocument(docId, filename, token);
       } catch {
         toast.error("Failed to download file");
       } finally {
         setDownloadingId(null);
       }
     },
-    [],
+    [getToken],
   );
 
   const hasDocuments = allDocuments && allDocuments.length > 0;

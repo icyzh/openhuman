@@ -24,11 +24,11 @@ Identity modes
 from __future__ import annotations
 
 import logging
-from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
 from fastapi import APIRouter, Query
 from fastapi.responses import RedirectResponse
+from itsdangerous import BadData, URLSafeTimedSerializer
 from slack_sdk.web.async_client import AsyncWebClient
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
@@ -73,48 +73,49 @@ _SLACK_BOT_SCOPES = [
 
 _SLACK_AUTHORIZE_URL = "https://slack.com/oauth/v2/authorize"
 
-# How long the OAuth state parameter is valid (minutes).
-_STATE_EXPIRE_MINUTES = 10
+# How long the OAuth state token is valid (seconds).
+_STATE_MAX_AGE = 600  # 10 minutes
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 
 
-def _encode_oauth_state_jwt(employee_id: UUID, org_id: UUID, redirect_to: str | None = None) -> str:
-    """Create a short-lived JWT for the OAuth state parameter."""
-    from jose import jwt as jose_jwt
+def _get_state_secret() -> str:
+    """Return a secret key for signing OAuth state tokens."""
+    return settings.encryption_key or settings.clerk_secret_key or "change-me"
 
-    now = datetime.now(UTC)
-    payload = {
+
+def _get_serializer() -> URLSafeTimedSerializer:
+    return URLSafeTimedSerializer(_get_state_secret(), salt="slack-oauth-state")
+
+
+def _encode_oauth_state(employee_id: UUID, org_id: UUID, redirect_to: str | None = None) -> str:
+    """Create a short-lived signed token for the OAuth state parameter."""
+    payload: dict[str, str] = {
         "employee_id": str(employee_id),
         "org_id": str(org_id),
-        "iat": now,
-        "exp": now + timedelta(minutes=_STATE_EXPIRE_MINUTES),
-        "purpose": "slack_oauth",
     }
     if redirect_to:
         payload["redirect_to"] = redirect_to
-    return jose_jwt.encode(
-        payload, settings.jwt_secret_key, algorithm=settings.jwt_algorithm
-    )
+    return _get_serializer().dumps(payload)
 
 
 def _decode_oauth_state(state: str) -> dict | None:
-    """Decode and validate the OAuth state JWT.  Returns the payload dict
-    or ``None`` if it is expired / tampered with / not for this purpose."""
-    from jose import JWTError, jwt as jose_jwt
-
+    """Decode and validate the OAuth state token.  Returns the payload dict
+    or ``None`` if it is expired / tampered with / missing fields."""
     try:
-        payload = jose_jwt.decode(
-            state, settings.jwt_secret_key, algorithms=[settings.jwt_algorithm]
-        )
-    except JWTError:
-        logger.warning("Slack OAuth state JWT is invalid")
+        payload = _get_serializer().loads(state, max_age=_STATE_MAX_AGE)
+    except BadData:
+        logger.warning("Slack OAuth state token is invalid or expired")
         return None
 
-    if payload.get("purpose") != "slack_oauth":
-        logger.warning("Slack OAuth state JWT has wrong purpose")
+    if not isinstance(payload, dict):
+        return None
+
+    required = {"employee_id", "org_id"}
+    if not required.issubset(payload.keys()):
+        logger.warning("Slack OAuth state token missing required fields")
         return None
 
     return payload
@@ -196,7 +197,7 @@ async def slack_install(
         )
 
     actual_redirect_to = redirect_to or f"{settings.frontend_url.rstrip('/')}/dashboard/{emp_uuid}"
-    state = _encode_oauth_state_jwt(emp_uuid, org_uuid, actual_redirect_to)
+    state = _encode_oauth_state(emp_uuid, org_uuid, actual_redirect_to)
     scope = ",".join(_SLACK_BOT_SCOPES)
 
     if settings.slack_identity_mode == "per_employee":

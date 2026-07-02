@@ -223,7 +223,7 @@ function parseInlineElements(text: string): React.ReactNode {
       break;
     }
 
-    const nextToken = indices[0];
+    const nextToken = indices[0]!;
 
     if (nextToken.index > 0) {
       parts.push(currentText.substring(0, nextToken.index));
@@ -261,8 +261,8 @@ function parseInlineElements(text: string): React.ReactNode {
         currentText = currentText.substring(nextToken.index + 1);
       }
     } else if (nextToken.type === "link" && linkMatch) {
-      const linkText = linkMatch[1];
-      const linkUrl = linkMatch[2];
+      const linkText = linkMatch[1]!;
+      const linkUrl = linkMatch[2]!;
       const isLocalMd =
         linkUrl.endsWith(".md") &&
         !linkUrl.startsWith("http") &&

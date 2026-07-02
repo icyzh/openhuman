@@ -37,6 +37,13 @@ const templates: Agent[] = [
       "Reviews code, documents architecture decisions, and tracks technical debt across repos.",
     color: "#3b82f6",
   },
+  {
+    id: "hr",
+    name: "HR",
+    description:
+      "Manages onboarding, tracks employee requests, and keeps your team handbook and policies up to date.",
+    color: "#10b981",
+  },
 ];
 
 export async function fetchTemplates(): Promise<Agent[]> {

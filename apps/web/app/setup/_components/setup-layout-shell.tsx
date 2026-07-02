@@ -1,25 +1,28 @@
 "use client";
 
 import Link from "next/link";
+import { useUser, useClerk } from "@clerk/nextjs";
 import { Logo } from "@/components/logo";
 import { Button } from "@/components/ui/button";
-import { useAuthStore } from "@/stores/auth";
 import { useOrgStore } from "@/stores/org";
 
 export function SetupLayoutShell({ children }: { children: React.ReactNode }) {
-  const { logout, user } = useAuthStore();
+  const { user } = useUser();
+  const { signOut } = useClerk();
   const clearOrg = useOrgStore((s) => s.clearOrg);
 
   const handleSignOut = () => {
     clearOrg();
-    logout();
+    signOut({ redirectUrl: "/" });
   };
 
   return (
     <div className="relative flex min-h-svh flex-col bg-background-app">
       <div className="absolute right-4 top-4 flex items-center gap-3">
         {user && (
-          <span className="text-sm text-muted-foreground">{user.email}</span>
+          <span className="text-sm text-muted-foreground">
+            {user.primaryEmailAddress?.emailAddress}
+          </span>
         )}
         <Button variant="outline" size="sm" onClick={handleSignOut}>
           Sign out

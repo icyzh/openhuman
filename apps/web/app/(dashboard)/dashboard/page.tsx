@@ -4,8 +4,8 @@ import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { PlusIcon, SearchIcon, UsersIcon } from "lucide-react";
 
+import { useUser } from "@clerk/nextjs";
 import { useEmployeesListEmployeesRoute } from "@repo/api-client";
-import { useAuthStore } from "@/stores/auth";
 import { useOrgStore } from "@/stores/org";
 import { apiToEmployeeDisplay } from "@/types/employee";
 import { EmployeeCard } from "@/components/employee-card";
@@ -15,7 +15,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 
 export default function DashboardPage() {
   const router = useRouter();
-  const user = useAuthStore((s) => s.user);
+  const { user } = useUser();
   const orgId = useOrgStore((s) => s.orgId);
   const [search, setSearch] = useState("");
 
@@ -49,7 +49,7 @@ export default function DashboardPage() {
     <div className="flex flex-col gap-6 px-6 py-6">
       <div className="flex flex-col gap-1">
         <p className="text-2xl font-semibold tracking-tight text-foreground">
-          Welcome back, {user?.name ?? "there"}
+          Welcome back, {user?.fullName ?? user?.username ?? "there"}
         </p>
       </div>
       <div className="flex items-center justify-between gap-4">
