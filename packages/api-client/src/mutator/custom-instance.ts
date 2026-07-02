@@ -50,6 +50,7 @@ export const customInstance = async <T>(
     if (typeof window !== "undefined") {
       localStorage.removeItem("oh_token");
       localStorage.removeItem("oh-auth");
+      localStorage.removeItem("oh-org");
       document.cookie = "oh_token=; path=/; max-age=0; SameSite=Lax";
       window.location.href = "/login";
     }
