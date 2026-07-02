@@ -1,6 +1,16 @@
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 import logging
+import subprocess
+import sys
+
+print(">>> [Startup] Running database migrations...", flush=True)
+try:
+    subprocess.run(["alembic", "upgrade", "head"], check=True)
+    print(">>> [Startup] Database migrations completed successfully!", flush=True)
+except Exception as e:
+    print(f">>> [Startup] Database migrations failed: {e}", flush=True)
+    sys.exit(1)
 
 # ── Cognee bootstrap: MUST run before any import app.* that triggers import cognee ──
 from app.core.cognee import apply_cognee_config
