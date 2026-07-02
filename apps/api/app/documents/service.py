@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 import logging
+import os
+import tempfile
 from collections.abc import AsyncGenerator
+from pathlib import Path
 from uuid import UUID
 
 from fastapi import UploadFile
@@ -13,6 +16,7 @@ from app.core.config import settings
 from app.documents.models import Document
 from app.documents.schemas import DocumentsStatsResponse
 from app.documents.utils import sanitize_filename
+from app.employees.models import Employee
 from app.memory.service import remember
 from app.organizations.models import Organization
 from app.storage import get_local_backend, get_s3_backend, get_storage_backend
@@ -71,37 +75,83 @@ async def save_document(
     await db.commit()
     await db.refresh(doc)
 
-    # ── Cognee ingest for text files (best-effort, non-blocking) ──────────
-    TEXT_TYPES = {
-        "text/plain", "text/markdown", "text/csv",
-        "application/json", "application/xml",
-    }
-    _MAX_COGNEE_TEXT_SIZE = 500_000
-    is_text = (
-        file.content_type in TEXT_TYPES
-        or doc.filename.endswith((".txt", ".md", ".csv", ".json", ".xml"))
-    )
-    if is_text and size > _MAX_COGNEE_TEXT_SIZE:
-        logger.debug(
-            "Skipping Cognee ingest for %s (%d bytes exceeds limit)",
-            doc.filename, size,
-        )
-    elif is_text and org.cognee_dataset_name and org.cognee_system_user_id:
-        try:
-            text_content = content.decode("utf-8", errors="replace")
-            await remember(
-                f"Document: {doc.filename}\n\n{text_content}",
-                org.cognee_dataset_name,
-                org.cognee_system_user_id,
-                dataset_id=org.cognee_dataset_id,
-                background=True,
+    # ── Cognee ingest — all file formats, path-based (best-effort, non-blocking) ─
+    _COGNEE_MAX_SIZE = 500_000  # bytes
+
+    # Determine target dataset: employee docs go to employee dataset (Phase 1a)
+    if employee_id:
+        emp = await db.get(Employee, employee_id)
+        if emp and emp.cognee_dataset_name and emp.cognee_user_id and emp.cognee_dataset_id:
+            target_dataset = emp.cognee_dataset_name
+            target_user_id = emp.cognee_user_id
+            target_dataset_id = emp.cognee_dataset_id
+            target_label = f"employee-{employee_id}"
+        else:
+            missing_parts = []
+            if not emp:
+                missing_parts.append("employee not found")
+            else:
+                if not emp.cognee_user_id:
+                    missing_parts.append("cognee_user_id")
+                if not emp.cognee_dataset_name:
+                    missing_parts.append("cognee_dataset_name")
+                if not emp.cognee_dataset_id:
+                    missing_parts.append("cognee_dataset_id")
+            logger.warning(
+                "Employee %s has incomplete Cognee provisioning (%s), "
+                "falling back to org dataset for doc %s",
+                employee_id, ", ".join(missing_parts) if missing_parts else "unknown", doc.filename,
             )
+            target_dataset = org.cognee_dataset_name
+            target_user_id = org.cognee_system_user_id
+            target_dataset_id = org.cognee_dataset_id
+            target_label = f"org-{org.id} (fallback from employee)"
+    else:
+        target_dataset = org.cognee_dataset_name
+        target_user_id = org.cognee_system_user_id
+        target_dataset_id = org.cognee_dataset_id
+        target_label = f"org-{org.id}"
+
+    if not target_dataset or not target_user_id:
+        logger.warning(
+            "Cognee ingest skipped for doc %s — Cognee not provisioned for %s",
+            doc.filename, target_label,
+        )
+    elif size > _COGNEE_MAX_SIZE:
+        logger.debug(
+            "Cognee ingest skipped for %s (%d bytes exceeds %d limit)",
+            doc.filename, size, _COGNEE_MAX_SIZE,
+        )
+    else:
+        try:
+            suffix = Path(doc.filename).suffix
+            with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
+                tmp.write(content)
+                tmp_path = tmp.name
+            try:
+                await remember(
+                    tmp_path,
+                    target_dataset,
+                    target_user_id,
+                    dataset_id=target_dataset_id,
+                    background=True,
+                )
+                doc.status = "indexed"
+            except Exception:
+                doc.status = "failed"
+                raise
+            finally:
+                os.unlink(tmp_path)
         except Exception:
             logger.exception(
-                "Cognee document ingest failed for doc %s (non-blocking)",
-                doc.id,
+                "Cognee ingest failed for doc %s (%s, %d bytes, target=%s)",
+                doc.id, doc.filename, size, target_label,
             )
-    # ── End Cognee ──────────────────────────────────────────────────────────
+            doc.status = "failed"
+
+        # Persist status update from Cognee attempt
+        await db.commit()
+    # ── End Cognee ──────────────────────────────────────────────────────────────
 
     return doc
 
@@ -187,6 +237,13 @@ async def get_document(
 async def delete_document(
     db: AsyncSession, doc_id: UUID, user_id: UUID
 ) -> bool:
+    """Delete a document from storage and database.
+
+    Note: Cognee knowledge is NOT deleted. Cognee's forget() operates at the
+    dataset level, not per-document. Stale knowledge may persist in the graph
+    until the containing dataset is forgotten (org/employee deletion).
+    This is an accepted limitation for v1.
+    """
     doc = await get_document(db, doc_id, user_id)
     if doc is None:
         return False
