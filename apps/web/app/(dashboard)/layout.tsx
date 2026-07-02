@@ -25,6 +25,7 @@ function OrgInitializer({ children }: { children: React.ReactNode }) {
   });
 
   useEffect(() => {
+    if (orgId) return;
     if (listLoading || !orgs) return;
     if (orgs.length > 0) {
       const first = orgs[0];
@@ -32,7 +33,7 @@ function OrgInitializer({ children }: { children: React.ReactNode }) {
     } else {
       router.replace("/setup");
     }
-  }, [orgs, listLoading, setOrg, router]);
+  }, [orgs, listLoading, setOrg, router, orgId]);
 
   if (isLoadingAuth || listLoading) {
     return (

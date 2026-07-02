@@ -3,6 +3,7 @@ import { persist } from "zustand/middleware";
 import { authLogin, authRegisterRoute, authMe } from "@repo/api-client";
 import { ApiError } from "@repo/api-client";
 import type { UserResponse } from "@repo/api-client";
+import { useOrgStore } from "./org";
 
 const COOKIE_ATTRS = "path=/; SameSite=Lax";
 
@@ -61,9 +62,11 @@ export const useAuthStore = create<AuthState>()(
 
         try {
           const user = await authMe();
+          setOhToken(token); // Restore cookie if missing/expired but token is valid
           set({ user, isLoading: false, error: null });
         } catch {
           setOhToken(null);
+          useOrgStore.getState().clearOrg();
           set({ token: null, user: null, isLoading: false });
         }
       },
@@ -73,6 +76,7 @@ export const useAuthStore = create<AuthState>()(
         try {
           const response = await authLogin({ email, password });
           setOhToken(response.access_token);
+          useOrgStore.getState().clearOrg(); // Clear any stale org
           set({ token: response.access_token });
           // Best-effort fetch user; failure doesn't undo login
           try {
@@ -83,6 +87,7 @@ export const useAuthStore = create<AuthState>()(
           }
         } catch (err) {
           setOhToken(null);
+          useOrgStore.getState().clearOrg();
           set({
             token: null,
             user: null,
@@ -98,6 +103,7 @@ export const useAuthStore = create<AuthState>()(
         try {
           const response = await authRegisterRoute({ email, password, name });
           setOhToken(response.access_token);
+          useOrgStore.getState().clearOrg(); // Clear any stale org
           set({ token: response.access_token });
           try {
             const user = await authMe();
@@ -107,6 +113,7 @@ export const useAuthStore = create<AuthState>()(
           }
         } catch (err) {
           setOhToken(null);
+          useOrgStore.getState().clearOrg();
           set({
             token: null,
             user: null,
@@ -119,6 +126,7 @@ export const useAuthStore = create<AuthState>()(
 
       logout: () => {
         setOhToken(null);
+        useOrgStore.getState().clearOrg();
         set({ token: null, user: null, isLoading: false, error: null });
       },
     }),

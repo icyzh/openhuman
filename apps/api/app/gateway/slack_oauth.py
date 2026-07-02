@@ -195,7 +195,8 @@ async def slack_install(
             redirect_to=redirect_to,
         )
 
-    state = _encode_oauth_state_jwt(emp_uuid, org_uuid, redirect_to)
+    actual_redirect_to = redirect_to or f"{settings.frontend_url.rstrip('/')}/dashboard/{emp_uuid}"
+    state = _encode_oauth_state_jwt(emp_uuid, org_uuid, actual_redirect_to)
     scope = ",".join(_SLACK_BOT_SCOPES)
 
     if settings.slack_identity_mode == "per_employee":

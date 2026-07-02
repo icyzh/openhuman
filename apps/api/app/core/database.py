@@ -5,10 +5,16 @@ from sqlalchemy.orm import DeclarativeBase
 
 from app.core.config import settings
 
+connect_args = {}
+if settings.database_url.startswith("postgresql+asyncpg"):
+    connect_args["statement_cache_size"] = 0
+    connect_args["prepared_statement_cache_size"] = 0
+
 engine = create_async_engine(
     settings.database_url,
     pool_size=settings.db_pool_size,
     max_overflow=settings.db_max_overflow,
+    connect_args=connect_args,
 )
 
 async_session_factory = async_sessionmaker(

@@ -25,4 +25,9 @@ def apply_cognee_config() -> None:
         "COGNEE_SKIP_CONNECTION_TEST",
         str(settings.cognee_skip_connection_test).lower(),
     )
-    os.environ.setdefault("COGNEE_DATA_DIR", settings.cognee_data_dir)
+    if os.environ.get("VERCEL") == "1":
+        os.environ["SYSTEM_ROOT_DIRECTORY"] = "/tmp/cognee_system"
+        os.environ["COGNEE_DATA_DIR"] = "/tmp/cognee_data"
+    else:
+        os.environ.setdefault("COGNEE_DATA_DIR", settings.cognee_data_dir)
+
