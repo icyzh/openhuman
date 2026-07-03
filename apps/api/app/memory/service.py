@@ -207,8 +207,19 @@ async def forget_dataset(dataset_name: str) -> dict:
     """Delete a dataset from Cognee.
 
     Uses memory_only=True to avoid SQLite UNIQUE constraint issues.
+    Handles Neo4j Aura limitations (unsupported administrative commands like CREATE/DROP DATABASE).
     """
-    await cognee.forget(dataset=dataset_name, memory_only=True)
+    try:
+        await cognee.forget(dataset=dataset_name, memory_only=True)
+    except Exception as e:
+        err_msg = str(e)
+        if "UnsupportedAdministrationCommand" in err_msg or "CREATE DATABASE" in err_msg or "DROP DATABASE" in err_msg:
+            logger.warning(
+                "Cognee forget_dataset skipped for dataset %s: Neo4j Aura does not support database deletion/creation. Error: %s",
+                dataset_name, err_msg
+            )
+            return {"status": "skipped", "reason": "Neo4j Aura administrative commands unsupported"}
+        raise
     return {"status": "ok"}
 
 
