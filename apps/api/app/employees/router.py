@@ -13,6 +13,7 @@ from app.employees.schemas import (
     SlackTokenRequest,
     StatusRequest,
     UpdateEmployeeRequest,
+    UpdateSlackSlotRequest,
 )
 from app.employees.service import (
     DuplicateEmployeeTypeError,
@@ -24,6 +25,7 @@ from app.employees.service import (
     store_slack_token,
     update_employee,
     update_status,
+    update_slack_slot_credentials,
 )
 
 router = APIRouter(
@@ -158,4 +160,27 @@ async def set_status(
     result = await update_status(db, org_id, emp_id, current_user.id, data.status)
     if result is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Employee not found")
+    return result
+
+
+@router.patch("/{emp_id}/slack-slot", response_model=EmployeeResponse)
+async def patch_slack_slot_route(
+    org_id: UUID,
+    emp_id: UUID,
+    data: UpdateSlackSlotRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> EmployeeResponse:
+    """Update credentials of the Slack slot assigned to this employee."""
+    result = await update_slack_slot_credentials(
+        db,
+        org_id,
+        emp_id,
+        current_user.id,
+        client_id=data.client_id,
+        client_secret=data.client_secret,
+        app_token=data.app_token,
+    )
+    if result is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Employee or Slack slot not found")
     return result

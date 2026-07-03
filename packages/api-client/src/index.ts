@@ -15,25 +15,13 @@ export type {
 
 // Auth
 export {
-  useAuthRegisterRoute,
-  useAuthLogin,
   useAuthMe,
   getAuthMeQueryKey,
   getAuthMeQueryOptions,
-  getAuthRegisterRouteMutationOptions,
-  getAuthLoginMutationOptions,
-  authRegisterRoute,
-  authLogin,
   authMe,
 } from "./api/auth/auth";
 
 export type {
-  AuthRegisterRouteMutationResult,
-  AuthRegisterRouteMutationBody,
-  AuthRegisterRouteMutationError,
-  AuthLoginMutationResult,
-  AuthLoginMutationBody,
-  AuthLoginMutationError,
   AuthMeQueryResult,
   AuthMeQueryError,
 } from "./api/auth/auth";
@@ -58,6 +46,7 @@ export {
   getEmployeesSetDiscordTokenMutationOptions,
   getEmployeesSetSlackTokenMutationOptions,
   getEmployeesSetStatusMutationOptions,
+  getEmployeesPatchSlackSlotRouteMutationOptions,
   employeesCreateEmployeeRoute,
   employeesListEmployeesRoute,
   employeesGetEmployeeRoute,
@@ -66,6 +55,8 @@ export {
   employeesSetDiscordToken,
   employeesSetSlackToken,
   employeesSetStatus,
+  employeesPatchSlackSlotRoute,
+  useEmployeesPatchSlackSlotRoute,
 } from "./api/employees/employees";
 
 export type {
@@ -90,6 +81,9 @@ export type {
   EmployeesSetStatusMutationResult,
   EmployeesSetStatusMutationBody,
   EmployeesSetStatusMutationError,
+  EmployeesPatchSlackSlotRouteMutationResult,
+  EmployeesPatchSlackSlotRouteMutationBody,
+  EmployeesPatchSlackSlotRouteMutationError,
 } from "./api/employees/employees";
 
 // Organizations
@@ -135,7 +129,7 @@ export {
   useDocumentsGetDocumentRoute,
   useDocumentsDeleteDocumentRoute,
   useDocumentsDownloadDocument,
-  useDocumentsGetStats,
+  useDocumentsGetOrgDocumentsStats,
   getDocumentsUploadDocumentMutationOptions,
   getDocumentsListOrgDocumentsQueryKey,
   getDocumentsListOrgDocumentsQueryOptions,
@@ -144,14 +138,14 @@ export {
   getDocumentsDeleteDocumentRouteMutationOptions,
   getDocumentsDownloadDocumentQueryKey,
   getDocumentsDownloadDocumentQueryOptions,
-  getDocumentsGetStatsQueryKey,
-  getDocumentsGetStatsQueryOptions,
+  getDocumentsGetOrgDocumentsStatsQueryKey,
+  getDocumentsGetOrgDocumentsStatsQueryOptions,
   documentsUploadDocument,
   documentsListOrgDocuments,
   documentsGetDocumentRoute,
   documentsDeleteDocumentRoute,
   documentsDownloadDocument,
-  documentsGetStats,
+  documentsGetOrgDocumentsStats,
 } from "./api/documents/documents";
 
 export type {
@@ -166,16 +160,13 @@ export type {
   DocumentsDeleteDocumentRouteMutationError,
   DocumentsDownloadDocumentQueryResult,
   DocumentsDownloadDocumentQueryError,
-  DocumentsGetStatsQueryResult,
-  DocumentsGetStatsQueryError,
+  DocumentsGetOrgDocumentsStatsQueryResult,
+  DocumentsGetOrgDocumentsStatsQueryError,
 } from "./api/documents/documents";
 
 // Schemas
 export type {
   HealthResponse,
-  LoginRequest,
-  RegisterRequest,
-  TokenResponse,
   UserResponse,
   HTTPValidationError,
   EmployeeResponse,
@@ -184,12 +175,13 @@ export type {
   StatusRequest,
   DiscordTokenRequest,
   SlackTokenRequest,
+  UpdateSlackSlotRequest,
   OrganizationResponse,
   CreateOrganizationRequest,
   UpdateOrganizationRequest,
   BodyDocumentsUploadDocument,
   DocumentResponse,
-  DocumentsGetStatsParams,
+  DocumentsGetOrgDocumentsStatsParams,
   DocumentsListOrgDocumentsParams,
   DocumentsStatsResponse,
 } from "./schemas";

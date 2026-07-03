@@ -5,9 +5,10 @@
  * OpenHuman — API backend
  * OpenAPI spec version: 0.1.0
  */
-import type { DocumentResponseEmployeeId } from "./documentResponseEmployeeId";
-import type { DocumentResponseContentType } from "./documentResponseContentType";
-import type { DocumentResponseSizeBytes } from "./documentResponseSizeBytes";
+import type { DocumentResponseEmployeeId } from './documentResponseEmployeeId';
+import type { DocumentResponseContentType } from './documentResponseContentType';
+import type { DocumentResponseSizeBytes } from './documentResponseSizeBytes';
+import type { DocumentResponseEmployeeName } from './documentResponseEmployeeName';
 
 export interface DocumentResponse {
   id: string;
@@ -19,5 +20,5 @@ export interface DocumentResponse {
   status: string;
   storage_backend?: string;
   uploaded_at: string;
-  employee_name?: string | null;
+  employee_name?: DocumentResponseEmployeeName;
 }

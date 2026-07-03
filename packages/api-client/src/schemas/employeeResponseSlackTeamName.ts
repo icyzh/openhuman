@@ -6,7 +6,4 @@
  * OpenAPI spec version: 0.1.0
  */
 
-export interface TokenResponse {
-  access_token: string;
-  token_type?: string;
-}
+export type EmployeeResponseSlackTeamName = string | null;

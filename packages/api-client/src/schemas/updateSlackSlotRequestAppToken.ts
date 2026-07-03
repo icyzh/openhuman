@@ -6,6 +6,4 @@
  * OpenAPI spec version: 0.1.0
  */
 
-export type DocumentsGetStatsParams = {
-  organization_id: string;
-};
+export type UpdateSlackSlotRequestAppToken = string | null;

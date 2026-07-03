@@ -5,23 +5,28 @@
  * OpenHuman — API backend
  * OpenAPI spec version: 0.1.0
  */
-import { useMutation } from "@tanstack/react-query";
+import {
+  useMutation
+} from '@tanstack/react-query';
 import type {
   MutationFunction,
   QueryClient,
   UseMutationOptions,
-  UseMutationResult,
-} from "@tanstack/react-query";
+  UseMutationResult
+} from '@tanstack/react-query';
 
 import type {
   AgentResponse,
   HTTPValidationError,
-  MessageInput,
-} from "../../schemas";
+  MessageInput
+} from '../../schemas';
 
-import { customInstance } from "../../mutator/custom-instance";
+import { customInstance } from '../../mutator/custom-instance';
+
 
 type SecondParameter<T extends (...args: never) => unknown> = Parameters<T>[1];
+
+
 
 /**
  * Execute the authenticated internal AI agent test route.
@@ -32,90 +37,64 @@ in-process.
  * @summary Run Agent
  */
 export const agentRunAgent = (
-  messageInput: MessageInput,
-  options?: SecondParameter<typeof customInstance>,
-  signal?: AbortSignal,
+    messageInput: MessageInput,
+ options?: SecondParameter<typeof customInstance>,signal?: AbortSignal
 ) => {
-  return customInstance<AgentResponse>(
-    {
-      url: `/api/agent/run`,
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      data: messageInput,
-      signal,
+      
+      
+      return customInstance<AgentResponse>(
+      {url: `/api/agent/run`, method: 'POST',
+      headers: {'Content-Type': 'application/json', },
+      data: messageInput, signal
     },
-    options,
-  );
-};
+      options);
+    }
+  
 
-export const getAgentRunAgentMutationOptions = <
-  TError = HTTPValidationError,
-  TContext = unknown,
->(options?: {
-  mutation?: UseMutationOptions<
-    Awaited<ReturnType<typeof agentRunAgent>>,
-    TError,
-    { data: MessageInput },
-    TContext
-  >;
-  request?: SecondParameter<typeof customInstance>;
-}): UseMutationOptions<
-  Awaited<ReturnType<typeof agentRunAgent>>,
-  TError,
-  { data: MessageInput },
-  TContext
-> => {
-  const mutationKey = ["agentRunAgent"];
-  const { mutation: mutationOptions, request: requestOptions } = options
-    ? options.mutation &&
-      "mutationKey" in options.mutation &&
-      options.mutation.mutationKey
-      ? options
-      : { ...options, mutation: { ...options.mutation, mutationKey } }
-    : { mutation: { mutationKey }, request: undefined };
 
-  const mutationFn: MutationFunction<
-    Awaited<ReturnType<typeof agentRunAgent>>,
-    { data: MessageInput }
-  > = (props) => {
-    const { data } = props ?? {};
+export const getAgentRunAgentMutationOptions = <TError = HTTPValidationError,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof agentRunAgent>>, TError,{data: MessageInput}, TContext>, request?: SecondParameter<typeof customInstance>}
+): UseMutationOptions<Awaited<ReturnType<typeof agentRunAgent>>, TError,{data: MessageInput}, TContext> => {
 
-    return agentRunAgent(data, requestOptions);
-  };
+const mutationKey = ['agentRunAgent'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
 
-  return { mutationFn, ...mutationOptions };
-};
+      
 
-export type AgentRunAgentMutationResult = NonNullable<
-  Awaited<ReturnType<typeof agentRunAgent>>
->;
-export type AgentRunAgentMutationBody = MessageInput;
-export type AgentRunAgentMutationError = HTTPValidationError;
 
-/**
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof agentRunAgent>>, {data: MessageInput}> = (props) => {
+          const {data} = props ?? {};
+
+          return  agentRunAgent(data,requestOptions)
+        }
+
+        
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type AgentRunAgentMutationResult = NonNullable<Awaited<ReturnType<typeof agentRunAgent>>>
+    export type AgentRunAgentMutationBody = MessageInput
+    export type AgentRunAgentMutationError = HTTPValidationError
+
+    /**
  * @summary Run Agent
  */
-export const useAgentRunAgent = <
-  TError = HTTPValidationError,
-  TContext = unknown,
->(
-  options?: {
-    mutation?: UseMutationOptions<
-      Awaited<ReturnType<typeof agentRunAgent>>,
-      TError,
-      { data: MessageInput },
-      TContext
-    >;
-    request?: SecondParameter<typeof customInstance>;
-  },
-  queryClient?: QueryClient,
-): UseMutationResult<
-  Awaited<ReturnType<typeof agentRunAgent>>,
-  TError,
-  { data: MessageInput },
-  TContext
-> => {
-  const mutationOptions = getAgentRunAgentMutationOptions(options);
+export const useAgentRunAgent = <TError = HTTPValidationError,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof agentRunAgent>>, TError,{data: MessageInput}, TContext>, request?: SecondParameter<typeof customInstance>}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof agentRunAgent>>,
+        TError,
+        {data: MessageInput},
+        TContext
+      > => {
 
-  return useMutation(mutationOptions, queryClient);
-};
+      const mutationOptions = getAgentRunAgentMutationOptions(options);
+
+      return useMutation(mutationOptions, queryClient);
+    }
+    

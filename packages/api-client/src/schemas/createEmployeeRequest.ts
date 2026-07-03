@@ -5,11 +5,12 @@
  * OpenHuman — API backend
  * OpenAPI spec version: 0.1.0
  */
-import type { CreateEmployeeRequestRole } from "./createEmployeeRequestRole";
-import type { CreateEmployeeRequestPersonality } from "./createEmployeeRequestPersonality";
-import type { CreateEmployeeRequestSpecialization } from "./createEmployeeRequestSpecialization";
-import type { CreateEmployeeRequestDuties } from "./createEmployeeRequestDuties";
-import type { CreateEmployeeRequestMemoryPolicy } from "./createEmployeeRequestMemoryPolicy";
+import type { CreateEmployeeRequestRole } from './createEmployeeRequestRole';
+import type { CreateEmployeeRequestPersonality } from './createEmployeeRequestPersonality';
+import type { CreateEmployeeRequestSpecialization } from './createEmployeeRequestSpecialization';
+import type { CreateEmployeeRequestDuties } from './createEmployeeRequestDuties';
+import type { CreateEmployeeRequestMemoryPolicy } from './createEmployeeRequestMemoryPolicy';
+import type { CreateEmployeeRequestEscalationPolicy } from './createEmployeeRequestEscalationPolicy';
 
 export interface CreateEmployeeRequest {
   name: string;
@@ -23,4 +24,5 @@ export interface CreateEmployeeRequest {
   specialization?: CreateEmployeeRequestSpecialization;
   duties?: CreateEmployeeRequestDuties;
   memory_policy?: CreateEmployeeRequestMemoryPolicy;
+  escalation_policy?: CreateEmployeeRequestEscalationPolicy;
 }

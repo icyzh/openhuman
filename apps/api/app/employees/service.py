@@ -413,3 +413,36 @@ def decrypt_slack_token(emp: Employee) -> str | None:
     if emp.slack_token_enc is None:
         return None
     return decrypt_token(emp.slack_token_enc)
+
+
+async def update_slack_slot_credentials(
+    db: AsyncSession,
+    org_id: UUID,
+    emp_id: UUID,
+    user_id: UUID,
+    client_id: str | None = None,
+    client_secret: str | None = None,
+    app_token: str | None = None,
+) -> EmployeeResponse | None:
+    org = await _get_org(db, org_id, user_id)
+    if org is None:
+        return None
+    emp = await db.scalar(
+        select(Employee)
+        .where(Employee.id == emp_id, Employee.org_id == org_id)
+        .options(selectinload(Employee.slack_slot))
+    )
+    if emp is None or emp.slack_slot is None:
+        return None
+
+    if client_id:
+        emp.slack_slot.client_id = client_id
+    if client_secret:
+        emp.slack_slot.client_secret_enc = encrypt_token(client_secret)
+    if app_token:
+        emp.slack_slot.app_token_enc = encrypt_token(app_token)
+
+    await db.commit()
+
+    emp = await _get_employee_with_assignments(db, emp_id, org_id)
+    return _to_response(emp)

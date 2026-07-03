@@ -5,7 +5,10 @@
  * OpenHuman — API backend
  * OpenAPI spec version: 0.1.0
  */
-import { useMutation, useQuery } from "@tanstack/react-query";
+import {
+  useMutation,
+  useQuery
+} from '@tanstack/react-query';
 import type {
   DataTag,
   DefinedInitialDataOptions,
@@ -18,8 +21,8 @@ import type {
   UseMutationOptions,
   UseMutationResult,
   UseQueryOptions,
-  UseQueryResult,
-} from "@tanstack/react-query";
+  UseQueryResult
+} from '@tanstack/react-query';
 
 import type {
   CreateEmployeeRequest,
@@ -29,903 +32,661 @@ import type {
   SlackTokenRequest,
   StatusRequest,
   UpdateEmployeeRequest,
-} from "../../schemas";
+  UpdateSlackSlotRequest
+} from '../../schemas';
 
-import { customInstance } from "../../mutator/custom-instance";
+import { customInstance } from '../../mutator/custom-instance';
+
 
 type SecondParameter<T extends (...args: never) => unknown> = Parameters<T>[1];
+
+
 
 /**
  * @summary Create Employee Route
  */
 export const employeesCreateEmployeeRoute = (
-  orgId: string,
-  createEmployeeRequest: CreateEmployeeRequest,
-  options?: SecondParameter<typeof customInstance>,
-  signal?: AbortSignal,
+    orgId: string,
+    createEmployeeRequest: CreateEmployeeRequest,
+ options?: SecondParameter<typeof customInstance>,signal?: AbortSignal
 ) => {
-  return customInstance<EmployeeResponse>(
-    {
-      url: `/api/organizations/${orgId}/employees`,
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      data: createEmployeeRequest,
-      signal,
+      
+      
+      return customInstance<EmployeeResponse>(
+      {url: `/api/organizations/${orgId}/employees`, method: 'POST',
+      headers: {'Content-Type': 'application/json', },
+      data: createEmployeeRequest, signal
     },
-    options,
-  );
-};
+      options);
+    }
+  
 
-export const getEmployeesCreateEmployeeRouteMutationOptions = <
-  TError = HTTPValidationError,
-  TContext = unknown,
->(options?: {
-  mutation?: UseMutationOptions<
-    Awaited<ReturnType<typeof employeesCreateEmployeeRoute>>,
-    TError,
-    { orgId: string; data: CreateEmployeeRequest },
-    TContext
-  >;
-  request?: SecondParameter<typeof customInstance>;
-}): UseMutationOptions<
-  Awaited<ReturnType<typeof employeesCreateEmployeeRoute>>,
-  TError,
-  { orgId: string; data: CreateEmployeeRequest },
-  TContext
-> => {
-  const mutationKey = ["employeesCreateEmployeeRoute"];
-  const { mutation: mutationOptions, request: requestOptions } = options
-    ? options.mutation &&
-      "mutationKey" in options.mutation &&
-      options.mutation.mutationKey
-      ? options
-      : { ...options, mutation: { ...options.mutation, mutationKey } }
-    : { mutation: { mutationKey }, request: undefined };
 
-  const mutationFn: MutationFunction<
-    Awaited<ReturnType<typeof employeesCreateEmployeeRoute>>,
-    { orgId: string; data: CreateEmployeeRequest }
-  > = (props) => {
-    const { orgId, data } = props ?? {};
+export const getEmployeesCreateEmployeeRouteMutationOptions = <TError = HTTPValidationError,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof employeesCreateEmployeeRoute>>, TError,{orgId: string;data: CreateEmployeeRequest}, TContext>, request?: SecondParameter<typeof customInstance>}
+): UseMutationOptions<Awaited<ReturnType<typeof employeesCreateEmployeeRoute>>, TError,{orgId: string;data: CreateEmployeeRequest}, TContext> => {
 
-    return employeesCreateEmployeeRoute(orgId, data, requestOptions);
-  };
+const mutationKey = ['employeesCreateEmployeeRoute'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
 
-  return { mutationFn, ...mutationOptions };
-};
+      
 
-export type EmployeesCreateEmployeeRouteMutationResult = NonNullable<
-  Awaited<ReturnType<typeof employeesCreateEmployeeRoute>>
->;
-export type EmployeesCreateEmployeeRouteMutationBody = CreateEmployeeRequest;
-export type EmployeesCreateEmployeeRouteMutationError = HTTPValidationError;
 
-/**
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof employeesCreateEmployeeRoute>>, {orgId: string;data: CreateEmployeeRequest}> = (props) => {
+          const {orgId,data} = props ?? {};
+
+          return  employeesCreateEmployeeRoute(orgId,data,requestOptions)
+        }
+
+        
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type EmployeesCreateEmployeeRouteMutationResult = NonNullable<Awaited<ReturnType<typeof employeesCreateEmployeeRoute>>>
+    export type EmployeesCreateEmployeeRouteMutationBody = CreateEmployeeRequest
+    export type EmployeesCreateEmployeeRouteMutationError = HTTPValidationError
+
+    /**
  * @summary Create Employee Route
  */
-export const useEmployeesCreateEmployeeRoute = <
-  TError = HTTPValidationError,
-  TContext = unknown,
->(
-  options?: {
-    mutation?: UseMutationOptions<
-      Awaited<ReturnType<typeof employeesCreateEmployeeRoute>>,
-      TError,
-      { orgId: string; data: CreateEmployeeRequest },
-      TContext
-    >;
-    request?: SecondParameter<typeof customInstance>;
-  },
-  queryClient?: QueryClient,
-): UseMutationResult<
-  Awaited<ReturnType<typeof employeesCreateEmployeeRoute>>,
-  TError,
-  { orgId: string; data: CreateEmployeeRequest },
-  TContext
-> => {
-  const mutationOptions =
-    getEmployeesCreateEmployeeRouteMutationOptions(options);
+export const useEmployeesCreateEmployeeRoute = <TError = HTTPValidationError,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof employeesCreateEmployeeRoute>>, TError,{orgId: string;data: CreateEmployeeRequest}, TContext>, request?: SecondParameter<typeof customInstance>}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof employeesCreateEmployeeRoute>>,
+        TError,
+        {orgId: string;data: CreateEmployeeRequest},
+        TContext
+      > => {
 
-  return useMutation(mutationOptions, queryClient);
-};
-/**
+      const mutationOptions = getEmployeesCreateEmployeeRouteMutationOptions(options);
+
+      return useMutation(mutationOptions, queryClient);
+    }
+    /**
  * @summary List Employees Route
  */
 export const employeesListEmployeesRoute = (
-  orgId: string,
-  options?: SecondParameter<typeof customInstance>,
-  signal?: AbortSignal,
+    orgId: string,
+ options?: SecondParameter<typeof customInstance>,signal?: AbortSignal
 ) => {
-  return customInstance<EmployeeResponse[]>(
-    { url: `/api/organizations/${orgId}/employees`, method: "GET", signal },
-    options,
-  );
-};
+      
+      
+      return customInstance<EmployeeResponse[]>(
+      {url: `/api/organizations/${orgId}/employees`, method: 'GET', signal
+    },
+      options);
+    }
+  
 
-export const getEmployeesListEmployeesRouteQueryKey = (orgId?: string) => {
-  return [`/api/organizations/${orgId}/employees`] as const;
-};
 
-export const getEmployeesListEmployeesRouteQueryOptions = <
-  TData = Awaited<ReturnType<typeof employeesListEmployeesRoute>>,
-  TError = HTTPValidationError,
->(
-  orgId: string,
-  options?: {
-    query?: Partial<
-      UseQueryOptions<
-        Awaited<ReturnType<typeof employeesListEmployeesRoute>>,
-        TError,
-        TData
-      >
-    >;
-    request?: SecondParameter<typeof customInstance>;
-  },
+
+export const getEmployeesListEmployeesRouteQueryKey = (orgId?: string,) => {
+    return [
+    `/api/organizations/${orgId}/employees`
+    ] as const;
+    }
+
+    
+export const getEmployeesListEmployeesRouteQueryOptions = <TData = Awaited<ReturnType<typeof employeesListEmployeesRoute>>, TError = HTTPValidationError>(orgId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof employeesListEmployeesRoute>>, TError, TData>>, request?: SecondParameter<typeof customInstance>}
 ) => {
-  const { query: queryOptions, request: requestOptions } = options ?? {};
 
-  const queryKey =
-    queryOptions?.queryKey ?? getEmployeesListEmployeesRouteQueryKey(orgId);
+const {query: queryOptions, request: requestOptions} = options ?? {};
 
-  const queryFn: QueryFunction<
-    Awaited<ReturnType<typeof employeesListEmployeesRoute>>
-  > = ({ signal }) =>
-    employeesListEmployeesRoute(orgId, requestOptions, signal);
+  const queryKey =  queryOptions?.queryKey ?? getEmployeesListEmployeesRouteQueryKey(orgId);
 
-  return {
-    queryKey,
-    queryFn,
-    enabled: !!orgId,
-    ...queryOptions,
-  } as UseQueryOptions<
-    Awaited<ReturnType<typeof employeesListEmployeesRoute>>,
-    TError,
-    TData
-  > & { queryKey: DataTag<QueryKey, TData> };
-};
+  
 
-export type EmployeesListEmployeesRouteQueryResult = NonNullable<
-  Awaited<ReturnType<typeof employeesListEmployeesRoute>>
->;
-export type EmployeesListEmployeesRouteQueryError = HTTPValidationError;
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof employeesListEmployeesRoute>>> = ({ signal }) => employeesListEmployeesRoute(orgId, requestOptions, signal);
 
-export function useEmployeesListEmployeesRoute<
-  TData = Awaited<ReturnType<typeof employeesListEmployeesRoute>>,
-  TError = HTTPValidationError,
->(
-  orgId: string,
-  options: {
-    query: Partial<
-      UseQueryOptions<
-        Awaited<ReturnType<typeof employeesListEmployeesRoute>>,
-        TError,
-        TData
-      >
-    > &
-      Pick<
+      
+
+      
+
+   return  { queryKey, queryFn, enabled: !!(orgId), ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof employeesListEmployeesRoute>>, TError, TData> & { queryKey: DataTag<QueryKey, TData> }
+}
+
+export type EmployeesListEmployeesRouteQueryResult = NonNullable<Awaited<ReturnType<typeof employeesListEmployeesRoute>>>
+export type EmployeesListEmployeesRouteQueryError = HTTPValidationError
+
+
+export function useEmployeesListEmployeesRoute<TData = Awaited<ReturnType<typeof employeesListEmployeesRoute>>, TError = HTTPValidationError>(
+ orgId: string, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof employeesListEmployeesRoute>>, TError, TData>> & Pick<
         DefinedInitialDataOptions<
           Awaited<ReturnType<typeof employeesListEmployeesRoute>>,
           TError,
           Awaited<ReturnType<typeof employeesListEmployeesRoute>>
-        >,
-        "initialData"
-      >;
-    request?: SecondParameter<typeof customInstance>;
-  },
-  queryClient?: QueryClient,
-): DefinedUseQueryResult<TData, TError> & {
-  queryKey: DataTag<QueryKey, TData>;
-};
-export function useEmployeesListEmployeesRoute<
-  TData = Awaited<ReturnType<typeof employeesListEmployeesRoute>>,
-  TError = HTTPValidationError,
->(
-  orgId: string,
-  options?: {
-    query?: Partial<
-      UseQueryOptions<
-        Awaited<ReturnType<typeof employeesListEmployeesRoute>>,
-        TError,
-        TData
-      >
-    > &
-      Pick<
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customInstance>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData> }
+export function useEmployeesListEmployeesRoute<TData = Awaited<ReturnType<typeof employeesListEmployeesRoute>>, TError = HTTPValidationError>(
+ orgId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof employeesListEmployeesRoute>>, TError, TData>> & Pick<
         UndefinedInitialDataOptions<
           Awaited<ReturnType<typeof employeesListEmployeesRoute>>,
           TError,
           Awaited<ReturnType<typeof employeesListEmployeesRoute>>
-        >,
-        "initialData"
-      >;
-    request?: SecondParameter<typeof customInstance>;
-  },
-  queryClient?: QueryClient,
-): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData> };
-export function useEmployeesListEmployeesRoute<
-  TData = Awaited<ReturnType<typeof employeesListEmployeesRoute>>,
-  TError = HTTPValidationError,
->(
-  orgId: string,
-  options?: {
-    query?: Partial<
-      UseQueryOptions<
-        Awaited<ReturnType<typeof employeesListEmployeesRoute>>,
-        TError,
-        TData
-      >
-    >;
-    request?: SecondParameter<typeof customInstance>;
-  },
-  queryClient?: QueryClient,
-): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData> };
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customInstance>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData> }
+export function useEmployeesListEmployeesRoute<TData = Awaited<ReturnType<typeof employeesListEmployeesRoute>>, TError = HTTPValidationError>(
+ orgId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof employeesListEmployeesRoute>>, TError, TData>>, request?: SecondParameter<typeof customInstance>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData> }
 /**
  * @summary List Employees Route
  */
 
-export function useEmployeesListEmployeesRoute<
-  TData = Awaited<ReturnType<typeof employeesListEmployeesRoute>>,
-  TError = HTTPValidationError,
->(
-  orgId: string,
-  options?: {
-    query?: Partial<
-      UseQueryOptions<
-        Awaited<ReturnType<typeof employeesListEmployeesRoute>>,
-        TError,
-        TData
-      >
-    >;
-    request?: SecondParameter<typeof customInstance>;
-  },
-  queryClient?: QueryClient,
-): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData> } {
-  const queryOptions = getEmployeesListEmployeesRouteQueryOptions(
-    orgId,
-    options,
-  );
+export function useEmployeesListEmployeesRoute<TData = Awaited<ReturnType<typeof employeesListEmployeesRoute>>, TError = HTTPValidationError>(
+ orgId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof employeesListEmployeesRoute>>, TError, TData>>, request?: SecondParameter<typeof customInstance>}
+ , queryClient?: QueryClient 
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData> } {
 
-  const query = useQuery(queryOptions, queryClient) as UseQueryResult<
-    TData,
-    TError
-  > & { queryKey: DataTag<QueryKey, TData> };
+  const queryOptions = getEmployeesListEmployeesRouteQueryOptions(orgId,options)
 
-  query.queryKey = queryOptions.queryKey;
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData> };
+
+  query.queryKey = queryOptions.queryKey ;
 
   return query;
 }
+
+
+
 
 /**
  * @summary Get Employee Route
  */
 export const employeesGetEmployeeRoute = (
-  orgId: string,
-  empId: string,
-  options?: SecondParameter<typeof customInstance>,
-  signal?: AbortSignal,
+    orgId: string,
+    empId: string,
+ options?: SecondParameter<typeof customInstance>,signal?: AbortSignal
 ) => {
-  return customInstance<EmployeeResponse>(
-    {
-      url: `/api/organizations/${orgId}/employees/${empId}`,
-      method: "GET",
-      signal,
+      
+      
+      return customInstance<EmployeeResponse>(
+      {url: `/api/organizations/${orgId}/employees/${empId}`, method: 'GET', signal
     },
-    options,
-  );
-};
+      options);
+    }
+  
 
-export const getEmployeesGetEmployeeRouteQueryKey = (
-  orgId?: string,
-  empId?: string,
+
+
+export const getEmployeesGetEmployeeRouteQueryKey = (orgId?: string,
+    empId?: string,) => {
+    return [
+    `/api/organizations/${orgId}/employees/${empId}`
+    ] as const;
+    }
+
+    
+export const getEmployeesGetEmployeeRouteQueryOptions = <TData = Awaited<ReturnType<typeof employeesGetEmployeeRoute>>, TError = HTTPValidationError>(orgId: string,
+    empId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof employeesGetEmployeeRoute>>, TError, TData>>, request?: SecondParameter<typeof customInstance>}
 ) => {
-  return [`/api/organizations/${orgId}/employees/${empId}`] as const;
-};
 
-export const getEmployeesGetEmployeeRouteQueryOptions = <
-  TData = Awaited<ReturnType<typeof employeesGetEmployeeRoute>>,
-  TError = HTTPValidationError,
->(
-  orgId: string,
-  empId: string,
-  options?: {
-    query?: Partial<
-      UseQueryOptions<
-        Awaited<ReturnType<typeof employeesGetEmployeeRoute>>,
-        TError,
-        TData
-      >
-    >;
-    request?: SecondParameter<typeof customInstance>;
-  },
-) => {
-  const { query: queryOptions, request: requestOptions } = options ?? {};
+const {query: queryOptions, request: requestOptions} = options ?? {};
 
-  const queryKey =
-    queryOptions?.queryKey ??
-    getEmployeesGetEmployeeRouteQueryKey(orgId, empId);
+  const queryKey =  queryOptions?.queryKey ?? getEmployeesGetEmployeeRouteQueryKey(orgId,empId);
 
-  const queryFn: QueryFunction<
-    Awaited<ReturnType<typeof employeesGetEmployeeRoute>>
-  > = ({ signal }) =>
-    employeesGetEmployeeRoute(orgId, empId, requestOptions, signal);
+  
 
-  return {
-    queryKey,
-    queryFn,
-    enabled: !!(orgId && empId),
-    ...queryOptions,
-  } as UseQueryOptions<
-    Awaited<ReturnType<typeof employeesGetEmployeeRoute>>,
-    TError,
-    TData
-  > & { queryKey: DataTag<QueryKey, TData> };
-};
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof employeesGetEmployeeRoute>>> = ({ signal }) => employeesGetEmployeeRoute(orgId,empId, requestOptions, signal);
 
-export type EmployeesGetEmployeeRouteQueryResult = NonNullable<
-  Awaited<ReturnType<typeof employeesGetEmployeeRoute>>
->;
-export type EmployeesGetEmployeeRouteQueryError = HTTPValidationError;
+      
 
-export function useEmployeesGetEmployeeRoute<
-  TData = Awaited<ReturnType<typeof employeesGetEmployeeRoute>>,
-  TError = HTTPValidationError,
->(
-  orgId: string,
-  empId: string,
-  options: {
-    query: Partial<
-      UseQueryOptions<
-        Awaited<ReturnType<typeof employeesGetEmployeeRoute>>,
-        TError,
-        TData
-      >
-    > &
-      Pick<
+      
+
+   return  { queryKey, queryFn, enabled: !!(orgId && empId), ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof employeesGetEmployeeRoute>>, TError, TData> & { queryKey: DataTag<QueryKey, TData> }
+}
+
+export type EmployeesGetEmployeeRouteQueryResult = NonNullable<Awaited<ReturnType<typeof employeesGetEmployeeRoute>>>
+export type EmployeesGetEmployeeRouteQueryError = HTTPValidationError
+
+
+export function useEmployeesGetEmployeeRoute<TData = Awaited<ReturnType<typeof employeesGetEmployeeRoute>>, TError = HTTPValidationError>(
+ orgId: string,
+    empId: string, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof employeesGetEmployeeRoute>>, TError, TData>> & Pick<
         DefinedInitialDataOptions<
           Awaited<ReturnType<typeof employeesGetEmployeeRoute>>,
           TError,
           Awaited<ReturnType<typeof employeesGetEmployeeRoute>>
-        >,
-        "initialData"
-      >;
-    request?: SecondParameter<typeof customInstance>;
-  },
-  queryClient?: QueryClient,
-): DefinedUseQueryResult<TData, TError> & {
-  queryKey: DataTag<QueryKey, TData>;
-};
-export function useEmployeesGetEmployeeRoute<
-  TData = Awaited<ReturnType<typeof employeesGetEmployeeRoute>>,
-  TError = HTTPValidationError,
->(
-  orgId: string,
-  empId: string,
-  options?: {
-    query?: Partial<
-      UseQueryOptions<
-        Awaited<ReturnType<typeof employeesGetEmployeeRoute>>,
-        TError,
-        TData
-      >
-    > &
-      Pick<
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customInstance>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData> }
+export function useEmployeesGetEmployeeRoute<TData = Awaited<ReturnType<typeof employeesGetEmployeeRoute>>, TError = HTTPValidationError>(
+ orgId: string,
+    empId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof employeesGetEmployeeRoute>>, TError, TData>> & Pick<
         UndefinedInitialDataOptions<
           Awaited<ReturnType<typeof employeesGetEmployeeRoute>>,
           TError,
           Awaited<ReturnType<typeof employeesGetEmployeeRoute>>
-        >,
-        "initialData"
-      >;
-    request?: SecondParameter<typeof customInstance>;
-  },
-  queryClient?: QueryClient,
-): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData> };
-export function useEmployeesGetEmployeeRoute<
-  TData = Awaited<ReturnType<typeof employeesGetEmployeeRoute>>,
-  TError = HTTPValidationError,
->(
-  orgId: string,
-  empId: string,
-  options?: {
-    query?: Partial<
-      UseQueryOptions<
-        Awaited<ReturnType<typeof employeesGetEmployeeRoute>>,
-        TError,
-        TData
-      >
-    >;
-    request?: SecondParameter<typeof customInstance>;
-  },
-  queryClient?: QueryClient,
-): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData> };
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customInstance>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData> }
+export function useEmployeesGetEmployeeRoute<TData = Awaited<ReturnType<typeof employeesGetEmployeeRoute>>, TError = HTTPValidationError>(
+ orgId: string,
+    empId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof employeesGetEmployeeRoute>>, TError, TData>>, request?: SecondParameter<typeof customInstance>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData> }
 /**
  * @summary Get Employee Route
  */
 
-export function useEmployeesGetEmployeeRoute<
-  TData = Awaited<ReturnType<typeof employeesGetEmployeeRoute>>,
-  TError = HTTPValidationError,
->(
-  orgId: string,
-  empId: string,
-  options?: {
-    query?: Partial<
-      UseQueryOptions<
-        Awaited<ReturnType<typeof employeesGetEmployeeRoute>>,
-        TError,
-        TData
-      >
-    >;
-    request?: SecondParameter<typeof customInstance>;
-  },
-  queryClient?: QueryClient,
-): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData> } {
-  const queryOptions = getEmployeesGetEmployeeRouteQueryOptions(
-    orgId,
-    empId,
-    options,
-  );
+export function useEmployeesGetEmployeeRoute<TData = Awaited<ReturnType<typeof employeesGetEmployeeRoute>>, TError = HTTPValidationError>(
+ orgId: string,
+    empId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof employeesGetEmployeeRoute>>, TError, TData>>, request?: SecondParameter<typeof customInstance>}
+ , queryClient?: QueryClient 
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData> } {
 
-  const query = useQuery(queryOptions, queryClient) as UseQueryResult<
-    TData,
-    TError
-  > & { queryKey: DataTag<QueryKey, TData> };
+  const queryOptions = getEmployeesGetEmployeeRouteQueryOptions(orgId,empId,options)
 
-  query.queryKey = queryOptions.queryKey;
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData> };
+
+  query.queryKey = queryOptions.queryKey ;
 
   return query;
 }
+
+
+
 
 /**
  * @summary Update Employee Route
  */
 export const employeesUpdateEmployeeRoute = (
-  orgId: string,
-  empId: string,
-  updateEmployeeRequest: UpdateEmployeeRequest,
-  options?: SecondParameter<typeof customInstance>,
-) => {
-  return customInstance<EmployeeResponse>(
-    {
-      url: `/api/organizations/${orgId}/employees/${empId}`,
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      data: updateEmployeeRequest,
+    orgId: string,
+    empId: string,
+    updateEmployeeRequest: UpdateEmployeeRequest,
+ options?: SecondParameter<typeof customInstance>,) => {
+      
+      
+      return customInstance<EmployeeResponse>(
+      {url: `/api/organizations/${orgId}/employees/${empId}`, method: 'PATCH',
+      headers: {'Content-Type': 'application/json', },
+      data: updateEmployeeRequest
     },
-    options,
-  );
-};
+      options);
+    }
+  
 
-export const getEmployeesUpdateEmployeeRouteMutationOptions = <
-  TError = HTTPValidationError,
-  TContext = unknown,
->(options?: {
-  mutation?: UseMutationOptions<
-    Awaited<ReturnType<typeof employeesUpdateEmployeeRoute>>,
-    TError,
-    { orgId: string; empId: string; data: UpdateEmployeeRequest },
-    TContext
-  >;
-  request?: SecondParameter<typeof customInstance>;
-}): UseMutationOptions<
-  Awaited<ReturnType<typeof employeesUpdateEmployeeRoute>>,
-  TError,
-  { orgId: string; empId: string; data: UpdateEmployeeRequest },
-  TContext
-> => {
-  const mutationKey = ["employeesUpdateEmployeeRoute"];
-  const { mutation: mutationOptions, request: requestOptions } = options
-    ? options.mutation &&
-      "mutationKey" in options.mutation &&
-      options.mutation.mutationKey
-      ? options
-      : { ...options, mutation: { ...options.mutation, mutationKey } }
-    : { mutation: { mutationKey }, request: undefined };
 
-  const mutationFn: MutationFunction<
-    Awaited<ReturnType<typeof employeesUpdateEmployeeRoute>>,
-    { orgId: string; empId: string; data: UpdateEmployeeRequest }
-  > = (props) => {
-    const { orgId, empId, data } = props ?? {};
+export const getEmployeesUpdateEmployeeRouteMutationOptions = <TError = HTTPValidationError,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof employeesUpdateEmployeeRoute>>, TError,{orgId: string;empId: string;data: UpdateEmployeeRequest}, TContext>, request?: SecondParameter<typeof customInstance>}
+): UseMutationOptions<Awaited<ReturnType<typeof employeesUpdateEmployeeRoute>>, TError,{orgId: string;empId: string;data: UpdateEmployeeRequest}, TContext> => {
 
-    return employeesUpdateEmployeeRoute(orgId, empId, data, requestOptions);
-  };
+const mutationKey = ['employeesUpdateEmployeeRoute'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
 
-  return { mutationFn, ...mutationOptions };
-};
+      
 
-export type EmployeesUpdateEmployeeRouteMutationResult = NonNullable<
-  Awaited<ReturnType<typeof employeesUpdateEmployeeRoute>>
->;
-export type EmployeesUpdateEmployeeRouteMutationBody = UpdateEmployeeRequest;
-export type EmployeesUpdateEmployeeRouteMutationError = HTTPValidationError;
 
-/**
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof employeesUpdateEmployeeRoute>>, {orgId: string;empId: string;data: UpdateEmployeeRequest}> = (props) => {
+          const {orgId,empId,data} = props ?? {};
+
+          return  employeesUpdateEmployeeRoute(orgId,empId,data,requestOptions)
+        }
+
+        
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type EmployeesUpdateEmployeeRouteMutationResult = NonNullable<Awaited<ReturnType<typeof employeesUpdateEmployeeRoute>>>
+    export type EmployeesUpdateEmployeeRouteMutationBody = UpdateEmployeeRequest
+    export type EmployeesUpdateEmployeeRouteMutationError = HTTPValidationError
+
+    /**
  * @summary Update Employee Route
  */
-export const useEmployeesUpdateEmployeeRoute = <
-  TError = HTTPValidationError,
-  TContext = unknown,
->(
-  options?: {
-    mutation?: UseMutationOptions<
-      Awaited<ReturnType<typeof employeesUpdateEmployeeRoute>>,
-      TError,
-      { orgId: string; empId: string; data: UpdateEmployeeRequest },
-      TContext
-    >;
-    request?: SecondParameter<typeof customInstance>;
-  },
-  queryClient?: QueryClient,
-): UseMutationResult<
-  Awaited<ReturnType<typeof employeesUpdateEmployeeRoute>>,
-  TError,
-  { orgId: string; empId: string; data: UpdateEmployeeRequest },
-  TContext
-> => {
-  const mutationOptions =
-    getEmployeesUpdateEmployeeRouteMutationOptions(options);
+export const useEmployeesUpdateEmployeeRoute = <TError = HTTPValidationError,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof employeesUpdateEmployeeRoute>>, TError,{orgId: string;empId: string;data: UpdateEmployeeRequest}, TContext>, request?: SecondParameter<typeof customInstance>}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof employeesUpdateEmployeeRoute>>,
+        TError,
+        {orgId: string;empId: string;data: UpdateEmployeeRequest},
+        TContext
+      > => {
 
-  return useMutation(mutationOptions, queryClient);
-};
-/**
+      const mutationOptions = getEmployeesUpdateEmployeeRouteMutationOptions(options);
+
+      return useMutation(mutationOptions, queryClient);
+    }
+    /**
  * @summary Delete Employee Route
  */
 export const employeesDeleteEmployeeRoute = (
-  orgId: string,
-  empId: string,
-  options?: SecondParameter<typeof customInstance>,
-) => {
-  return customInstance<void>(
-    { url: `/api/organizations/${orgId}/employees/${empId}`, method: "DELETE" },
-    options,
-  );
-};
+    orgId: string,
+    empId: string,
+ options?: SecondParameter<typeof customInstance>,) => {
+      
+      
+      return customInstance<void>(
+      {url: `/api/organizations/${orgId}/employees/${empId}`, method: 'DELETE'
+    },
+      options);
+    }
+  
 
-export const getEmployeesDeleteEmployeeRouteMutationOptions = <
-  TError = HTTPValidationError,
-  TContext = unknown,
->(options?: {
-  mutation?: UseMutationOptions<
-    Awaited<ReturnType<typeof employeesDeleteEmployeeRoute>>,
-    TError,
-    { orgId: string; empId: string },
-    TContext
-  >;
-  request?: SecondParameter<typeof customInstance>;
-}): UseMutationOptions<
-  Awaited<ReturnType<typeof employeesDeleteEmployeeRoute>>,
-  TError,
-  { orgId: string; empId: string },
-  TContext
-> => {
-  const mutationKey = ["employeesDeleteEmployeeRoute"];
-  const { mutation: mutationOptions, request: requestOptions } = options
-    ? options.mutation &&
-      "mutationKey" in options.mutation &&
-      options.mutation.mutationKey
-      ? options
-      : { ...options, mutation: { ...options.mutation, mutationKey } }
-    : { mutation: { mutationKey }, request: undefined };
 
-  const mutationFn: MutationFunction<
-    Awaited<ReturnType<typeof employeesDeleteEmployeeRoute>>,
-    { orgId: string; empId: string }
-  > = (props) => {
-    const { orgId, empId } = props ?? {};
+export const getEmployeesDeleteEmployeeRouteMutationOptions = <TError = HTTPValidationError,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof employeesDeleteEmployeeRoute>>, TError,{orgId: string;empId: string}, TContext>, request?: SecondParameter<typeof customInstance>}
+): UseMutationOptions<Awaited<ReturnType<typeof employeesDeleteEmployeeRoute>>, TError,{orgId: string;empId: string}, TContext> => {
 
-    return employeesDeleteEmployeeRoute(orgId, empId, requestOptions);
-  };
+const mutationKey = ['employeesDeleteEmployeeRoute'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
 
-  return { mutationFn, ...mutationOptions };
-};
+      
 
-export type EmployeesDeleteEmployeeRouteMutationResult = NonNullable<
-  Awaited<ReturnType<typeof employeesDeleteEmployeeRoute>>
->;
 
-export type EmployeesDeleteEmployeeRouteMutationError = HTTPValidationError;
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof employeesDeleteEmployeeRoute>>, {orgId: string;empId: string}> = (props) => {
+          const {orgId,empId} = props ?? {};
 
-/**
+          return  employeesDeleteEmployeeRoute(orgId,empId,requestOptions)
+        }
+
+        
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type EmployeesDeleteEmployeeRouteMutationResult = NonNullable<Awaited<ReturnType<typeof employeesDeleteEmployeeRoute>>>
+    
+    export type EmployeesDeleteEmployeeRouteMutationError = HTTPValidationError
+
+    /**
  * @summary Delete Employee Route
  */
-export const useEmployeesDeleteEmployeeRoute = <
-  TError = HTTPValidationError,
-  TContext = unknown,
->(
-  options?: {
-    mutation?: UseMutationOptions<
-      Awaited<ReturnType<typeof employeesDeleteEmployeeRoute>>,
-      TError,
-      { orgId: string; empId: string },
-      TContext
-    >;
-    request?: SecondParameter<typeof customInstance>;
-  },
-  queryClient?: QueryClient,
-): UseMutationResult<
-  Awaited<ReturnType<typeof employeesDeleteEmployeeRoute>>,
-  TError,
-  { orgId: string; empId: string },
-  TContext
-> => {
-  const mutationOptions =
-    getEmployeesDeleteEmployeeRouteMutationOptions(options);
+export const useEmployeesDeleteEmployeeRoute = <TError = HTTPValidationError,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof employeesDeleteEmployeeRoute>>, TError,{orgId: string;empId: string}, TContext>, request?: SecondParameter<typeof customInstance>}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof employeesDeleteEmployeeRoute>>,
+        TError,
+        {orgId: string;empId: string},
+        TContext
+      > => {
 
-  return useMutation(mutationOptions, queryClient);
-};
-/**
+      const mutationOptions = getEmployeesDeleteEmployeeRouteMutationOptions(options);
+
+      return useMutation(mutationOptions, queryClient);
+    }
+    /**
  * Store an encrypted Discord bot token for this employee.
  * @summary Set Discord Token
  */
 export const employeesSetDiscordToken = (
-  orgId: string,
-  empId: string,
-  discordTokenRequest: DiscordTokenRequest,
-  options?: SecondParameter<typeof customInstance>,
-) => {
-  return customInstance<EmployeeResponse>(
-    {
-      url: `/api/organizations/${orgId}/employees/${empId}/discord`,
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      data: discordTokenRequest,
+    orgId: string,
+    empId: string,
+    discordTokenRequest: DiscordTokenRequest,
+ options?: SecondParameter<typeof customInstance>,) => {
+      
+      
+      return customInstance<EmployeeResponse>(
+      {url: `/api/organizations/${orgId}/employees/${empId}/discord`, method: 'PUT',
+      headers: {'Content-Type': 'application/json', },
+      data: discordTokenRequest
     },
-    options,
-  );
-};
+      options);
+    }
+  
 
-export const getEmployeesSetDiscordTokenMutationOptions = <
-  TError = HTTPValidationError,
-  TContext = unknown,
->(options?: {
-  mutation?: UseMutationOptions<
-    Awaited<ReturnType<typeof employeesSetDiscordToken>>,
-    TError,
-    { orgId: string; empId: string; data: DiscordTokenRequest },
-    TContext
-  >;
-  request?: SecondParameter<typeof customInstance>;
-}): UseMutationOptions<
-  Awaited<ReturnType<typeof employeesSetDiscordToken>>,
-  TError,
-  { orgId: string; empId: string; data: DiscordTokenRequest },
-  TContext
-> => {
-  const mutationKey = ["employeesSetDiscordToken"];
-  const { mutation: mutationOptions, request: requestOptions } = options
-    ? options.mutation &&
-      "mutationKey" in options.mutation &&
-      options.mutation.mutationKey
-      ? options
-      : { ...options, mutation: { ...options.mutation, mutationKey } }
-    : { mutation: { mutationKey }, request: undefined };
 
-  const mutationFn: MutationFunction<
-    Awaited<ReturnType<typeof employeesSetDiscordToken>>,
-    { orgId: string; empId: string; data: DiscordTokenRequest }
-  > = (props) => {
-    const { orgId, empId, data } = props ?? {};
+export const getEmployeesSetDiscordTokenMutationOptions = <TError = HTTPValidationError,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof employeesSetDiscordToken>>, TError,{orgId: string;empId: string;data: DiscordTokenRequest}, TContext>, request?: SecondParameter<typeof customInstance>}
+): UseMutationOptions<Awaited<ReturnType<typeof employeesSetDiscordToken>>, TError,{orgId: string;empId: string;data: DiscordTokenRequest}, TContext> => {
 
-    return employeesSetDiscordToken(orgId, empId, data, requestOptions);
-  };
+const mutationKey = ['employeesSetDiscordToken'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
 
-  return { mutationFn, ...mutationOptions };
-};
+      
 
-export type EmployeesSetDiscordTokenMutationResult = NonNullable<
-  Awaited<ReturnType<typeof employeesSetDiscordToken>>
->;
-export type EmployeesSetDiscordTokenMutationBody = DiscordTokenRequest;
-export type EmployeesSetDiscordTokenMutationError = HTTPValidationError;
 
-/**
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof employeesSetDiscordToken>>, {orgId: string;empId: string;data: DiscordTokenRequest}> = (props) => {
+          const {orgId,empId,data} = props ?? {};
+
+          return  employeesSetDiscordToken(orgId,empId,data,requestOptions)
+        }
+
+        
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type EmployeesSetDiscordTokenMutationResult = NonNullable<Awaited<ReturnType<typeof employeesSetDiscordToken>>>
+    export type EmployeesSetDiscordTokenMutationBody = DiscordTokenRequest
+    export type EmployeesSetDiscordTokenMutationError = HTTPValidationError
+
+    /**
  * @summary Set Discord Token
  */
-export const useEmployeesSetDiscordToken = <
-  TError = HTTPValidationError,
-  TContext = unknown,
->(
-  options?: {
-    mutation?: UseMutationOptions<
-      Awaited<ReturnType<typeof employeesSetDiscordToken>>,
-      TError,
-      { orgId: string; empId: string; data: DiscordTokenRequest },
-      TContext
-    >;
-    request?: SecondParameter<typeof customInstance>;
-  },
-  queryClient?: QueryClient,
-): UseMutationResult<
-  Awaited<ReturnType<typeof employeesSetDiscordToken>>,
-  TError,
-  { orgId: string; empId: string; data: DiscordTokenRequest },
-  TContext
-> => {
-  const mutationOptions = getEmployeesSetDiscordTokenMutationOptions(options);
+export const useEmployeesSetDiscordToken = <TError = HTTPValidationError,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof employeesSetDiscordToken>>, TError,{orgId: string;empId: string;data: DiscordTokenRequest}, TContext>, request?: SecondParameter<typeof customInstance>}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof employeesSetDiscordToken>>,
+        TError,
+        {orgId: string;empId: string;data: DiscordTokenRequest},
+        TContext
+      > => {
 
-  return useMutation(mutationOptions, queryClient);
-};
-/**
+      const mutationOptions = getEmployeesSetDiscordTokenMutationOptions(options);
+
+      return useMutation(mutationOptions, queryClient);
+    }
+    /**
  * Store an encrypted Slack bot token for this employee.
  * @summary Set Slack Token
  */
 export const employeesSetSlackToken = (
-  orgId: string,
-  empId: string,
-  slackTokenRequest: SlackTokenRequest,
-  options?: SecondParameter<typeof customInstance>,
-) => {
-  return customInstance<EmployeeResponse>(
-    {
-      url: `/api/organizations/${orgId}/employees/${empId}/slack`,
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      data: slackTokenRequest,
+    orgId: string,
+    empId: string,
+    slackTokenRequest: SlackTokenRequest,
+ options?: SecondParameter<typeof customInstance>,) => {
+      
+      
+      return customInstance<EmployeeResponse>(
+      {url: `/api/organizations/${orgId}/employees/${empId}/slack`, method: 'PUT',
+      headers: {'Content-Type': 'application/json', },
+      data: slackTokenRequest
     },
-    options,
-  );
-};
+      options);
+    }
+  
 
-export const getEmployeesSetSlackTokenMutationOptions = <
-  TError = HTTPValidationError,
-  TContext = unknown,
->(options?: {
-  mutation?: UseMutationOptions<
-    Awaited<ReturnType<typeof employeesSetSlackToken>>,
-    TError,
-    { orgId: string; empId: string; data: SlackTokenRequest },
-    TContext
-  >;
-  request?: SecondParameter<typeof customInstance>;
-}): UseMutationOptions<
-  Awaited<ReturnType<typeof employeesSetSlackToken>>,
-  TError,
-  { orgId: string; empId: string; data: SlackTokenRequest },
-  TContext
-> => {
-  const mutationKey = ["employeesSetSlackToken"];
-  const { mutation: mutationOptions, request: requestOptions } = options
-    ? options.mutation &&
-      "mutationKey" in options.mutation &&
-      options.mutation.mutationKey
-      ? options
-      : { ...options, mutation: { ...options.mutation, mutationKey } }
-    : { mutation: { mutationKey }, request: undefined };
 
-  const mutationFn: MutationFunction<
-    Awaited<ReturnType<typeof employeesSetSlackToken>>,
-    { orgId: string; empId: string; data: SlackTokenRequest }
-  > = (props) => {
-    const { orgId, empId, data } = props ?? {};
+export const getEmployeesSetSlackTokenMutationOptions = <TError = HTTPValidationError,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof employeesSetSlackToken>>, TError,{orgId: string;empId: string;data: SlackTokenRequest}, TContext>, request?: SecondParameter<typeof customInstance>}
+): UseMutationOptions<Awaited<ReturnType<typeof employeesSetSlackToken>>, TError,{orgId: string;empId: string;data: SlackTokenRequest}, TContext> => {
 
-    return employeesSetSlackToken(orgId, empId, data, requestOptions);
-  };
+const mutationKey = ['employeesSetSlackToken'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
 
-  return { mutationFn, ...mutationOptions };
-};
+      
 
-export type EmployeesSetSlackTokenMutationResult = NonNullable<
-  Awaited<ReturnType<typeof employeesSetSlackToken>>
->;
-export type EmployeesSetSlackTokenMutationBody = SlackTokenRequest;
-export type EmployeesSetSlackTokenMutationError = HTTPValidationError;
 
-/**
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof employeesSetSlackToken>>, {orgId: string;empId: string;data: SlackTokenRequest}> = (props) => {
+          const {orgId,empId,data} = props ?? {};
+
+          return  employeesSetSlackToken(orgId,empId,data,requestOptions)
+        }
+
+        
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type EmployeesSetSlackTokenMutationResult = NonNullable<Awaited<ReturnType<typeof employeesSetSlackToken>>>
+    export type EmployeesSetSlackTokenMutationBody = SlackTokenRequest
+    export type EmployeesSetSlackTokenMutationError = HTTPValidationError
+
+    /**
  * @summary Set Slack Token
  */
-export const useEmployeesSetSlackToken = <
-  TError = HTTPValidationError,
-  TContext = unknown,
->(
-  options?: {
-    mutation?: UseMutationOptions<
-      Awaited<ReturnType<typeof employeesSetSlackToken>>,
-      TError,
-      { orgId: string; empId: string; data: SlackTokenRequest },
-      TContext
-    >;
-    request?: SecondParameter<typeof customInstance>;
-  },
-  queryClient?: QueryClient,
-): UseMutationResult<
-  Awaited<ReturnType<typeof employeesSetSlackToken>>,
-  TError,
-  { orgId: string; empId: string; data: SlackTokenRequest },
-  TContext
-> => {
-  const mutationOptions = getEmployeesSetSlackTokenMutationOptions(options);
+export const useEmployeesSetSlackToken = <TError = HTTPValidationError,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof employeesSetSlackToken>>, TError,{orgId: string;empId: string;data: SlackTokenRequest}, TContext>, request?: SecondParameter<typeof customInstance>}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof employeesSetSlackToken>>,
+        TError,
+        {orgId: string;empId: string;data: SlackTokenRequest},
+        TContext
+      > => {
 
-  return useMutation(mutationOptions, queryClient);
-};
-/**
+      const mutationOptions = getEmployeesSetSlackTokenMutationOptions(options);
+
+      return useMutation(mutationOptions, queryClient);
+    }
+    /**
  * Activate or deactivate an employee.
  * @summary Set Status
  */
 export const employeesSetStatus = (
-  orgId: string,
-  empId: string,
-  statusRequest: StatusRequest,
-  options?: SecondParameter<typeof customInstance>,
-) => {
-  return customInstance<EmployeeResponse>(
-    {
-      url: `/api/organizations/${orgId}/employees/${empId}/status`,
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      data: statusRequest,
+    orgId: string,
+    empId: string,
+    statusRequest: StatusRequest,
+ options?: SecondParameter<typeof customInstance>,) => {
+      
+      
+      return customInstance<EmployeeResponse>(
+      {url: `/api/organizations/${orgId}/employees/${empId}/status`, method: 'PUT',
+      headers: {'Content-Type': 'application/json', },
+      data: statusRequest
     },
-    options,
-  );
-};
+      options);
+    }
+  
 
-export const getEmployeesSetStatusMutationOptions = <
-  TError = HTTPValidationError,
-  TContext = unknown,
->(options?: {
-  mutation?: UseMutationOptions<
-    Awaited<ReturnType<typeof employeesSetStatus>>,
-    TError,
-    { orgId: string; empId: string; data: StatusRequest },
-    TContext
-  >;
-  request?: SecondParameter<typeof customInstance>;
-}): UseMutationOptions<
-  Awaited<ReturnType<typeof employeesSetStatus>>,
-  TError,
-  { orgId: string; empId: string; data: StatusRequest },
-  TContext
-> => {
-  const mutationKey = ["employeesSetStatus"];
-  const { mutation: mutationOptions, request: requestOptions } = options
-    ? options.mutation &&
-      "mutationKey" in options.mutation &&
-      options.mutation.mutationKey
-      ? options
-      : { ...options, mutation: { ...options.mutation, mutationKey } }
-    : { mutation: { mutationKey }, request: undefined };
 
-  const mutationFn: MutationFunction<
-    Awaited<ReturnType<typeof employeesSetStatus>>,
-    { orgId: string; empId: string; data: StatusRequest }
-  > = (props) => {
-    const { orgId, empId, data } = props ?? {};
+export const getEmployeesSetStatusMutationOptions = <TError = HTTPValidationError,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof employeesSetStatus>>, TError,{orgId: string;empId: string;data: StatusRequest}, TContext>, request?: SecondParameter<typeof customInstance>}
+): UseMutationOptions<Awaited<ReturnType<typeof employeesSetStatus>>, TError,{orgId: string;empId: string;data: StatusRequest}, TContext> => {
 
-    return employeesSetStatus(orgId, empId, data, requestOptions);
-  };
+const mutationKey = ['employeesSetStatus'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
 
-  return { mutationFn, ...mutationOptions };
-};
+      
 
-export type EmployeesSetStatusMutationResult = NonNullable<
-  Awaited<ReturnType<typeof employeesSetStatus>>
->;
-export type EmployeesSetStatusMutationBody = StatusRequest;
-export type EmployeesSetStatusMutationError = HTTPValidationError;
 
-/**
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof employeesSetStatus>>, {orgId: string;empId: string;data: StatusRequest}> = (props) => {
+          const {orgId,empId,data} = props ?? {};
+
+          return  employeesSetStatus(orgId,empId,data,requestOptions)
+        }
+
+        
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type EmployeesSetStatusMutationResult = NonNullable<Awaited<ReturnType<typeof employeesSetStatus>>>
+    export type EmployeesSetStatusMutationBody = StatusRequest
+    export type EmployeesSetStatusMutationError = HTTPValidationError
+
+    /**
  * @summary Set Status
  */
-export const useEmployeesSetStatus = <
-  TError = HTTPValidationError,
-  TContext = unknown,
->(
-  options?: {
-    mutation?: UseMutationOptions<
-      Awaited<ReturnType<typeof employeesSetStatus>>,
-      TError,
-      { orgId: string; empId: string; data: StatusRequest },
-      TContext
-    >;
-    request?: SecondParameter<typeof customInstance>;
-  },
-  queryClient?: QueryClient,
-): UseMutationResult<
-  Awaited<ReturnType<typeof employeesSetStatus>>,
-  TError,
-  { orgId: string; empId: string; data: StatusRequest },
-  TContext
-> => {
-  const mutationOptions = getEmployeesSetStatusMutationOptions(options);
+export const useEmployeesSetStatus = <TError = HTTPValidationError,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof employeesSetStatus>>, TError,{orgId: string;empId: string;data: StatusRequest}, TContext>, request?: SecondParameter<typeof customInstance>}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof employeesSetStatus>>,
+        TError,
+        {orgId: string;empId: string;data: StatusRequest},
+        TContext
+      > => {
 
-  return useMutation(mutationOptions, queryClient);
-};
+      const mutationOptions = getEmployeesSetStatusMutationOptions(options);
+
+      return useMutation(mutationOptions, queryClient);
+    }
+    /**
+ * Update credentials of the Slack slot assigned to this employee.
+ * @summary Patch Slack Slot Route
+ */
+export const employeesPatchSlackSlotRoute = (
+    orgId: string,
+    empId: string,
+    updateSlackSlotRequest: UpdateSlackSlotRequest,
+ options?: SecondParameter<typeof customInstance>,) => {
+      
+      
+      return customInstance<EmployeeResponse>(
+      {url: `/api/organizations/${orgId}/employees/${empId}/slack-slot`, method: 'PATCH',
+      headers: {'Content-Type': 'application/json', },
+      data: updateSlackSlotRequest
+    },
+      options);
+    }
+  
+
+
+export const getEmployeesPatchSlackSlotRouteMutationOptions = <TError = HTTPValidationError,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof employeesPatchSlackSlotRoute>>, TError,{orgId: string;empId: string;data: UpdateSlackSlotRequest}, TContext>, request?: SecondParameter<typeof customInstance>}
+): UseMutationOptions<Awaited<ReturnType<typeof employeesPatchSlackSlotRoute>>, TError,{orgId: string;empId: string;data: UpdateSlackSlotRequest}, TContext> => {
+
+const mutationKey = ['employeesPatchSlackSlotRoute'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+      
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof employeesPatchSlackSlotRoute>>, {orgId: string;empId: string;data: UpdateSlackSlotRequest}> = (props) => {
+          const {orgId,empId,data} = props ?? {};
+
+          return  employeesPatchSlackSlotRoute(orgId,empId,data,requestOptions)
+        }
+
+        
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type EmployeesPatchSlackSlotRouteMutationResult = NonNullable<Awaited<ReturnType<typeof employeesPatchSlackSlotRoute>>>
+    export type EmployeesPatchSlackSlotRouteMutationBody = UpdateSlackSlotRequest
+    export type EmployeesPatchSlackSlotRouteMutationError = HTTPValidationError
+
+    /**
+ * @summary Patch Slack Slot Route
+ */
+export const useEmployeesPatchSlackSlotRoute = <TError = HTTPValidationError,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof employeesPatchSlackSlotRoute>>, TError,{orgId: string;empId: string;data: UpdateSlackSlotRequest}, TContext>, request?: SecondParameter<typeof customInstance>}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof employeesPatchSlackSlotRoute>>,
+        TError,
+        {orgId: string;empId: string;data: UpdateSlackSlotRequest},
+        TContext
+      > => {
+
+      const mutationOptions = getEmployeesPatchSlackSlotRouteMutationOptions(options);
+
+      return useMutation(mutationOptions, queryClient);
+    }
+    

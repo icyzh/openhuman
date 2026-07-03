@@ -5,7 +5,10 @@
  * OpenHuman — API backend
  * OpenAPI spec version: 0.1.0
  */
-import { useMutation, useQuery } from "@tanstack/react-query";
+import {
+  useMutation,
+  useQuery
+} from '@tanstack/react-query';
 import type {
   DataTag,
   DefinedInitialDataOptions,
@@ -18,833 +21,527 @@ import type {
   UseMutationOptions,
   UseMutationResult,
   UseQueryOptions,
-  UseQueryResult,
-} from "@tanstack/react-query";
+  UseQueryResult
+} from '@tanstack/react-query';
 
 import type {
   BodyDocumentsUploadDocument,
   DocumentResponse,
-  DocumentsGetStatsParams,
+  DocumentsGetOrgDocumentsStatsParams,
   DocumentsListOrgDocumentsParams,
   DocumentsStatsResponse,
-  HTTPValidationError,
-} from "../../schemas";
+  HTTPValidationError
+} from '../../schemas';
 
-import { customInstance } from "../../mutator/custom-instance";
+import { customInstance } from '../../mutator/custom-instance';
+
 
 type SecondParameter<T extends (...args: never) => unknown> = Parameters<T>[1];
+
+
 
 /**
  * Upload a file and store its metadata. File saved to the configured storage backend.
  * @summary Upload Document
  */
 export const documentsUploadDocument = (
-  bodyDocumentsUploadDocument: BodyDocumentsUploadDocument,
-  options?: SecondParameter<typeof customInstance>,
-  signal?: AbortSignal,
+    bodyDocumentsUploadDocument: BodyDocumentsUploadDocument,
+ options?: SecondParameter<typeof customInstance>,signal?: AbortSignal
 ) => {
-  const formData = new FormData();
-  formData.append(`file`, bodyDocumentsUploadDocument.file);
-  formData.append(
-    `organization_id`,
-    bodyDocumentsUploadDocument.organization_id,
-  );
-  if (
-    bodyDocumentsUploadDocument.employee_id !== undefined &&
-    bodyDocumentsUploadDocument.employee_id !== null
-  ) {
-    formData.append(`employee_id`, bodyDocumentsUploadDocument.employee_id);
-  }
+      
+      const formData = new FormData();
+formData.append(`file`, bodyDocumentsUploadDocument.file)
+formData.append(`organization_id`, bodyDocumentsUploadDocument.organization_id)
+if(bodyDocumentsUploadDocument.employee_id !== undefined && bodyDocumentsUploadDocument.employee_id !== null) {
+ formData.append(`employee_id`, bodyDocumentsUploadDocument.employee_id)
+ }
 
-  return customInstance<DocumentResponse>(
-    {
-      url: `/api/documents/upload`,
-      method: "POST",
-      data: formData,
-      signal,
+      return customInstance<DocumentResponse>(
+      {url: `/api/documents/upload`, method: 'POST',
+      headers: {'Content-Type': 'multipart/form-data', },
+       data: formData, signal
     },
-    options,
-  );
-};
+      options);
+    }
+  
 
-export const getDocumentsUploadDocumentMutationOptions = <
-  TError = HTTPValidationError,
-  TContext = unknown,
->(options?: {
-  mutation?: UseMutationOptions<
-    Awaited<ReturnType<typeof documentsUploadDocument>>,
-    TError,
-    { data: BodyDocumentsUploadDocument },
-    TContext
-  >;
-  request?: SecondParameter<typeof customInstance>;
-}): UseMutationOptions<
-  Awaited<ReturnType<typeof documentsUploadDocument>>,
-  TError,
-  { data: BodyDocumentsUploadDocument },
-  TContext
-> => {
-  const mutationKey = ["documentsUploadDocument"];
-  const { mutation: mutationOptions, request: requestOptions } = options
-    ? options.mutation &&
-      "mutationKey" in options.mutation &&
-      options.mutation.mutationKey
-      ? options
-      : { ...options, mutation: { ...options.mutation, mutationKey } }
-    : { mutation: { mutationKey }, request: undefined };
 
-  const mutationFn: MutationFunction<
-    Awaited<ReturnType<typeof documentsUploadDocument>>,
-    { data: BodyDocumentsUploadDocument }
-  > = (props) => {
-    const { data } = props ?? {};
+export const getDocumentsUploadDocumentMutationOptions = <TError = HTTPValidationError,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof documentsUploadDocument>>, TError,{data: BodyDocumentsUploadDocument}, TContext>, request?: SecondParameter<typeof customInstance>}
+): UseMutationOptions<Awaited<ReturnType<typeof documentsUploadDocument>>, TError,{data: BodyDocumentsUploadDocument}, TContext> => {
 
-    return documentsUploadDocument(data, requestOptions);
-  };
+const mutationKey = ['documentsUploadDocument'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
 
-  return { mutationFn, ...mutationOptions };
-};
+      
 
-export type DocumentsUploadDocumentMutationResult = NonNullable<
-  Awaited<ReturnType<typeof documentsUploadDocument>>
->;
-export type DocumentsUploadDocumentMutationBody = BodyDocumentsUploadDocument;
-export type DocumentsUploadDocumentMutationError = HTTPValidationError;
 
-/**
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof documentsUploadDocument>>, {data: BodyDocumentsUploadDocument}> = (props) => {
+          const {data} = props ?? {};
+
+          return  documentsUploadDocument(data,requestOptions)
+        }
+
+        
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type DocumentsUploadDocumentMutationResult = NonNullable<Awaited<ReturnType<typeof documentsUploadDocument>>>
+    export type DocumentsUploadDocumentMutationBody = BodyDocumentsUploadDocument
+    export type DocumentsUploadDocumentMutationError = HTTPValidationError
+
+    /**
  * @summary Upload Document
  */
-export const useDocumentsUploadDocument = <
-  TError = HTTPValidationError,
-  TContext = unknown,
->(
-  options?: {
-    mutation?: UseMutationOptions<
-      Awaited<ReturnType<typeof documentsUploadDocument>>,
-      TError,
-      { data: BodyDocumentsUploadDocument },
-      TContext
-    >;
-    request?: SecondParameter<typeof customInstance>;
-  },
-  queryClient?: QueryClient,
-): UseMutationResult<
-  Awaited<ReturnType<typeof documentsUploadDocument>>,
-  TError,
-  { data: BodyDocumentsUploadDocument },
-  TContext
-> => {
-  const mutationOptions = getDocumentsUploadDocumentMutationOptions(options);
-
-  return useMutation(mutationOptions, queryClient);
-};
-/**
- * Get aggregate document statistics for an organization.
- * @summary Get Org Documents Stats
- */
-export const documentsGetStats = (
-  params: DocumentsGetStatsParams,
-  options?: SecondParameter<typeof customInstance>,
-  signal?: AbortSignal,
-) => {
-  return customInstance<DocumentsStatsResponse>(
-    { url: `/api/documents/stats`, method: "GET", params, signal },
-    options,
-  );
-};
-
-export const getDocumentsGetStatsQueryKey = (
-  params?: DocumentsGetStatsParams,
-) => {
-  return [`/api/documents/stats`, ...(params ? [params] : [])] as const;
-};
-
-export const getDocumentsGetStatsQueryOptions = <
-  TData = Awaited<ReturnType<typeof documentsGetStats>>,
-  TError = HTTPValidationError,
->(
-  params: DocumentsGetStatsParams,
-  options?: {
-    query?: Partial<
-      UseQueryOptions<
-        Awaited<ReturnType<typeof documentsGetStats>>,
+export const useDocumentsUploadDocument = <TError = HTTPValidationError,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof documentsUploadDocument>>, TError,{data: BodyDocumentsUploadDocument}, TContext>, request?: SecondParameter<typeof customInstance>}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof documentsUploadDocument>>,
         TError,
-        TData
-      >
-    >;
-    request?: SecondParameter<typeof customInstance>;
-  },
-) => {
-  const { query: queryOptions, request: requestOptions } = options ?? {};
+        {data: BodyDocumentsUploadDocument},
+        TContext
+      > => {
 
-  const queryKey =
-    queryOptions?.queryKey ?? getDocumentsGetStatsQueryKey(params);
+      const mutationOptions = getDocumentsUploadDocumentMutationOptions(options);
 
-  const queryFn: QueryFunction<
-    Awaited<ReturnType<typeof documentsGetStats>>
-  > = ({ signal }) => documentsGetStats(params, requestOptions, signal);
-
-  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
-    Awaited<ReturnType<typeof documentsGetStats>>,
-    TError,
-    TData
-  > & { queryKey: DataTag<QueryKey, TData> };
-};
-
-export type DocumentsGetStatsQueryResult = NonNullable<
-  Awaited<ReturnType<typeof documentsGetStats>>
->;
-export type DocumentsGetStatsQueryError = HTTPValidationError;
-
-export function useDocumentsGetStats<
-  TData = Awaited<ReturnType<typeof documentsGetStats>>,
-  TError = HTTPValidationError,
->(
-  params: DocumentsGetStatsParams,
-  options: {
-    query: Partial<
-      UseQueryOptions<
-        Awaited<ReturnType<typeof documentsGetStats>>,
-        TError,
-        TData
-      >
-    > &
-      Pick<
-        DefinedInitialDataOptions<
-          Awaited<ReturnType<typeof documentsGetStats>>,
-          TError,
-          Awaited<ReturnType<typeof documentsGetStats>>
-        >,
-        "initialData"
-      >;
-    request?: SecondParameter<typeof customInstance>;
-  },
-  queryClient?: QueryClient,
-): DefinedUseQueryResult<TData, TError> & {
-  queryKey: DataTag<QueryKey, TData>;
-};
-export function useDocumentsGetStats<
-  TData = Awaited<ReturnType<typeof documentsGetStats>>,
-  TError = HTTPValidationError,
->(
-  params: DocumentsGetStatsParams,
-  options?: {
-    query?: Partial<
-      UseQueryOptions<
-        Awaited<ReturnType<typeof documentsGetStats>>,
-        TError,
-        TData
-      >
-    > &
-      Pick<
-        UndefinedInitialDataOptions<
-          Awaited<ReturnType<typeof documentsGetStats>>,
-          TError,
-          Awaited<ReturnType<typeof documentsGetStats>>
-        >,
-        "initialData"
-      >;
-    request?: SecondParameter<typeof customInstance>;
-  },
-  queryClient?: QueryClient,
-): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData> };
-export function useDocumentsGetStats<
-  TData = Awaited<ReturnType<typeof documentsGetStats>>,
-  TError = HTTPValidationError,
->(
-  params: DocumentsGetStatsParams,
-  options?: {
-    query?: Partial<
-      UseQueryOptions<
-        Awaited<ReturnType<typeof documentsGetStats>>,
-        TError,
-        TData
-      >
-    >;
-    request?: SecondParameter<typeof customInstance>;
-  },
-  queryClient?: QueryClient,
-): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData> } {
-  const queryOptions = getDocumentsGetStatsQueryOptions(params, options);
-
-  const query = useQuery(queryOptions, queryClient) as UseQueryResult<
-    TData,
-    TError
-  > & { queryKey: DataTag<QueryKey, TData> };
-
-  query.queryKey = queryOptions.queryKey;
-
-  return query;
-}
-/**
+      return useMutation(mutationOptions, queryClient);
+    }
+    /**
  * List all documents for an organization, optionally filtered by employee.
  * @summary List Org Documents
  */
 export const documentsListOrgDocuments = (
-  params: DocumentsListOrgDocumentsParams,
-  options?: SecondParameter<typeof customInstance>,
-  signal?: AbortSignal,
+    params: DocumentsListOrgDocumentsParams,
+ options?: SecondParameter<typeof customInstance>,signal?: AbortSignal
 ) => {
-  return customInstance<DocumentResponse[]>(
-    { url: `/api/documents`, method: "GET", params, signal },
-    options,
-  );
-};
+      
+      
+      return customInstance<DocumentResponse[]>(
+      {url: `/api/documents`, method: 'GET',
+        params, signal
+    },
+      options);
+    }
+  
 
-export const getDocumentsListOrgDocumentsQueryKey = (
-  params?: DocumentsListOrgDocumentsParams,
+
+
+export const getDocumentsListOrgDocumentsQueryKey = (params?: DocumentsListOrgDocumentsParams,) => {
+    return [
+    `/api/documents`, ...(params ? [params]: [])
+    ] as const;
+    }
+
+    
+export const getDocumentsListOrgDocumentsQueryOptions = <TData = Awaited<ReturnType<typeof documentsListOrgDocuments>>, TError = HTTPValidationError>(params: DocumentsListOrgDocumentsParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof documentsListOrgDocuments>>, TError, TData>>, request?: SecondParameter<typeof customInstance>}
 ) => {
-  return [`/api/documents`, ...(params ? [params] : [])] as const;
-};
 
-export const getDocumentsListOrgDocumentsQueryOptions = <
-  TData = Awaited<ReturnType<typeof documentsListOrgDocuments>>,
-  TError = HTTPValidationError,
->(
-  params: DocumentsListOrgDocumentsParams,
-  options?: {
-    query?: Partial<
-      UseQueryOptions<
-        Awaited<ReturnType<typeof documentsListOrgDocuments>>,
-        TError,
-        TData
-      >
-    >;
-    request?: SecondParameter<typeof customInstance>;
-  },
-) => {
-  const { query: queryOptions, request: requestOptions } = options ?? {};
+const {query: queryOptions, request: requestOptions} = options ?? {};
 
-  const queryKey =
-    queryOptions?.queryKey ?? getDocumentsListOrgDocumentsQueryKey(params);
+  const queryKey =  queryOptions?.queryKey ?? getDocumentsListOrgDocumentsQueryKey(params);
 
-  const queryFn: QueryFunction<
-    Awaited<ReturnType<typeof documentsListOrgDocuments>>
-  > = ({ signal }) => documentsListOrgDocuments(params, requestOptions, signal);
+  
 
-  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
-    Awaited<ReturnType<typeof documentsListOrgDocuments>>,
-    TError,
-    TData
-  > & { queryKey: DataTag<QueryKey, TData> };
-};
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof documentsListOrgDocuments>>> = ({ signal }) => documentsListOrgDocuments(params, requestOptions, signal);
 
-export type DocumentsListOrgDocumentsQueryResult = NonNullable<
-  Awaited<ReturnType<typeof documentsListOrgDocuments>>
->;
-export type DocumentsListOrgDocumentsQueryError = HTTPValidationError;
+      
 
-export function useDocumentsListOrgDocuments<
-  TData = Awaited<ReturnType<typeof documentsListOrgDocuments>>,
-  TError = HTTPValidationError,
->(
-  params: DocumentsListOrgDocumentsParams,
-  options: {
-    query: Partial<
-      UseQueryOptions<
-        Awaited<ReturnType<typeof documentsListOrgDocuments>>,
-        TError,
-        TData
-      >
-    > &
-      Pick<
+      
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof documentsListOrgDocuments>>, TError, TData> & { queryKey: DataTag<QueryKey, TData> }
+}
+
+export type DocumentsListOrgDocumentsQueryResult = NonNullable<Awaited<ReturnType<typeof documentsListOrgDocuments>>>
+export type DocumentsListOrgDocumentsQueryError = HTTPValidationError
+
+
+export function useDocumentsListOrgDocuments<TData = Awaited<ReturnType<typeof documentsListOrgDocuments>>, TError = HTTPValidationError>(
+ params: DocumentsListOrgDocumentsParams, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof documentsListOrgDocuments>>, TError, TData>> & Pick<
         DefinedInitialDataOptions<
           Awaited<ReturnType<typeof documentsListOrgDocuments>>,
           TError,
           Awaited<ReturnType<typeof documentsListOrgDocuments>>
-        >,
-        "initialData"
-      >;
-    request?: SecondParameter<typeof customInstance>;
-  },
-  queryClient?: QueryClient,
-): DefinedUseQueryResult<TData, TError> & {
-  queryKey: DataTag<QueryKey, TData>;
-};
-export function useDocumentsListOrgDocuments<
-  TData = Awaited<ReturnType<typeof documentsListOrgDocuments>>,
-  TError = HTTPValidationError,
->(
-  params: DocumentsListOrgDocumentsParams,
-  options?: {
-    query?: Partial<
-      UseQueryOptions<
-        Awaited<ReturnType<typeof documentsListOrgDocuments>>,
-        TError,
-        TData
-      >
-    > &
-      Pick<
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customInstance>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData> }
+export function useDocumentsListOrgDocuments<TData = Awaited<ReturnType<typeof documentsListOrgDocuments>>, TError = HTTPValidationError>(
+ params: DocumentsListOrgDocumentsParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof documentsListOrgDocuments>>, TError, TData>> & Pick<
         UndefinedInitialDataOptions<
           Awaited<ReturnType<typeof documentsListOrgDocuments>>,
           TError,
           Awaited<ReturnType<typeof documentsListOrgDocuments>>
-        >,
-        "initialData"
-      >;
-    request?: SecondParameter<typeof customInstance>;
-  },
-  queryClient?: QueryClient,
-): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData> };
-export function useDocumentsListOrgDocuments<
-  TData = Awaited<ReturnType<typeof documentsListOrgDocuments>>,
-  TError = HTTPValidationError,
->(
-  params: DocumentsListOrgDocumentsParams,
-  options?: {
-    query?: Partial<
-      UseQueryOptions<
-        Awaited<ReturnType<typeof documentsListOrgDocuments>>,
-        TError,
-        TData
-      >
-    >;
-    request?: SecondParameter<typeof customInstance>;
-  },
-  queryClient?: QueryClient,
-): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData> };
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customInstance>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData> }
+export function useDocumentsListOrgDocuments<TData = Awaited<ReturnType<typeof documentsListOrgDocuments>>, TError = HTTPValidationError>(
+ params: DocumentsListOrgDocumentsParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof documentsListOrgDocuments>>, TError, TData>>, request?: SecondParameter<typeof customInstance>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData> }
 /**
  * @summary List Org Documents
  */
 
-export function useDocumentsListOrgDocuments<
-  TData = Awaited<ReturnType<typeof documentsListOrgDocuments>>,
-  TError = HTTPValidationError,
->(
-  params: DocumentsListOrgDocumentsParams,
-  options?: {
-    query?: Partial<
-      UseQueryOptions<
-        Awaited<ReturnType<typeof documentsListOrgDocuments>>,
-        TError,
-        TData
-      >
-    >;
-    request?: SecondParameter<typeof customInstance>;
-  },
-  queryClient?: QueryClient,
-): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData> } {
-  const queryOptions = getDocumentsListOrgDocumentsQueryOptions(
-    params,
-    options,
-  );
+export function useDocumentsListOrgDocuments<TData = Awaited<ReturnType<typeof documentsListOrgDocuments>>, TError = HTTPValidationError>(
+ params: DocumentsListOrgDocumentsParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof documentsListOrgDocuments>>, TError, TData>>, request?: SecondParameter<typeof customInstance>}
+ , queryClient?: QueryClient 
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData> } {
 
-  const query = useQuery(queryOptions, queryClient) as UseQueryResult<
-    TData,
-    TError
-  > & { queryKey: DataTag<QueryKey, TData> };
+  const queryOptions = getDocumentsListOrgDocumentsQueryOptions(params,options)
 
-  query.queryKey = queryOptions.queryKey;
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData> };
+
+  query.queryKey = queryOptions.queryKey ;
 
   return query;
 }
+
+
+
+
+/**
+ * Get aggregate document statistics for an organization.
+ * @summary Get Org Documents Stats
+ */
+export const documentsGetOrgDocumentsStats = (
+    params: DocumentsGetOrgDocumentsStatsParams,
+ options?: SecondParameter<typeof customInstance>,signal?: AbortSignal
+) => {
+      
+      
+      return customInstance<DocumentsStatsResponse>(
+      {url: `/api/documents/stats`, method: 'GET',
+        params, signal
+    },
+      options);
+    }
+  
+
+
+
+export const getDocumentsGetOrgDocumentsStatsQueryKey = (params?: DocumentsGetOrgDocumentsStatsParams,) => {
+    return [
+    `/api/documents/stats`, ...(params ? [params]: [])
+    ] as const;
+    }
+
+    
+export const getDocumentsGetOrgDocumentsStatsQueryOptions = <TData = Awaited<ReturnType<typeof documentsGetOrgDocumentsStats>>, TError = HTTPValidationError>(params: DocumentsGetOrgDocumentsStatsParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof documentsGetOrgDocumentsStats>>, TError, TData>>, request?: SecondParameter<typeof customInstance>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getDocumentsGetOrgDocumentsStatsQueryKey(params);
+
+  
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof documentsGetOrgDocumentsStats>>> = ({ signal }) => documentsGetOrgDocumentsStats(params, requestOptions, signal);
+
+      
+
+      
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof documentsGetOrgDocumentsStats>>, TError, TData> & { queryKey: DataTag<QueryKey, TData> }
+}
+
+export type DocumentsGetOrgDocumentsStatsQueryResult = NonNullable<Awaited<ReturnType<typeof documentsGetOrgDocumentsStats>>>
+export type DocumentsGetOrgDocumentsStatsQueryError = HTTPValidationError
+
+
+export function useDocumentsGetOrgDocumentsStats<TData = Awaited<ReturnType<typeof documentsGetOrgDocumentsStats>>, TError = HTTPValidationError>(
+ params: DocumentsGetOrgDocumentsStatsParams, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof documentsGetOrgDocumentsStats>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof documentsGetOrgDocumentsStats>>,
+          TError,
+          Awaited<ReturnType<typeof documentsGetOrgDocumentsStats>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customInstance>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData> }
+export function useDocumentsGetOrgDocumentsStats<TData = Awaited<ReturnType<typeof documentsGetOrgDocumentsStats>>, TError = HTTPValidationError>(
+ params: DocumentsGetOrgDocumentsStatsParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof documentsGetOrgDocumentsStats>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof documentsGetOrgDocumentsStats>>,
+          TError,
+          Awaited<ReturnType<typeof documentsGetOrgDocumentsStats>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customInstance>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData> }
+export function useDocumentsGetOrgDocumentsStats<TData = Awaited<ReturnType<typeof documentsGetOrgDocumentsStats>>, TError = HTTPValidationError>(
+ params: DocumentsGetOrgDocumentsStatsParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof documentsGetOrgDocumentsStats>>, TError, TData>>, request?: SecondParameter<typeof customInstance>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData> }
+/**
+ * @summary Get Org Documents Stats
+ */
+
+export function useDocumentsGetOrgDocumentsStats<TData = Awaited<ReturnType<typeof documentsGetOrgDocumentsStats>>, TError = HTTPValidationError>(
+ params: DocumentsGetOrgDocumentsStatsParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof documentsGetOrgDocumentsStats>>, TError, TData>>, request?: SecondParameter<typeof customInstance>}
+ , queryClient?: QueryClient 
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData> } {
+
+  const queryOptions = getDocumentsGetOrgDocumentsStatsQueryOptions(params,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData> };
+
+  query.queryKey = queryOptions.queryKey ;
+
+  return query;
+}
+
+
+
 
 /**
  * @summary Get Document Route
  */
 export const documentsGetDocumentRoute = (
-  docId: string,
-  options?: SecondParameter<typeof customInstance>,
-  signal?: AbortSignal,
+    docId: string,
+ options?: SecondParameter<typeof customInstance>,signal?: AbortSignal
 ) => {
-  return customInstance<DocumentResponse>(
-    { url: `/api/documents/${docId}`, method: "GET", signal },
-    options,
-  );
-};
+      
+      
+      return customInstance<DocumentResponse>(
+      {url: `/api/documents/${docId}`, method: 'GET', signal
+    },
+      options);
+    }
+  
 
-export const getDocumentsGetDocumentRouteQueryKey = (docId?: string) => {
-  return [`/api/documents/${docId}`] as const;
-};
 
-export const getDocumentsGetDocumentRouteQueryOptions = <
-  TData = Awaited<ReturnType<typeof documentsGetDocumentRoute>>,
-  TError = HTTPValidationError,
->(
-  docId: string,
-  options?: {
-    query?: Partial<
-      UseQueryOptions<
-        Awaited<ReturnType<typeof documentsGetDocumentRoute>>,
-        TError,
-        TData
-      >
-    >;
-    request?: SecondParameter<typeof customInstance>;
-  },
+
+export const getDocumentsGetDocumentRouteQueryKey = (docId?: string,) => {
+    return [
+    `/api/documents/${docId}`
+    ] as const;
+    }
+
+    
+export const getDocumentsGetDocumentRouteQueryOptions = <TData = Awaited<ReturnType<typeof documentsGetDocumentRoute>>, TError = HTTPValidationError>(docId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof documentsGetDocumentRoute>>, TError, TData>>, request?: SecondParameter<typeof customInstance>}
 ) => {
-  const { query: queryOptions, request: requestOptions } = options ?? {};
 
-  const queryKey =
-    queryOptions?.queryKey ?? getDocumentsGetDocumentRouteQueryKey(docId);
+const {query: queryOptions, request: requestOptions} = options ?? {};
 
-  const queryFn: QueryFunction<
-    Awaited<ReturnType<typeof documentsGetDocumentRoute>>
-  > = ({ signal }) => documentsGetDocumentRoute(docId, requestOptions, signal);
+  const queryKey =  queryOptions?.queryKey ?? getDocumentsGetDocumentRouteQueryKey(docId);
 
-  return {
-    queryKey,
-    queryFn,
-    enabled: !!docId,
-    ...queryOptions,
-  } as UseQueryOptions<
-    Awaited<ReturnType<typeof documentsGetDocumentRoute>>,
-    TError,
-    TData
-  > & { queryKey: DataTag<QueryKey, TData> };
-};
+  
 
-export type DocumentsGetDocumentRouteQueryResult = NonNullable<
-  Awaited<ReturnType<typeof documentsGetDocumentRoute>>
->;
-export type DocumentsGetDocumentRouteQueryError = HTTPValidationError;
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof documentsGetDocumentRoute>>> = ({ signal }) => documentsGetDocumentRoute(docId, requestOptions, signal);
 
-export function useDocumentsGetDocumentRoute<
-  TData = Awaited<ReturnType<typeof documentsGetDocumentRoute>>,
-  TError = HTTPValidationError,
->(
-  docId: string,
-  options: {
-    query: Partial<
-      UseQueryOptions<
-        Awaited<ReturnType<typeof documentsGetDocumentRoute>>,
-        TError,
-        TData
-      >
-    > &
-      Pick<
+      
+
+      
+
+   return  { queryKey, queryFn, enabled: !!(docId), ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof documentsGetDocumentRoute>>, TError, TData> & { queryKey: DataTag<QueryKey, TData> }
+}
+
+export type DocumentsGetDocumentRouteQueryResult = NonNullable<Awaited<ReturnType<typeof documentsGetDocumentRoute>>>
+export type DocumentsGetDocumentRouteQueryError = HTTPValidationError
+
+
+export function useDocumentsGetDocumentRoute<TData = Awaited<ReturnType<typeof documentsGetDocumentRoute>>, TError = HTTPValidationError>(
+ docId: string, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof documentsGetDocumentRoute>>, TError, TData>> & Pick<
         DefinedInitialDataOptions<
           Awaited<ReturnType<typeof documentsGetDocumentRoute>>,
           TError,
           Awaited<ReturnType<typeof documentsGetDocumentRoute>>
-        >,
-        "initialData"
-      >;
-    request?: SecondParameter<typeof customInstance>;
-  },
-  queryClient?: QueryClient,
-): DefinedUseQueryResult<TData, TError> & {
-  queryKey: DataTag<QueryKey, TData>;
-};
-export function useDocumentsGetDocumentRoute<
-  TData = Awaited<ReturnType<typeof documentsGetDocumentRoute>>,
-  TError = HTTPValidationError,
->(
-  docId: string,
-  options?: {
-    query?: Partial<
-      UseQueryOptions<
-        Awaited<ReturnType<typeof documentsGetDocumentRoute>>,
-        TError,
-        TData
-      >
-    > &
-      Pick<
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customInstance>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData> }
+export function useDocumentsGetDocumentRoute<TData = Awaited<ReturnType<typeof documentsGetDocumentRoute>>, TError = HTTPValidationError>(
+ docId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof documentsGetDocumentRoute>>, TError, TData>> & Pick<
         UndefinedInitialDataOptions<
           Awaited<ReturnType<typeof documentsGetDocumentRoute>>,
           TError,
           Awaited<ReturnType<typeof documentsGetDocumentRoute>>
-        >,
-        "initialData"
-      >;
-    request?: SecondParameter<typeof customInstance>;
-  },
-  queryClient?: QueryClient,
-): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData> };
-export function useDocumentsGetDocumentRoute<
-  TData = Awaited<ReturnType<typeof documentsGetDocumentRoute>>,
-  TError = HTTPValidationError,
->(
-  docId: string,
-  options?: {
-    query?: Partial<
-      UseQueryOptions<
-        Awaited<ReturnType<typeof documentsGetDocumentRoute>>,
-        TError,
-        TData
-      >
-    >;
-    request?: SecondParameter<typeof customInstance>;
-  },
-  queryClient?: QueryClient,
-): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData> };
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customInstance>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData> }
+export function useDocumentsGetDocumentRoute<TData = Awaited<ReturnType<typeof documentsGetDocumentRoute>>, TError = HTTPValidationError>(
+ docId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof documentsGetDocumentRoute>>, TError, TData>>, request?: SecondParameter<typeof customInstance>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData> }
 /**
  * @summary Get Document Route
  */
 
-export function useDocumentsGetDocumentRoute<
-  TData = Awaited<ReturnType<typeof documentsGetDocumentRoute>>,
-  TError = HTTPValidationError,
->(
-  docId: string,
-  options?: {
-    query?: Partial<
-      UseQueryOptions<
-        Awaited<ReturnType<typeof documentsGetDocumentRoute>>,
-        TError,
-        TData
-      >
-    >;
-    request?: SecondParameter<typeof customInstance>;
-  },
-  queryClient?: QueryClient,
-): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData> } {
-  const queryOptions = getDocumentsGetDocumentRouteQueryOptions(docId, options);
+export function useDocumentsGetDocumentRoute<TData = Awaited<ReturnType<typeof documentsGetDocumentRoute>>, TError = HTTPValidationError>(
+ docId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof documentsGetDocumentRoute>>, TError, TData>>, request?: SecondParameter<typeof customInstance>}
+ , queryClient?: QueryClient 
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData> } {
 
-  const query = useQuery(queryOptions, queryClient) as UseQueryResult<
-    TData,
-    TError
-  > & { queryKey: DataTag<QueryKey, TData> };
+  const queryOptions = getDocumentsGetDocumentRouteQueryOptions(docId,options)
 
-  query.queryKey = queryOptions.queryKey;
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData> };
+
+  query.queryKey = queryOptions.queryKey ;
 
   return query;
 }
+
+
+
 
 /**
  * @summary Delete Document Route
  */
 export const documentsDeleteDocumentRoute = (
-  docId: string,
-  options?: SecondParameter<typeof customInstance>,
-) => {
-  return customInstance<void>(
-    { url: `/api/documents/${docId}`, method: "DELETE" },
-    options,
-  );
-};
+    docId: string,
+ options?: SecondParameter<typeof customInstance>,) => {
+      
+      
+      return customInstance<void>(
+      {url: `/api/documents/${docId}`, method: 'DELETE'
+    },
+      options);
+    }
+  
 
-export const getDocumentsDeleteDocumentRouteMutationOptions = <
-  TError = HTTPValidationError,
-  TContext = unknown,
->(options?: {
-  mutation?: UseMutationOptions<
-    Awaited<ReturnType<typeof documentsDeleteDocumentRoute>>,
-    TError,
-    { docId: string },
-    TContext
-  >;
-  request?: SecondParameter<typeof customInstance>;
-}): UseMutationOptions<
-  Awaited<ReturnType<typeof documentsDeleteDocumentRoute>>,
-  TError,
-  { docId: string },
-  TContext
-> => {
-  const mutationKey = ["documentsDeleteDocumentRoute"];
-  const { mutation: mutationOptions, request: requestOptions } = options
-    ? options.mutation &&
-      "mutationKey" in options.mutation &&
-      options.mutation.mutationKey
-      ? options
-      : { ...options, mutation: { ...options.mutation, mutationKey } }
-    : { mutation: { mutationKey }, request: undefined };
 
-  const mutationFn: MutationFunction<
-    Awaited<ReturnType<typeof documentsDeleteDocumentRoute>>,
-    { docId: string }
-  > = (props) => {
-    const { docId } = props ?? {};
+export const getDocumentsDeleteDocumentRouteMutationOptions = <TError = HTTPValidationError,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof documentsDeleteDocumentRoute>>, TError,{docId: string}, TContext>, request?: SecondParameter<typeof customInstance>}
+): UseMutationOptions<Awaited<ReturnType<typeof documentsDeleteDocumentRoute>>, TError,{docId: string}, TContext> => {
 
-    return documentsDeleteDocumentRoute(docId, requestOptions);
-  };
+const mutationKey = ['documentsDeleteDocumentRoute'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
 
-  return { mutationFn, ...mutationOptions };
-};
+      
 
-export type DocumentsDeleteDocumentRouteMutationResult = NonNullable<
-  Awaited<ReturnType<typeof documentsDeleteDocumentRoute>>
->;
 
-export type DocumentsDeleteDocumentRouteMutationError = HTTPValidationError;
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof documentsDeleteDocumentRoute>>, {docId: string}> = (props) => {
+          const {docId} = props ?? {};
 
-/**
+          return  documentsDeleteDocumentRoute(docId,requestOptions)
+        }
+
+        
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type DocumentsDeleteDocumentRouteMutationResult = NonNullable<Awaited<ReturnType<typeof documentsDeleteDocumentRoute>>>
+    
+    export type DocumentsDeleteDocumentRouteMutationError = HTTPValidationError
+
+    /**
  * @summary Delete Document Route
  */
-export const useDocumentsDeleteDocumentRoute = <
-  TError = HTTPValidationError,
-  TContext = unknown,
->(
-  options?: {
-    mutation?: UseMutationOptions<
-      Awaited<ReturnType<typeof documentsDeleteDocumentRoute>>,
-      TError,
-      { docId: string },
-      TContext
-    >;
-    request?: SecondParameter<typeof customInstance>;
-  },
-  queryClient?: QueryClient,
-): UseMutationResult<
-  Awaited<ReturnType<typeof documentsDeleteDocumentRoute>>,
-  TError,
-  { docId: string },
-  TContext
-> => {
-  const mutationOptions =
-    getDocumentsDeleteDocumentRouteMutationOptions(options);
+export const useDocumentsDeleteDocumentRoute = <TError = HTTPValidationError,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof documentsDeleteDocumentRoute>>, TError,{docId: string}, TContext>, request?: SecondParameter<typeof customInstance>}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof documentsDeleteDocumentRoute>>,
+        TError,
+        {docId: string},
+        TContext
+      > => {
 
-  return useMutation(mutationOptions, queryClient);
-};
-/**
+      const mutationOptions = getDocumentsDeleteDocumentRouteMutationOptions(options);
+
+      return useMutation(mutationOptions, queryClient);
+    }
+    /**
  * Stream document content to the client, or redirect to a presigned S3 URL.
  * @summary Download Document
  */
 export const documentsDownloadDocument = (
-  docId: string,
-  options?: SecondParameter<typeof customInstance>,
-  signal?: AbortSignal,
+    docId: string,
+ options?: SecondParameter<typeof customInstance>,signal?: AbortSignal
 ) => {
-  return customInstance<unknown>(
-    { url: `/api/documents/${docId}/download`, method: "GET", signal },
-    options,
-  );
-};
+      
+      
+      return customInstance<unknown>(
+      {url: `/api/documents/${docId}/download`, method: 'GET', signal
+    },
+      options);
+    }
+  
 
-export const getDocumentsDownloadDocumentQueryKey = (docId?: string) => {
-  return [`/api/documents/${docId}/download`] as const;
-};
 
-export const getDocumentsDownloadDocumentQueryOptions = <
-  TData = Awaited<ReturnType<typeof documentsDownloadDocument>>,
-  TError = HTTPValidationError,
->(
-  docId: string,
-  options?: {
-    query?: Partial<
-      UseQueryOptions<
-        Awaited<ReturnType<typeof documentsDownloadDocument>>,
-        TError,
-        TData
-      >
-    >;
-    request?: SecondParameter<typeof customInstance>;
-  },
+
+export const getDocumentsDownloadDocumentQueryKey = (docId?: string,) => {
+    return [
+    `/api/documents/${docId}/download`
+    ] as const;
+    }
+
+    
+export const getDocumentsDownloadDocumentQueryOptions = <TData = Awaited<ReturnType<typeof documentsDownloadDocument>>, TError = HTTPValidationError>(docId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof documentsDownloadDocument>>, TError, TData>>, request?: SecondParameter<typeof customInstance>}
 ) => {
-  const { query: queryOptions, request: requestOptions } = options ?? {};
 
-  const queryKey =
-    queryOptions?.queryKey ?? getDocumentsDownloadDocumentQueryKey(docId);
+const {query: queryOptions, request: requestOptions} = options ?? {};
 
-  const queryFn: QueryFunction<
-    Awaited<ReturnType<typeof documentsDownloadDocument>>
-  > = ({ signal }) => documentsDownloadDocument(docId, requestOptions, signal);
+  const queryKey =  queryOptions?.queryKey ?? getDocumentsDownloadDocumentQueryKey(docId);
 
-  return {
-    queryKey,
-    queryFn,
-    enabled: !!docId,
-    ...queryOptions,
-  } as UseQueryOptions<
-    Awaited<ReturnType<typeof documentsDownloadDocument>>,
-    TError,
-    TData
-  > & { queryKey: DataTag<QueryKey, TData> };
-};
+  
 
-export type DocumentsDownloadDocumentQueryResult = NonNullable<
-  Awaited<ReturnType<typeof documentsDownloadDocument>>
->;
-export type DocumentsDownloadDocumentQueryError = HTTPValidationError;
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof documentsDownloadDocument>>> = ({ signal }) => documentsDownloadDocument(docId, requestOptions, signal);
 
-export function useDocumentsDownloadDocument<
-  TData = Awaited<ReturnType<typeof documentsDownloadDocument>>,
-  TError = HTTPValidationError,
->(
-  docId: string,
-  options: {
-    query: Partial<
-      UseQueryOptions<
-        Awaited<ReturnType<typeof documentsDownloadDocument>>,
-        TError,
-        TData
-      >
-    > &
-      Pick<
+      
+
+      
+
+   return  { queryKey, queryFn, enabled: !!(docId), ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof documentsDownloadDocument>>, TError, TData> & { queryKey: DataTag<QueryKey, TData> }
+}
+
+export type DocumentsDownloadDocumentQueryResult = NonNullable<Awaited<ReturnType<typeof documentsDownloadDocument>>>
+export type DocumentsDownloadDocumentQueryError = HTTPValidationError
+
+
+export function useDocumentsDownloadDocument<TData = Awaited<ReturnType<typeof documentsDownloadDocument>>, TError = HTTPValidationError>(
+ docId: string, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof documentsDownloadDocument>>, TError, TData>> & Pick<
         DefinedInitialDataOptions<
           Awaited<ReturnType<typeof documentsDownloadDocument>>,
           TError,
           Awaited<ReturnType<typeof documentsDownloadDocument>>
-        >,
-        "initialData"
-      >;
-    request?: SecondParameter<typeof customInstance>;
-  },
-  queryClient?: QueryClient,
-): DefinedUseQueryResult<TData, TError> & {
-  queryKey: DataTag<QueryKey, TData>;
-};
-export function useDocumentsDownloadDocument<
-  TData = Awaited<ReturnType<typeof documentsDownloadDocument>>,
-  TError = HTTPValidationError,
->(
-  docId: string,
-  options?: {
-    query?: Partial<
-      UseQueryOptions<
-        Awaited<ReturnType<typeof documentsDownloadDocument>>,
-        TError,
-        TData
-      >
-    > &
-      Pick<
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customInstance>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData> }
+export function useDocumentsDownloadDocument<TData = Awaited<ReturnType<typeof documentsDownloadDocument>>, TError = HTTPValidationError>(
+ docId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof documentsDownloadDocument>>, TError, TData>> & Pick<
         UndefinedInitialDataOptions<
           Awaited<ReturnType<typeof documentsDownloadDocument>>,
           TError,
           Awaited<ReturnType<typeof documentsDownloadDocument>>
-        >,
-        "initialData"
-      >;
-    request?: SecondParameter<typeof customInstance>;
-  },
-  queryClient?: QueryClient,
-): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData> };
-export function useDocumentsDownloadDocument<
-  TData = Awaited<ReturnType<typeof documentsDownloadDocument>>,
-  TError = HTTPValidationError,
->(
-  docId: string,
-  options?: {
-    query?: Partial<
-      UseQueryOptions<
-        Awaited<ReturnType<typeof documentsDownloadDocument>>,
-        TError,
-        TData
-      >
-    >;
-    request?: SecondParameter<typeof customInstance>;
-  },
-  queryClient?: QueryClient,
-): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData> };
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customInstance>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData> }
+export function useDocumentsDownloadDocument<TData = Awaited<ReturnType<typeof documentsDownloadDocument>>, TError = HTTPValidationError>(
+ docId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof documentsDownloadDocument>>, TError, TData>>, request?: SecondParameter<typeof customInstance>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData> }
 /**
  * @summary Download Document
  */
 
-export function useDocumentsDownloadDocument<
-  TData = Awaited<ReturnType<typeof documentsDownloadDocument>>,
-  TError = HTTPValidationError,
->(
-  docId: string,
-  options?: {
-    query?: Partial<
-      UseQueryOptions<
-        Awaited<ReturnType<typeof documentsDownloadDocument>>,
-        TError,
-        TData
-      >
-    >;
-    request?: SecondParameter<typeof customInstance>;
-  },
-  queryClient?: QueryClient,
-): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData> } {
-  const queryOptions = getDocumentsDownloadDocumentQueryOptions(docId, options);
+export function useDocumentsDownloadDocument<TData = Awaited<ReturnType<typeof documentsDownloadDocument>>, TError = HTTPValidationError>(
+ docId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof documentsDownloadDocument>>, TError, TData>>, request?: SecondParameter<typeof customInstance>}
+ , queryClient?: QueryClient 
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData> } {
 
-  const query = useQuery(queryOptions, queryClient) as UseQueryResult<
-    TData,
-    TError
-  > & { queryKey: DataTag<QueryKey, TData> };
+  const queryOptions = getDocumentsDownloadDocumentQueryOptions(docId,options)
 
-  query.queryKey = queryOptions.queryKey;
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData> };
+
+  query.queryKey = queryOptions.queryKey ;
 
   return query;
 }
+
+
+
+

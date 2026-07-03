@@ -9,6 +9,7 @@ import {
   ExternalLinkIcon,
   FileTextIcon,
   PlusIcon,
+  SettingsIcon,
   Trash2Icon,
   UploadIcon,
   XIcon,
@@ -21,6 +22,7 @@ import {
   useEmployeesUpdateEmployeeRoute,
   useEmployeesDeleteEmployeeRoute,
   useEmployeesSetStatus,
+  useEmployeesPatchSlackSlotRoute,
   getEmployeesListEmployeesRouteQueryKey,
   getEmployeesGetEmployeeRouteQueryKey,
   useDocumentsListOrgDocuments,
@@ -212,6 +214,36 @@ export default function EmployeeDetailPage() {
   const [localName, setLocalName] = useState("");
   const [localRole, setLocalRole] = useState("");
   const [localSpecialization, setLocalSpecialization] = useState("");
+
+  // Slack credentials config state
+  const [showSlackConfig, setShowSlackConfig] = useState(false);
+  const [clientId, setClientId] = useState("");
+  const [clientSecret, setClientSecret] = useState("");
+  const [appToken, setAppToken] = useState("");
+  const patchSlackSlotMutation = useEmployeesPatchSlackSlotRoute();
+
+  const handleSaveSlackCredentials = useCallback(async () => {
+    if (!orgId) return;
+    try {
+      await patchSlackSlotMutation.mutateAsync({
+        orgId,
+        empId,
+        data: {
+          client_id: clientId.trim() || undefined,
+          client_secret: clientSecret.trim() || undefined,
+          app_token: appToken.trim() || undefined,
+        },
+      });
+      toast.success("Slack credentials updated successfully!");
+      setClientId("");
+      setClientSecret("");
+      setAppToken("");
+      setShowSlackConfig(false);
+      invalidate();
+    } catch {
+      toast.error("Failed to update Slack credentials");
+    }
+  }, [orgId, empId, clientId, clientSecret, appToken, patchSlackSlotMutation, invalidate]);
 
   // Document management
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -654,6 +686,78 @@ export default function EmployeeDetailPage() {
                     <span className="inline-flex shrink-0 items-center gap-1.5 rounded-md bg-muted px-3 py-1.5 text-sm font-medium text-muted-foreground">
                       Unavailable
                     </span>
+                  )}
+                </div>
+              )}
+
+              {orgId && employee.hasSlackSlot && (
+                <div className="flex flex-col gap-3 rounded-lg border border-border bg-muted/20 p-4">
+                  <div className="flex items-center justify-between">
+                    <div className="flex flex-col gap-0.5">
+                      <span className="text-sm font-medium text-foreground flex items-center gap-1.5">
+                        <SettingsIcon className="size-4 text-muted-foreground" />
+                        Slack App Credentials
+                      </span>
+                      <span className="text-xs text-muted-foreground">
+                        Configure custom credentials for this employee slot.
+                      </span>
+                    </div>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setShowSlackConfig(!showSlackConfig)}
+                    >
+                      {showSlackConfig ? "Hide" : "Configure"}
+                    </Button>
+                  </div>
+
+                  {showSlackConfig && (
+                    <div className="flex flex-col gap-4 mt-2 border-t border-border pt-4">
+                      <div className="flex flex-col gap-1.5">
+                        <Label htmlFor="slack-client-id" className="text-xs font-semibold">Client ID</Label>
+                        <Input
+                          id="slack-client-id"
+                          placeholder="e.g. 1234567890.1234567890"
+                          value={clientId}
+                          onChange={(e) => setClientId(e.target.value)}
+                        />
+                      </div>
+                      <div className="flex flex-col gap-1.5">
+                        <Label htmlFor="slack-client-secret" className="text-xs font-semibold">Client Secret</Label>
+                        <Input
+                          id="slack-client-secret"
+                          type="password"
+                          placeholder="••••••••••••••••"
+                          value={clientSecret}
+                          onChange={(e) => setClientSecret(e.target.value)}
+                        />
+                      </div>
+                      <div className="flex flex-col gap-1.5">
+                        <Label htmlFor="slack-app-token" className="text-xs font-semibold">App-Level Token (Socket Mode)</Label>
+                        <Input
+                          id="slack-app-token"
+                          type="password"
+                          placeholder="xapp-1-..."
+                          value={appToken}
+                          onChange={(e) => setAppToken(e.target.value)}
+                        />
+                      </div>
+                      <Button
+                        size="sm"
+                        className="w-full"
+                        onClick={handleSaveSlackCredentials}
+                        disabled={patchSlackSlotMutation.isPending}
+                      >
+                        {patchSlackSlotMutation.isPending ? (
+                          <>
+                            <Spinner className="mr-1.5 size-3.5" />
+                            Saving...
+                          </>
+                        ) : (
+                          "Save Credentials"
+                        )}
+                      </Button>
+                    </div>
                   )}
                 </div>
               )}

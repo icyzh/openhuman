@@ -20,10 +20,10 @@ import {
   useDocumentsListOrgDocuments,
   useDocumentsUploadDocument,
   useDocumentsDeleteDocumentRoute,
-  useDocumentsGetStats,
+  useDocumentsGetOrgDocumentsStats,
   useEmployeesListEmployeesRoute,
   getDocumentsListOrgDocumentsQueryKey,
-  getDocumentsGetStatsQueryKey,
+  getDocumentsGetOrgDocumentsStatsQueryKey,
 } from "@repo/api-client";
 import type { DocumentResponse } from "@repo/api-client";
 import { useOrgStore } from "@/stores/org";
@@ -211,7 +211,7 @@ export default function StoragePage() {
     query: { enabled: !!orgId },
   });
 
-  const { data: stats, isLoading: statsLoading } = useDocumentsGetStats(
+  const { data: stats, isLoading: statsLoading } = useDocumentsGetOrgDocumentsStats(
     { organization_id: orgId! },
     { query: { enabled: !!orgId } },
   );
@@ -267,7 +267,7 @@ export default function StoragePage() {
       }),
     });
     queryClient.invalidateQueries({
-      queryKey: getDocumentsGetStatsQueryKey({
+      queryKey: getDocumentsGetOrgDocumentsStatsQueryKey({
         organization_id: orgId,
       }),
     });

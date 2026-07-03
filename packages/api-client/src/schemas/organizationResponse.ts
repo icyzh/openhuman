@@ -5,17 +5,18 @@
  * OpenHuman — API backend
  * OpenAPI spec version: 0.1.0
  */
-import type { OrganizationResponseDescription } from "./organizationResponseDescription";
-import type { OrganizationResponseWhatItDoes } from "./organizationResponseWhatItDoes";
-import type { OrganizationResponseCogneeTenantId } from "./organizationResponseCogneeTenantId";
-import type { OrganizationResponseCogneeDatasetName } from "./organizationResponseCogneeDatasetName";
+import type { OrganizationResponseDescription } from './organizationResponseDescription';
+import type { OrganizationResponseWhatItDoes } from './organizationResponseWhatItDoes';
+import type { OrganizationResponseWebsiteUrl } from './organizationResponseWebsiteUrl';
+import type { OrganizationResponseCogneeTenantId } from './organizationResponseCogneeTenantId';
+import type { OrganizationResponseCogneeDatasetName } from './organizationResponseCogneeDatasetName';
 
 export interface OrganizationResponse {
   id: string;
   name: string;
   description?: OrganizationResponseDescription;
   what_it_does?: OrganizationResponseWhatItDoes;
-  website_url?: string;
+  website_url?: OrganizationResponseWebsiteUrl;
   owner_id: string;
   cognee_tenant_id?: OrganizationResponseCogneeTenantId;
   cognee_dataset_name?: OrganizationResponseCogneeDatasetName;

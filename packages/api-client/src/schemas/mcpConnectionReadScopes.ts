@@ -6,7 +6,4 @@
  * OpenAPI spec version: 0.1.0
  */
 
-export interface LoginRequest {
-  email: string;
-  password: string;
-}
+export type McpConnectionReadScopes = unknown[] | null;

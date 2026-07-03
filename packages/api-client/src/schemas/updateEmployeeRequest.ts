@@ -5,14 +5,15 @@
  * OpenHuman — API backend
  * OpenAPI spec version: 0.1.0
  */
-import type { UpdateEmployeeRequestName } from "./updateEmployeeRequestName";
-import type { UpdateEmployeeRequestEmployeeType } from "./updateEmployeeRequestEmployeeType";
-import type { UpdateEmployeeRequestRole } from "./updateEmployeeRequestRole";
-import type { UpdateEmployeeRequestPersonality } from "./updateEmployeeRequestPersonality";
-import type { UpdateEmployeeRequestSpecialization } from "./updateEmployeeRequestSpecialization";
-import type { UpdateEmployeeRequestDuties } from "./updateEmployeeRequestDuties";
-import type { UpdateEmployeeRequestMemoryPolicy } from "./updateEmployeeRequestMemoryPolicy";
-import type { UpdateEmployeeRequestStatus } from "./updateEmployeeRequestStatus";
+import type { UpdateEmployeeRequestName } from './updateEmployeeRequestName';
+import type { UpdateEmployeeRequestEmployeeType } from './updateEmployeeRequestEmployeeType';
+import type { UpdateEmployeeRequestRole } from './updateEmployeeRequestRole';
+import type { UpdateEmployeeRequestPersonality } from './updateEmployeeRequestPersonality';
+import type { UpdateEmployeeRequestSpecialization } from './updateEmployeeRequestSpecialization';
+import type { UpdateEmployeeRequestDuties } from './updateEmployeeRequestDuties';
+import type { UpdateEmployeeRequestMemoryPolicy } from './updateEmployeeRequestMemoryPolicy';
+import type { UpdateEmployeeRequestEscalationPolicy } from './updateEmployeeRequestEscalationPolicy';
+import type { UpdateEmployeeRequestStatus } from './updateEmployeeRequestStatus';
 
 export interface UpdateEmployeeRequest {
   name?: UpdateEmployeeRequestName;
@@ -23,5 +24,6 @@ export interface UpdateEmployeeRequest {
   specialization?: UpdateEmployeeRequestSpecialization;
   duties?: UpdateEmployeeRequestDuties;
   memory_policy?: UpdateEmployeeRequestMemoryPolicy;
+  escalation_policy?: UpdateEmployeeRequestEscalationPolicy;
   status?: UpdateEmployeeRequestStatus;
 }

@@ -6,8 +6,4 @@
  * OpenAPI spec version: 0.1.0
  */
 
-export interface RegisterRequest {
-  email: string;
-  password: string;
-  name: string;
-}
+export type UpdateSlackSlotRequestClientId = string | null;

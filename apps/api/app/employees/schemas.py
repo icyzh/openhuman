@@ -51,6 +51,12 @@ class StatusRequest(BaseModel):
     status: str  # "active" | "inactive"
 
 
+class UpdateSlackSlotRequest(BaseModel):
+    client_id: str | None = None
+    client_secret: str | None = None
+    app_token: str | None = None
+
+
 class EmployeeResponse(BaseModel):
     model_config = ConfigDict(from_attributes=False)
 

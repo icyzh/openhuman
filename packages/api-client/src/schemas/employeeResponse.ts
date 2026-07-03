@@ -5,17 +5,20 @@
  * OpenHuman — API backend
  * OpenAPI spec version: 0.1.0
  */
-import type { EmployeeResponseEmployeeType } from "./employeeResponseEmployeeType";
-import type { EmployeeResponseRole } from "./employeeResponseRole";
-import type { EmployeeResponsePersonality } from "./employeeResponsePersonality";
-import type { EmployeeResponseSpecialization } from "./employeeResponseSpecialization";
-import type { EmployeeResponseDuties } from "./employeeResponseDuties";
-import type { EmployeeResponseMemoryPolicy } from "./employeeResponseMemoryPolicy";
-import type { EmployeeResponseMcpConnections } from "./employeeResponseMcpConnections";
-import type { EmployeeResponseCogneeUserId } from "./employeeResponseCogneeUserId";
-import type { EmployeeResponseCogneeDatasetName } from "./employeeResponseCogneeDatasetName";
-import type { ChannelAssignmentResponse } from "./channelAssignmentResponse";
-import type { EmployeeResponseUpdatedAt } from "./employeeResponseUpdatedAt";
+import type { EmployeeResponseEmployeeType } from './employeeResponseEmployeeType';
+import type { EmployeeResponseRole } from './employeeResponseRole';
+import type { EmployeeResponsePersonality } from './employeeResponsePersonality';
+import type { EmployeeResponseSpecialization } from './employeeResponseSpecialization';
+import type { EmployeeResponseDuties } from './employeeResponseDuties';
+import type { EmployeeResponseMemoryPolicy } from './employeeResponseMemoryPolicy';
+import type { EmployeeResponseEscalationPolicy } from './employeeResponseEscalationPolicy';
+import type { EmployeeResponseMcpConnections } from './employeeResponseMcpConnections';
+import type { EmployeeResponseSlackTeamName } from './employeeResponseSlackTeamName';
+import type { EmployeeResponseSlackBotUserId } from './employeeResponseSlackBotUserId';
+import type { EmployeeResponseCogneeUserId } from './employeeResponseCogneeUserId';
+import type { EmployeeResponseCogneeDatasetName } from './employeeResponseCogneeDatasetName';
+import type { ChannelAssignmentResponse } from './channelAssignmentResponse';
+import type { EmployeeResponseUpdatedAt } from './employeeResponseUpdatedAt';
 
 export interface EmployeeResponse {
   id: string;
@@ -27,12 +30,14 @@ export interface EmployeeResponse {
   specialization?: EmployeeResponseSpecialization;
   duties?: EmployeeResponseDuties;
   memory_policy?: EmployeeResponseMemoryPolicy;
+  escalation_policy?: EmployeeResponseEscalationPolicy;
   mcp_connections?: EmployeeResponseMcpConnections;
   status: string;
   has_discord_token: boolean;
   has_slack_token: boolean;
   has_slack_slot?: boolean;
-  slack_team_name?: string | null;
+  slack_team_name?: EmployeeResponseSlackTeamName;
+  slack_bot_user_id?: EmployeeResponseSlackBotUserId;
   cognee_user_id?: EmployeeResponseCogneeUserId;
   cognee_dataset_name?: EmployeeResponseCogneeDatasetName;
   channel_assignments?: ChannelAssignmentResponse[];
