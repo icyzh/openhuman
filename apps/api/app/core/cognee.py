@@ -45,6 +45,16 @@ def apply_cognee_config() -> None:
         "COGNEE_SKIP_CONNECTION_TEST",
         str(settings.cognee_skip_connection_test).lower(),
     )
+
+    graph_provider = (
+        os.environ.get("GRAPH_DATABASE_PROVIDER")
+        or os.environ.get("VERCEL_GRAPH_DATABASE_PROVIDER")
+    )
+    if graph_provider == "neo4j":
+        # Neo4j Aura and Neo4j Community do not support multi-database CREATE/DROP commands.
+        # Enforcing backend access control forces per-dataset database creation, which fails on Aura.
+        os.environ.setdefault("ENABLE_BACKEND_ACCESS_CONTROL", "false")
+
     if os.environ.get("VERCEL") == "1":
         os.environ["SYSTEM_ROOT_DIRECTORY"] = "/tmp/cognee_system"
         os.environ["COGNEE_DATA_DIR"] = "/tmp/cognee_data"
