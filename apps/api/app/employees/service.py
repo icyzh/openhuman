@@ -18,6 +18,7 @@ from app.employees.schemas import (
     EmployeeResponse,
     UpdateEmployeeRequest,
 )
+from app.gateway.models import SlackAppSlot
 from app.gateway.slack_app_provisioning import assign_slot_to_employee, release_slot
 from app.memory.service import (
     add_user_to_tenant,
@@ -430,17 +431,23 @@ async def update_slack_slot_credentials(
     emp = await db.scalar(
         select(Employee)
         .where(Employee.id == emp_id, Employee.org_id == org_id)
-        .options(selectinload(Employee.slack_slot))
     )
-    if emp is None or emp.slack_slot is None:
+    if emp is None or emp.slack_slot_id is None:
+        return None
+
+    slot = await db.scalar(
+        select(SlackAppSlot)
+        .where(SlackAppSlot.id == emp.slack_slot_id)
+    )
+    if slot is None:
         return None
 
     if client_id:
-        emp.slack_slot.client_id = client_id
+        slot.client_id = client_id
     if client_secret:
-        emp.slack_slot.client_secret_enc = encrypt_token(client_secret)
+        slot.client_secret_enc = encrypt_token(client_secret)
     if app_token:
-        emp.slack_slot.app_token_enc = encrypt_token(app_token)
+        slot.app_token_enc = encrypt_token(app_token)
 
     await db.commit()
 

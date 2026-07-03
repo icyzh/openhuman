@@ -24,8 +24,8 @@ from app.employees.service import (
     store_discord_token,
     store_slack_token,
     update_employee,
-    update_status,
     update_slack_slot_credentials,
+    update_status,
 )
 
 router = APIRouter(
