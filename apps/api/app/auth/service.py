@@ -11,12 +11,14 @@ async def get_or_create_user(db: AsyncSession, clerk_id: str, clerk_payload: dic
         return user
 
     # Extract info from Clerk's JWT payload
-    email = clerk_payload.get("email") or clerk_payload.get("email_address", "")
-    name = (
-        clerk_payload.get("name")
-        or f"{clerk_payload.get('first_name', '')} {clerk_payload.get('last_name', '')}".strip()
-        or email
-    )
+    email = clerk_payload.get("email") or clerk_payload.get("email_address")
+    if not email:
+        email = f"{clerk_id}@noemail.clerk.user"
+
+    first_name = clerk_payload.get("first_name", "")
+    last_name = clerk_payload.get("last_name", "")
+    first_last = f"{first_name} {last_name}".strip()
+    name = clerk_payload.get("name") or first_last or f"User {clerk_id[-8:]}"
 
     user = User(
         clerk_id=clerk_id,
