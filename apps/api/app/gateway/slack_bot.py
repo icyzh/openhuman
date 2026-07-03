@@ -154,8 +154,15 @@ class EmployeeSlackBot:
                 )
                 if bot_participated:
                     await self._process_slack_message(event, say)
-            except Exception:
-                logger.exception("Error checking thread participation for message event")
+            except Exception as e:
+                from slack_sdk.errors import SlackApiError
+                if isinstance(e, SlackApiError):
+                    logger.warning(
+                        "Slack API error checking thread participation in channel %s, thread %s: %s (error code: %s)",
+                        channel, thread_ts, e.response.get("error", "unknown"), e.response.status_code
+                    )
+                else:
+                    logger.exception("Error checking thread participation for message event")
 
     # ------------------------------------------------------------------
     # Message processing
