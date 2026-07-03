@@ -169,6 +169,17 @@ class EmployeeSlackBot:
             )
             return
 
+        # Ensure the bot is in the channel (if not a DM) to prevent not_in_channel errors on reply
+        if not is_dm and channel:
+            try:
+                await self.app.client.conversations_join(channel=channel)
+            except Exception:
+                logger.debug(
+                    "Failed to auto-join channel %s (it might be private or token lacks channels:join)",
+                    channel,
+                    exc_info=True,
+                )
+
         # Fetch employee and organization details from database for customization & ingestion
         employee_name = "OpenHuman Agent"
         org = None

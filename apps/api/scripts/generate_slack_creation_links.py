@@ -36,6 +36,7 @@ def build_manifest(employee_name: str, redirect_domain: str) -> dict:
                 "bot": [
                     "app_mentions:read",
                     "channels:history",
+                    "channels:join",
                     "groups:history",
                     "chat:write",
                     "chat:write.customize",
