@@ -1,7 +1,10 @@
 from langchain_core.messages import AIMessage
+import logging
 
 from app.agent.guardrails import check_output
 from app.agent.state import AgentState
+
+logger = logging.getLogger(__name__)
 
 
 async def output_guardrail_node(state: AgentState) -> dict:
@@ -27,6 +30,11 @@ async def output_guardrail_node(state: AgentState) -> dict:
     passed, reason = check_output(content, guardrail_config)
 
     if not passed:
+        logger.warning(
+            "[Output Guardrail Blocked] Response blocked. Reason: %s | Output: '%s...'",
+            reason,
+            content[:100],
+        )
         return {
             "output_guardrail_passed": False,
             "response": (

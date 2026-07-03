@@ -1,4 +1,5 @@
 from uuid import UUID
+import logging
 
 from langchain_core.messages import HumanMessage
 from langchain_core.runnables import RunnableConfig
@@ -9,6 +10,8 @@ from app.agent.guardrails import check_input
 from app.agent.state import AgentState
 from app.employees.models import Employee
 from app.employees.templates import get_template
+
+logger = logging.getLogger(__name__)
 
 
 async def _load_guardrail_config(
@@ -66,6 +69,12 @@ async def input_guardrail_node(
     is_blocked, reason = check_input(content, guardrail_config)
 
     if is_blocked:
+        logger.warning(
+            "[Input Guardrail Blocked] Employee ID: %s | Reason: %s | Input: '%s...'",
+            config.get("configurable", {}).get("employee_id"),
+            reason,
+            content[:100],
+        )
         return {
             "input_blocked": True,
             "block_reason": reason,

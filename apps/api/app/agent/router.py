@@ -208,7 +208,17 @@ async def run_agent(
     testing and development — production bot gateways call the graph
     in-process.
     """
+    import time
     employee_id = data.employee_id
+    thread_key = f"{data.platform}:{employee_id}:{data.channel_id}"
+
+    logger.info(
+        "[Agent Run Start] Employee: %s | Platform: %s | Thread: %s",
+        employee_id,
+        data.platform,
+        thread_key,
+    )
+    start_time = time.time()
 
     # Resolve the graph + tools for this employee
     graph, all_tools = await get_graph_for_employee(db, employee_id)
@@ -220,10 +230,6 @@ async def run_agent(
         "employee_id": str(employee_id),
         "tool_round": 0,
     }
-
-    # Build a stable thread_key for per-conversation job serialization
-    # and checkpointer routing (Phase 2-4).
-    thread_key = f"{data.platform}:{employee_id}:{data.channel_id}"
 
     # Pass async DB session, employee context, and the FULL tool set so
     # llm_call_node can filter down to the employee-specific subset.
@@ -241,9 +247,18 @@ async def run_agent(
     try:
         result_state = await graph.ainvoke(initial_state, config=config)
 
+        elapsed = time.time() - start_time
         response_text = result_state.get("response")
         tool_rounds = result_state.get("tool_round", 0)
         error = result_state.get("error")
+
+        logger.info(
+            "[Agent Run Success] Employee: %s | Rounds: %d | Time: %.2fs | Error: %s",
+            employee_id,
+            tool_rounds,
+            elapsed,
+            error,
+        )
 
         return AgentResponse(
             response=response_text,
@@ -251,6 +266,13 @@ async def run_agent(
             error=error,
         )
     except Exception as exc:
+        elapsed = time.time() - start_time
+        logger.exception(
+            "[Agent Run Failed] Employee: %s | Time: %.2fs | Error: %s",
+            employee_id,
+            elapsed,
+            str(exc),
+        )
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Agent graph execution failed: {exc}",

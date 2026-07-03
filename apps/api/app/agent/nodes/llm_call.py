@@ -1,4 +1,5 @@
 from uuid import UUID
+import logging
 
 from langchain_core.messages import AIMessage
 from langchain_core.runnables import RunnableConfig
@@ -10,6 +11,8 @@ from app.agent.llm import get_llm
 from app.agent.state import AgentState
 from app.employees.models import Employee
 from app.employees.templates import get_template
+
+logger = logging.getLogger(__name__)
 
 
 async def llm_call_node(state: AgentState, config: RunnableConfig) -> dict:
@@ -67,6 +70,13 @@ async def llm_call_node(state: AgentState, config: RunnableConfig) -> dict:
     # bound tools, which is the correct behaviour for a restricted employee.
     llm = get_llm(tools=allowed_tools)
 
+    logger.info(
+        "[LLM Node] Invoking LLM for employee: %s | Bound Tools Count: %d | Tools: %s",
+        employee_id_str,
+        len(allowed_tools),
+        [t.name for t in allowed_tools],
+    )
+
     # Call LLM
     response = await llm.ainvoke(state["messages"], config=config)
 
@@ -76,6 +86,17 @@ async def llm_call_node(state: AgentState, config: RunnableConfig) -> dict:
     if isinstance(response, AIMessage):
         content = response.content
         raw_text = str(content) if content else ""
+        
+        if response.tool_calls:
+            logger.info(
+                "[LLM Node] LLM chose to call tools: %s",
+                [tc["name"] for tc in response.tool_calls],
+            )
+        else:
+            logger.debug(
+                "[LLM Node] LLM responded with content: '%s...'",
+                raw_text[:200],
+            )
 
     # MessagesState handles appending the response message automatically
     return {
