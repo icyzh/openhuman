@@ -13,7 +13,7 @@ ENV UV_COMPILE_BYTECODE=1
 COPY apps/api/pyproject.toml apps/api/uv.lock ./
 
 # Install dependencies only (cached if files do not change)
-RUN --mount=type=cache,target=/root/.cache/uv \
+RUN --mount=type=cache,id=uv-cache,target=/root/.cache/uv \
     uv sync --frozen --no-install-project --no-dev
 
 # Stage 2: Final runtime image
