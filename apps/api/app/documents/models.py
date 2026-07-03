@@ -44,6 +44,7 @@ class Document(Base):
     size_bytes: Mapped[int | None] = mapped_column(Integer, nullable=True)
     storage_path: Mapped[str | None] = mapped_column(String(500), nullable=True)
 
+    # Reserved for future per-document Cognee tracking (not currently populated).
     cognee_document_id: Mapped[str | None] = mapped_column(
         String(255), nullable=True
     )

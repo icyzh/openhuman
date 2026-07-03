@@ -4,11 +4,14 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, Form, HTTPException, UploadFile, status
 from fastapi.responses import RedirectResponse, StreamingResponse
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import joinedload
 
 from app.auth.models import User
 from app.core.database import get_db
 from app.core.dependencies import get_current_user
+from app.documents.models import Document
 from app.documents.schemas import DocumentResponse, DocumentsStatsResponse
 from app.documents.service import (
     _backend_for,
@@ -34,6 +37,10 @@ async def upload_document(
     doc = await save_document(db, organization_id, current_user.id, file, employee_id)
     if doc is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Organization not found")
+    # Re-fetch with eager-loaded employee to avoid MissingGreenlet on employee_name
+    doc = await db.scalar(
+        select(Document).options(joinedload(Document.employee)).where(Document.id == doc.id)
+    )
     return DocumentResponse.model_validate(doc, from_attributes=True)
 
 

@@ -27,6 +27,7 @@ class Organization(Base):
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     what_it_does: Mapped[str | None] = mapped_column(Text, nullable=True)
+    website_url: Mapped[str | None] = mapped_column(String(2048), nullable=True)
 
     # Cognee IDs — populated in Phase 4 fork, nullable until then
     cognee_tenant_id: Mapped[str | None] = mapped_column(String(255), nullable=True)

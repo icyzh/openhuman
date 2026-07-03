@@ -19,7 +19,7 @@ def apply_cognee_config() -> None:
         # Cognee expects provider prefix in model name: "openai/model_name"
         llm_model = f"openai/{settings.openai_model}"
 
-    embedding_api_key = settings.cognee_embedding_endpoint or settings.openai_api_key
+    embedding_api_key = getattr(settings, "cognee_embedding_api_key", None) or settings.cognee_llm_api_key or settings.openai_api_key
     embedding_endpoint = settings.cognee_embedding_endpoint or settings.openai_base_url
     
     embedding_model = settings.cognee_embedding_model

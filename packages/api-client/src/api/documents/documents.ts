@@ -60,7 +60,6 @@ export const documentsUploadDocument = (
     {
       url: `/api/documents/upload`,
       method: "POST",
-      headers: { "Content-Type": "multipart/form-data" },
       data: formData,
       signal,
     },

@@ -60,6 +60,7 @@ class Settings(BaseSettings):
     cognee_llm_model: str = "openai/gpt-4o-mini"
     cognee_embedding_provider: str = "openai"
     cognee_embedding_endpoint: str = ""
+    cognee_embedding_api_key: str = ""
     cognee_embedding_model: str = "openai/text-embedding-3-small"
     cognee_skip_connection_test: bool = True
 

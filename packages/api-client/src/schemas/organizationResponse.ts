@@ -15,6 +15,7 @@ export interface OrganizationResponse {
   name: string;
   description?: OrganizationResponseDescription;
   what_it_does?: OrganizationResponseWhatItDoes;
+  website_url?: string;
   owner_id: string;
   cognee_tenant_id?: OrganizationResponseCogneeTenantId;
   cognee_dataset_name?: OrganizationResponseCogneeDatasetName;

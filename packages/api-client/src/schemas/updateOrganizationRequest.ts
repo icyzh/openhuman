@@ -13,4 +13,5 @@ export interface UpdateOrganizationRequest {
   name?: UpdateOrganizationRequestName;
   description?: UpdateOrganizationRequestDescription;
   what_it_does?: UpdateOrganizationRequestWhatItDoes;
+  website_url?: string;
 }
