@@ -12,9 +12,8 @@ ENV UV_COMPILE_BYTECODE=1
 # Copy dependency definition files
 COPY pyproject.toml uv.lock ./
 
-# Install dependencies only (cached if files do not change)
-RUN --mount=type=cache,id=uv-cache,target=/root/.cache/uv \
-    uv sync --frozen --no-install-project --no-dev
+# Install dependencies only
+RUN uv sync --frozen --no-install-project --no-dev
 
 # Stage 2: Final runtime image
 FROM python:3.12-slim
