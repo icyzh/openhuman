@@ -46,7 +46,6 @@ import app.documents.models  # noqa: F401
 import app.employees.models  # noqa: F401
 import app.organizations.models  # noqa: F401
 import app.agent.tools.mcp.models  # noqa: F401
-import app.gateway.models  # noqa: F401
 
 from app.employees.models import Employee
 from app.gateway.fixed_bots import get_fixed_bot
