@@ -35,6 +35,67 @@ def _backend_for(doc: Document) -> StorageBackend:
     return get_local_backend() if doc.storage_backend == "local" else get_s3_backend()
 
 
+async def reprovision_cognee_for_org(db: AsyncSession, org: Organization) -> None:
+    from app.memory.service import (
+        get_or_create_admin,
+        create_tenant,
+        create_system_user,
+        add_user_to_tenant,
+        create_dataset,
+        grant_tenant_read,
+    )
+    admin = await get_or_create_admin()
+    tenant = await create_tenant(org.name, admin["id"])
+    sys_user = await create_system_user(tenant["id"], admin["id"])
+    await add_user_to_tenant(sys_user["id"], tenant["id"], admin["id"])
+    dataset = await create_dataset(
+        f"company-{tenant['id']}", sys_user["id"]
+    )
+    await grant_tenant_read(dataset["id"], tenant["id"], sys_user["id"])
+
+    org.cognee_tenant_id = tenant["id"]
+    org.cognee_tenant_name = tenant["name"]
+    org.cognee_system_user_id = sys_user["id"]
+    org.cognee_system_user_name = sys_user["email"]
+    org.cognee_dataset_id = dataset["id"]
+    org.cognee_dataset_name = dataset["name"]
+    await db.commit()
+    await db.refresh(org)
+
+
+async def reprovision_cognee_for_employee(db: AsyncSession, org: Organization, emp: Employee) -> None:
+    from app.memory.service import (
+        get_or_create_admin,
+        create_employee_user,
+        add_user_to_tenant,
+        create_dataset,
+        grant_tenant_read,
+    )
+    if not org.cognee_tenant_id:
+        await reprovision_cognee_for_org(db, org)
+
+    admin = await get_or_create_admin()
+    cognee_user = await create_employee_user(
+        org.cognee_tenant_id, emp.name
+    )
+    await add_user_to_tenant(
+        cognee_user["id"], org.cognee_tenant_id, admin["id"]
+    )
+    dataset = await create_dataset(
+        f"employee-{emp.id}", cognee_user["id"]
+    )
+    await grant_tenant_read(
+        dataset["id"], org.cognee_tenant_id, cognee_user["id"]
+    )
+
+    emp.cognee_user_id = cognee_user["id"]
+    emp.cognee_user_name = cognee_user["email"]
+    emp.cognee_dataset_id = dataset["id"]
+    emp.cognee_dataset_name = dataset["name"]
+    await db.commit()
+    await db.refresh(emp)
+
+
 async def save_document(
     db: AsyncSession,
     org_id: UUID,
@@ -78,6 +139,7 @@ async def save_document(
     # the bucket stored the file (local disk or S3).
 
     # Determine target dataset: employee docs go to employee dataset (Phase 1a)
+    emp = None
     if employee_id:
         emp = await db.get(Employee, employee_id)
         if emp and emp.cognee_dataset_name and emp.cognee_user_id and emp.cognee_dataset_id:
@@ -123,14 +185,32 @@ async def save_document(
         else:
             cognee_input = doc.storage_path
 
+        async def attempt_remember(ds: str, u_id: str, ds_id: str | None) -> bool:
+            try:
+                await remember(
+                    cognee_input,
+                    ds,
+                    u_id,
+                    dataset_id=ds_id,
+                    background=True,
+                )
+                return True
+            except Exception as e:
+                err_msg = str(e)
+                if "EntityNotFoundError" in err_msg or "Could not find user" in err_msg:
+                    logger.info(
+                        "User not found in Cognee database. Cognee sqlite database reset suspected. Reprovisioning..."
+                    )
+                    if employee_id and emp:
+                        await reprovision_cognee_for_employee(db, org, emp)
+                        return await attempt_remember(emp.cognee_dataset_name, emp.cognee_user_id, emp.cognee_dataset_id)
+                    else:
+                        await reprovision_cognee_for_org(db, org)
+                        return await attempt_remember(org.cognee_dataset_name, org.cognee_system_user_id, org.cognee_dataset_id)
+                raise
+
         try:
-            await remember(
-                cognee_input,
-                target_dataset,
-                target_user_id,
-                dataset_id=target_dataset_id,
-                background=True,
-            )
+            await attempt_remember(target_dataset, target_user_id, target_dataset_id)
             doc.status = "indexed"
         except Exception:
             logger.exception(
