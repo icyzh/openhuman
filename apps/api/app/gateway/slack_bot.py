@@ -60,9 +60,21 @@ class EmployeeSlackBot:
         self.bot_token = bot_token
         self.app_token = app_token
 
-        self.app = AsyncApp(token=bot_token)
+        import os
+        # Temporarily remove global Slack client credentials from environment
+        # to prevent Bolt from ignoring the individual per-employee bot token.
+        slack_client_id = os.environ.pop("SLACK_CLIENT_ID", None)
+        slack_client_secret = os.environ.pop("SLACK_CLIENT_SECRET", None)
+        try:
+            self.app = AsyncApp(token=bot_token)
+        finally:
+            if slack_client_id is not None:
+                os.environ["SLACK_CLIENT_ID"] = slack_client_id
+            if slack_client_secret is not None:
+                os.environ["SLACK_CLIENT_SECRET"] = slack_client_secret
+
         self._handler = AsyncSocketModeHandler(self.app, app_token)
-        self.bot_user_id: str | None = None
+        self.bot_user_id = None
 
         # Register event handlers
         self.app.event("app_mention")(self.handle_mention)
@@ -175,7 +187,7 @@ class EmployeeSlackBot:
                 await self.app.client.conversations_join(channel=channel)
             except Exception:
                 logger.debug(
-                    "Failed to auto-join channel %s (it might be private or token lacks channels:join)",
+                    "Failed to auto-join channel %s (private/lacks channels:join)",
                     channel,
                     exc_info=True,
                 )

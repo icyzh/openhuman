@@ -373,8 +373,13 @@ class BotGatewayManager:
             return
 
         if emp.id in per_emp_bots:
-            # Bot already running — nothing to update (it's 1:1)
-            return
+            existing = per_emp_bots[emp.id]
+            if existing.bot_token != bot_token or existing.app_token != app_token:
+                logger.info("Slack credentials changed for employee %s — restarting bot", emp.id)
+                await self._stop_employee_slack_bot(emp.id)
+            else:
+                # Bot already running with correct credentials
+                return
 
         await self._start_employee_slack_bot(emp.id, bot_token, app_token)
 
