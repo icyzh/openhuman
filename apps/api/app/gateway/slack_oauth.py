@@ -61,6 +61,7 @@ router = APIRouter(prefix="/api/slack", tags=["slack"])
 _SLACK_BOT_SCOPES = [
     "app_mentions:read",
     "channels:history",
+    "channels:join",
     "groups:history",
     "chat:write",
     "chat:write.customize",
