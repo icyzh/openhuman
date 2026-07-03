@@ -70,16 +70,27 @@ export const customInstance = async <T>(
     }
   }
 
+  const mergedHeaders: Record<string, string> = {
+    ...(data instanceof FormData ? {} : { "Content-Type": "application/json" }),
+    ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    ...configHeaders,
+    ...(options?.headers as Record<string, string> | undefined),
+  };
+
+  if (data instanceof FormData) {
+    const keysToDelete = Object.keys(mergedHeaders).filter(
+      (k) => k.toLowerCase() === "content-type"
+    );
+    for (const key of keysToDelete) {
+      delete mergedHeaders[key];
+    }
+  }
+
   const response = await fetch(`${API_BASE_URL}${url}${queryParams}`, {
     ...options,
     method,
     signal,
-    headers: {
-      ...(data instanceof FormData ? {} : { "Content-Type": "application/json" }),
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      ...configHeaders,
-      ...(options?.headers as Record<string, string> | undefined),
-    },
+    headers: mergedHeaders,
     body: data instanceof FormData ? data : data ? JSON.stringify(data) : undefined,
   });
 
