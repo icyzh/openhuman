@@ -39,17 +39,26 @@ async def get_current_user(
 
     token = credentials.credentials
 
+    auth_options: dict = {"secret_key": settings.clerk_secret_key}
+    if settings.clerk_jwt_key:
+        auth_options["jwt_key"] = settings.clerk_jwt_key
+    # Only enforce authorized_parties when explicitly configured.
+    # An empty / unset list means "accept any party" (dev-friendly default).
+    if settings.clerk_authorized_parties_list:
+        auth_options["authorized_parties"] = settings.clerk_authorized_parties_list
+
     request_state = authenticate_request(
         request,
-        AuthenticateRequestOptions(
-            secret_key=settings.clerk_secret_key,
-            authorized_parties=settings.clerk_authorized_parties_list,
-            jwt_key=settings.clerk_jwt_key,
-        ),
+        AuthenticateRequestOptions(**auth_options),  # type: ignore[arg-type]
     )
 
     if not request_state.is_signed_in:
-        raise _unauthorized(request_state.message or "Invalid token")
+        reason = request_state.message or "Invalid token"
+        raise _unauthorized(
+            f"Clerk: {reason}"
+            f" (secret={settings.clerk_secret_key[:8] if settings.clerk_secret_key else 'MISSING'}…"
+            f" parties={settings.clerk_authorized_parties_list})"
+        )
 
     clerk_user_id: str | None = request_state.payload.get("sub")
     if not clerk_user_id:

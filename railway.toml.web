@@ -1,10 +1,9 @@
 [build]
 builder = "DOCKERFILE"
-dockerfilePath = "apps/api/Dockerfile.railway"
-watchPatterns = ["apps/api/**"]
+dockerfilePath = "apps/web/Dockerfile"
+watchPatterns = ["apps/web/**"]
 
 [deploy]
-healthcheckPath = "/api/health"
 healthcheckTimeout = 300
 restartPolicyType = "ON_FAILURE"
 numReplicas = 1

@@ -28,6 +28,7 @@ from app.employees.service import (
     get_active_employees_with_tokens,
 )
 from app.gateway.discord_bot import EmployeeDiscordBot
+from app.gateway.slack_app_provisioning import count_available_slots
 from app.gateway.slack_bot import EmployeeSlackBot, WorkspaceSlackBot
 
 logger = logging.getLogger(__name__)
@@ -140,6 +141,23 @@ class BotGatewayManager:
             await self._reconcile_slack_bots_per_employee(active_employees)
         else:
             await self._reconcile_slack_bots_shared(active_employees)
+
+        # --- Pool capacity alert (per_employee mode) --------------------------
+        if settings.slack_identity_mode == "per_employee":
+            try:
+                async with async_session_factory() as db2:
+                    available = await count_available_slots(db2)
+                    if available < settings.slack_slot_pool_threshold:
+                        logger.warning(
+                            "Slack slot pool running low: %d available slots "
+                            "(threshold=%d). Consider provisioning more slots.",
+                            available,
+                            settings.slack_slot_pool_threshold,
+                        )
+            except Exception:
+                logger.exception(
+                    "Failed to check Slack slot pool capacity"
+                )
 
     # ------------------------------------------------------------------
     # Discord — per-employee (unchanged)

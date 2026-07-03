@@ -9,6 +9,7 @@ manifests for display-name updates.
 from __future__ import annotations
 
 import json
+import logging
 from datetime import datetime, timezone
 from pathlib import Path
 from uuid import UUID
@@ -16,9 +17,12 @@ from uuid import UUID
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import settings
 from app.core.security import decrypt_token, encrypt_token
 from app.employees.models import Employee
 from app.gateway.models import SlackAppSlot
+
+logger = logging.getLogger(__name__)
 
 # Path to the manifest template, relative to this file
 _MANIFEST_PATH = Path(__file__).resolve().parent.parent.parent / "slack_manifest.json"
@@ -156,3 +160,50 @@ async def insert_slot(
     db.add(slot)
     await db.flush()
     return slot
+
+
+async def update_slack_app_manifest(
+    db: AsyncSession, employee_id: UUID, new_name: str
+) -> None:
+    """Update the Slack app's display name via the manifest API.
+
+    Best-effort: logs warnings or errors on failure but does not raise.
+    Requires ``SLACK_CONFIG_TOKEN`` to be set in settings.
+    """
+    if not settings.slack_config_token:
+        logger.warning(
+            "SLACK_CONFIG_TOKEN not set — cannot update Slack app manifest "
+            "for employee %s",
+            employee_id,
+        )
+        return
+
+    result = await db.execute(
+        select(SlackAppSlot).where(
+            SlackAppSlot.employee_id == employee_id,
+            SlackAppSlot.status == "assigned",
+        )
+    )
+    slot: SlackAppSlot | None = result.scalars().first()
+    if slot is None:
+        logger.warning(
+            "No assigned SlackAppSlot found for employee %s", employee_id
+        )
+        return
+
+    manifest = build_manifest(new_name)
+    from slack_sdk.web.async_client import AsyncWebClient
+
+    client = AsyncWebClient(token=settings.slack_config_token)
+    response = await client.apps_manifest_update(
+        app_id=slot.slack_app_id,
+        manifest=manifest,
+    )
+    if not response.get("ok"):
+        logger.error(
+            "Slack apps.manifest.update failed for employee %s "
+            "(app_id=%s): %s",
+            employee_id,
+            slot.slack_app_id,
+            response.get("error", "unknown"),
+        )

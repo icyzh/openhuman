@@ -1,4 +1,4 @@
-# Multi-stage Dockerfile for Next.js in Turborepo using Bun
+# Multi-stage Dockerfile for Next.js in Turborepo using Bun (Railway)
 FROM oven/bun:1.1-alpine AS base
 
 # Install Node.js (required by turbo) and compatibility libraries
@@ -26,6 +26,8 @@ RUN bun install
 COPY --from=pruner /app/out/full/ .
 ARG NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY
 ENV NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=$NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY
+ARG NEXT_PUBLIC_API_URL
+ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL
 ENV NEXT_TELEMETRY_DISABLED=1
 ENV NODE_ENV=production
 
@@ -36,11 +38,12 @@ RUN bun run build
 FROM base AS runner
 WORKDIR /app
 
-ENV PORT=3000
 ENV HOSTNAME="0.0.0.0"
 ENV NODE_ENV=production
 ARG NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY
 ENV NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=$NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY
+ARG NEXT_PUBLIC_API_URL
+ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL
 
 RUN addgroup --system --gid 1001 nodejs
 RUN adduser --system --uid 1001 nextjs
@@ -53,4 +56,4 @@ COPY --from=installer --chown=nextjs:nodejs /app/apps/web/.next/static ./apps/we
 USER nextjs
 EXPOSE 3000
 
-CMD ["node", "apps/web/server.js"]
+CMD ["sh", "-c", "HOSTNAME=0.0.0.0 node apps/web/server.js"]

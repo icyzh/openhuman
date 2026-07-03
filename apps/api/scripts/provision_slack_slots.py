@@ -38,6 +38,16 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker
 
+# Pre-load all model modules so SQLAlchemy can resolve relationship strings
+# (same pattern as app/main.py)
+import app.agent.tools.mcp.models  # noqa: F401
+import app.auth.models  # noqa: F401
+import app.channel_assignments.models  # noqa: F401
+import app.documents.models  # noqa: F401
+import app.employees.models  # noqa: F401
+import app.gateway.models  # noqa: F401
+import app.organizations.models  # noqa: F401
+
 from app.core.config import settings
 from app.gateway.slack_app_provisioning import insert_slot
 

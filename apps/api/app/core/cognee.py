@@ -55,9 +55,17 @@ def apply_cognee_config() -> None:
         # Enforcing backend access control forces per-dataset database creation, which fails on Aura.
         os.environ.setdefault("ENABLE_BACKEND_ACCESS_CONTROL", "false")
 
+    # Route all Cognee storage (SQLite system DB, LanceDB vectors, Kuzu graphs,
+    # cache, logs) to the persistent volume so data survives deploys.
+    data_dir = settings.cognee_data_dir  # /app/cognee_data
+
     if os.environ.get("VERCEL") == "1":
         os.environ["SYSTEM_ROOT_DIRECTORY"] = "/tmp/cognee_system"
         os.environ["COGNEE_DATA_DIR"] = "/tmp/cognee_data"
     else:
-        os.environ.setdefault("COGNEE_DATA_DIR", settings.cognee_data_dir)
+        os.environ.setdefault("DATA_ROOT_DIRECTORY", os.path.join(data_dir, "data"))
+        os.environ.setdefault("SYSTEM_ROOT_DIRECTORY", os.path.join(data_dir, "system"))
+        os.environ.setdefault("CACHE_ROOT_DIRECTORY", os.path.join(data_dir, "cache"))
+        os.environ.setdefault("COGNEE_LOGS_DIR", os.path.join(data_dir, "logs"))
+        os.environ.setdefault("COGNEE_DATA_DIR", data_dir)
 

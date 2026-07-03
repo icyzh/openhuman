@@ -19,7 +19,11 @@ from app.employees.schemas import (
     UpdateEmployeeRequest,
 )
 from app.gateway.models import SlackAppSlot
-from app.gateway.slack_app_provisioning import assign_slot_to_employee, release_slot
+from app.gateway.slack_app_provisioning import (
+    assign_slot_to_employee,
+    release_slot,
+    update_slack_app_manifest,
+)
 from app.memory.service import (
     add_user_to_tenant,
     create_dataset,
@@ -51,6 +55,10 @@ def _build_employee_profile(emp: Employee) -> str:
 
 class DuplicateEmployeeTypeError(Exception):
     """Raised when creating/updating an employee to a type already used by the org."""
+
+
+class PoolExhaustionError(Exception):
+    """Raised when the Slack app slot pool has no available slots."""
 
 
 # ---------------------------------------------------------------------------
@@ -147,7 +155,13 @@ async def create_employee(
 
     # Pattern A: assign a Slack app slot so this employee can get its own identity
     if settings.slack_identity_mode == "per_employee":
-        await assign_slot_to_employee(db, emp)
+        slot = await assign_slot_to_employee(db, emp)
+        if slot is None:
+            await db.rollback()
+            raise PoolExhaustionError(
+                "No available Slack app slots. Provision more slots before "
+                "creating additional employees in per_employee mode."
+            )
 
     try:
         await db.commit()
@@ -300,6 +314,17 @@ async def update_employee(
                 emp.id,
             )
     # ── End Cognee ──────────────────────────────────────────────────────
+
+    # ── Slack app manifest rename (best-effort) ──────────────────────────
+    if settings.slack_identity_mode == "per_employee" and "name" in update_data:
+        try:
+            await update_slack_app_manifest(db, emp.id, update_data["name"])
+        except Exception:
+            logger.exception(
+                "Slack app manifest rename failed for emp %s (non-blocking)",
+                emp.id,
+            )
+    # ── End Slack app manifest rename ────────────────────────────────────
 
     emp = await _get_employee_with_assignments(db, emp_id, org_id)  # type: ignore[arg-type]
     return _to_response(emp)  # type: ignore[arg-type]

@@ -37,7 +37,7 @@ class Settings(BaseSettings):
     # Clerk authentication
     clerk_secret_key: str = ""
     clerk_jwt_key: str | None = None
-    clerk_authorized_parties: str = "http://localhost:3000"
+    clerk_authorized_parties: str = ""
 
     @property
     def clerk_authorized_parties_list(self) -> list[str]:
@@ -53,7 +53,7 @@ class Settings(BaseSettings):
     encryption_key: str = ""
 
     # Cognee memory (embedded — SQLite + LanceDB + Kuzu)
-    cognee_data_dir: str = "./cognee_data"
+    cognee_data_dir: str = "/app/cognee_data"
     cognee_llm_provider: str = "openai"
     cognee_llm_endpoint: str = ""
     cognee_llm_api_key: str = ""
