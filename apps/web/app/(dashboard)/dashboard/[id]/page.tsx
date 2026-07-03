@@ -9,7 +9,6 @@ import {
   ExternalLinkIcon,
   FileTextIcon,
   PlusIcon,
-  SettingsIcon,
   Trash2Icon,
   UploadIcon,
   XIcon,
@@ -644,10 +643,6 @@ export default function EmployeeDetailPage() {
                   )}
                 </div>
               )}
-
-
-
-
 
               <Separator />
 

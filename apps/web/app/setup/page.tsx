@@ -60,13 +60,13 @@ export default function SetupPage() {
   const handleUploadComplete = useCallback(() => {
     if (!createdOrgId) return;
     setOrg(createdOrgId, orgName);
-    router.replace("/dashboard");
+    router.replace("/onboard");
   }, [createdOrgId, orgName, setOrg, router]);
 
   const handleSkipUpload = useCallback(() => {
     if (!createdOrgId) return;
     setOrg(createdOrgId, orgName);
-    router.replace("/dashboard");
+    router.replace("/onboard");
   }, [createdOrgId, orgName, setOrg, router]);
 
   // Guard: if user already has an org (from store or API), redirect to dashboard

@@ -15,8 +15,8 @@ import type { CreateEmployeeRequestEscalationPolicy } from './createEmployeeRequ
 export interface CreateEmployeeRequest {
   name: string;
   /**
-   * One of: legal-compliance, support, hr, general
-   * @pattern ^(legal-compliance|support|hr|general)$
+   * One of: legal-compliance, support, hr, general, sales
+   * @pattern ^(legal-compliance|support|hr|general|sales)$
    */
   employee_type: string;
   role?: CreateEmployeeRequestRole;

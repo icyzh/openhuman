@@ -16,7 +16,6 @@ from app.employees.schemas import (
 )
 from app.employees.service import (
     DuplicateEmployeeTypeError,
-    PoolExhaustionError,
     create_employee,
     delete_employee,
     get_employee,
@@ -43,11 +42,6 @@ async def create_employee_route(
     try:
         result = await create_employee(db, org_id, current_user.id, data)
     except DuplicateEmployeeTypeError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail=str(exc),
-        )
-    except PoolExhaustionError as exc:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail=str(exc),

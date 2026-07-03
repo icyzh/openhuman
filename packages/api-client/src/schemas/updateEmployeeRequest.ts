@@ -17,7 +17,7 @@ import type { UpdateEmployeeRequestStatus } from './updateEmployeeRequestStatus'
 
 export interface UpdateEmployeeRequest {
   name?: UpdateEmployeeRequestName;
-  /** One of: legal-compliance, support, hr, general */
+  /** One of: legal-compliance, support, hr, general, sales */
   employee_type?: UpdateEmployeeRequestEmployeeType;
   role?: UpdateEmployeeRequestRole;
   personality?: UpdateEmployeeRequestPersonality;

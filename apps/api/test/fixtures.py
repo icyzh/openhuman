@@ -29,8 +29,8 @@ import app.auth.models  # noqa: F401  — User
 import app.channel_assignments.models  # noqa: F401
 import app.documents.models  # noqa: F401
 import app.employees.models  # noqa: F401  — Employee
-import app.gateway.models  # noqa: F401  — SlackAppSlot
 import app.organizations.models  # noqa: F401  — Organization
+# app.gateway.models removed — SlackAppSlot table was dropped in the fixed-bot migration
 import os
 
 from app.auth.models import User
@@ -39,7 +39,6 @@ from app.core.database import Base
 from app.core.security import encrypt_token, decrypt_token
 from app.employees.models import Employee
 from app.employees.templates import TEMPLATES, EmployeeTemplate
-from app.gateway.models import SlackAppSlot
 from app.organizations.models import Organization
 
 # ---------------------------------------------------------------------------
@@ -330,160 +329,16 @@ async def get_slack_token_status(
 
 
 # ---------------------------------------------------------------------------
-# Slack app slot helpers — for testing Pattern A per-employee identity
+# Slack app slot helpers — REMOVED (slot-based provisioning is deprecated)
 # ---------------------------------------------------------------------------
-
-
-async def seed_slack_slots(
-    session: AsyncSession,
-    count: int = 4,
-) -> list[SlackAppSlot]:
-    """Create *count* available Slack app slots for testing.
-
-    If settings.slack_client_id is configured, the first slot gets the real
-    credentials from the environment so that OAuth flows can be tested with
-    a real Slack app. Remaining slots get dummy credentials.
-    """
-    slots: list[SlackAppSlot] = []
-    for i in range(1, count + 1):
-        if i == 1 and settings.slack_client_id:
-            slot = SlackAppSlot(
-                slack_app_id=settings.slack_app_token.split("-")[1] if settings.slack_app_token and "-" in settings.slack_app_token else "A0REALAPP",
-                client_id=settings.slack_client_id,
-                client_secret_enc=encrypt_token(settings.slack_client_secret or ""),
-                app_token_enc=encrypt_token(settings.slack_app_token or ""),
-                status="available",
-            )
-        else:
-            slot = SlackAppSlot(
-                slack_app_id=f"A0{i:04d}TEST",
-                client_id=f"test-client-id-{i}.slack.com",
-                client_secret_enc=encrypt_token(f"test-client-secret-{i}"),
-                app_token_enc=encrypt_token(f"xapp-test-slot-{i}-token"),
-                status="available",
-            )
-        session.add(slot)
-        slots.append(slot)
-    await session.commit()
-    return slots
-
-
-async def provision_test_slots(
-    session_factory: async_sessionmaker,
-    count: int = 4,
-) -> list[SlackAppSlot]:
-    """Provision *count* test Slack app slots and return them."""
-    async with session_factory() as session:
-        return await seed_slack_slots(session, count)
-
-
-async def get_slot_summary(
-    session_factory: async_sessionmaker,
-) -> dict:
-    """Return ``{available, assigned, disabled, total}`` slot counts."""
-    from sqlalchemy import select, func
-
-    async with session_factory() as session:
-        total = await session.scalar(
-            select(func.count()).select_from(SlackAppSlot)
-        ) or 0
-        available = await session.scalar(
-            select(func.count()).where(SlackAppSlot.status == "available")
-        ) or 0
-        assigned = await session.scalar(
-            select(func.count()).where(SlackAppSlot.status == "assigned")
-        ) or 0
-        disabled = await session.scalar(
-            select(func.count()).where(SlackAppSlot.status == "disabled")
-        ) or 0
-    return {
-        "available": available,
-        "assigned": assigned,
-        "disabled": disabled,
-        "total": total,
-    }
-
-
-async def get_employee_slot_status(
-    session_factory: async_sessionmaker,
-    employee_id: UUID,
-) -> dict | None:
-    """Return slot + connection info for an employee, or None if not found."""
-    from sqlalchemy import select as sa_select
-    from sqlalchemy.orm import selectinload
-
-    async with session_factory() as session:
-        emp = await session.scalar(
-            sa_select(Employee)
-            .where(Employee.id == employee_id)
-            .options(selectinload(Employee.slack_slot))
-        )
-        if emp is None:
-            return None
-
-        has_slot = emp.slack_slot_id is not None
-        has_token = emp.slack_token_enc is not None
-
-        status: str
-        detail: str = ""
-        if has_token and emp.slack_team_name:
-            status = "connected"
-            detail = emp.slack_team_name
-        elif has_slot:
-            status = "slot_ready"
-            detail = "Slot assigned — needs OAuth"
-        elif has_token:
-            status = "token_only"
-            detail = "Has token but no slot (shared mode?)"
-        else:
-            status = "no_slot"
-            detail = "No slot assigned"
-
-        return {
-            "employee_id": str(emp.id),
-            "name": emp.name,
-            "status": status,
-            "detail": detail,
-            "has_slot": has_slot,
-            "has_token": has_token,
-            "slack_team_name": emp.slack_team_name,
-            "slack_bot_user_id": emp.slack_bot_user_id,
-            "slot_id": str(emp.slack_slot_id) if emp.slack_slot_id else None,
-        }
-
-
-async def assign_slot_to_employee(
-    session_factory: async_sessionmaker,
-    employee_id: UUID,
-) -> bool:
-    """Assign an available slot to an employee. Returns True if successful."""
-    from app.gateway.slack_app_provisioning import assign_slot_to_employee as _assign
-
-    async with session_factory() as session:
-        emp = await session.get(Employee, employee_id)
-        if emp is None:
-            return False
-        slot = await _assign(session, emp)
-        if slot is None:
-            return False
-        await session.commit()
-    return True
-
-
-async def release_employee_slot(
-    session_factory: async_sessionmaker,
-    employee_id: UUID,
-) -> bool:
-    """Release an employee's slot back to available. Returns True if found."""
-    from app.gateway.slack_app_provisioning import release_slot
-
-    async with session_factory() as session:
-        emp = await session.get(Employee, employee_id)
-        if emp is None:
-            return False
-        await release_slot(session, emp)
-        await session.commit()
-    return True
+# The slack_app_slots table and SlackAppSlot model were dropped in the
+# fixed-bot migration (a1147141b092).  Slot helpers (seed_slack_slots,
+# provision_test_slots, get_slot_summary, get_employee_slot_status,
+# assign_slot_to_employee, release_employee_slot) are no longer available.
+# Use the fixed-bot registry (app.gateway.fixed_bots) for test setup instead.
+#
+# To test Slack OAuth with a fixed bot, set the SLACK_BOT_<TYPE>_* env vars
+# and create an employee with the matching employee_type.
 
 
 # ---------------------------------------------------------------------------

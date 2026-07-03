@@ -52,8 +52,8 @@ class DuplicateEmployeeTypeError(Exception):
     """Raised when creating/updating an employee to a type already used by the org."""
 
 
-class PoolExhaustionError(Exception):
-    """Raised when the Slack app slot pool has no available slots."""
+# PoolExhaustionError removed — slot-based provisioning is deprecated
+# in favor of the fixed-bot architecture.
 
 
 # ---------------------------------------------------------------------------
@@ -309,16 +309,9 @@ async def update_employee(
             )
     # ── End Cognee ──────────────────────────────────────────────────────
 
-    # ── Slack app manifest rename (best-effort) ──────────────────────────
-    if settings.slack_identity_mode == "per_employee" and "name" in update_data:
-        try:
-            await update_slack_app_manifest(db, emp.id, update_data["name"])
-        except Exception:
-            logger.exception(
-                "Slack app manifest rename failed for emp %s (non-blocking)",
-                emp.id,
-            )
-    # ── End Slack app manifest rename ────────────────────────────────────
+    # ── Slack app manifest rename removed ─────────────────────────────────
+    # (per_employee mode is deprecated; manifest rename via Slack API is
+    #  no longer supported in the fixed-bot architecture.)
 
     emp = await _get_employee_with_assignments(db, emp_id, org_id)  # type: ignore[arg-type]
     return _to_response(emp)  # type: ignore[arg-type]

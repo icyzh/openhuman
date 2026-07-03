@@ -13,7 +13,7 @@ class CreateEmployeeRequest(BaseModel):
     employee_type: str = Field(
         ...,
         pattern=_VALID_EMPLOYEE_TYPES_PATTERN,
-        description="One of: legal-compliance, support, hr, general",
+        description="One of: legal-compliance, support, hr, general, sales",
     )
     role: str | None = None
     personality: dict | None = None
@@ -28,7 +28,7 @@ class UpdateEmployeeRequest(BaseModel):
     employee_type: str | None = Field(
         None,
         pattern=_VALID_EMPLOYEE_TYPES_PATTERN,
-        description="One of: legal-compliance, support, hr, general",
+        description="One of: legal-compliance, support, hr, general, sales",
     )
     role: str | None = None
     personality: dict | None = None

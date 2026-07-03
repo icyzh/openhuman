@@ -7,6 +7,6 @@
  */
 
 /**
- * One of: legal-compliance, support, hr, general
+ * One of: legal-compliance, support, hr, general, sales
  */
 export type UpdateEmployeeRequestEmployeeType = string | null;

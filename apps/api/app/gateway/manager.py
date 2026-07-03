@@ -144,22 +144,10 @@ class BotGatewayManager:
         else:
             await self._reconcile_slack_bots_shared(active_employees)
 
-        # --- Pool capacity alert (per_employee mode) --------------------------
-        if settings.slack_identity_mode == "per_employee":
-            try:
-                async with async_session_factory() as db2:
-                    available = await count_available_slots(db2)
-                    if available < settings.slack_slot_pool_threshold:
-                        logger.warning(
-                            "Slack slot pool running low: %d available slots "
-                            "(threshold=%d). Consider provisioning more slots.",
-                            available,
-                            settings.slack_slot_pool_threshold,
-                        )
-            except Exception:
-                logger.exception(
-                    "Failed to check Slack slot pool capacity"
-                )
+        # --- Pool capacity alert removed (per_employee mode is deprecated) ---
+        # Slot-based provisioning has been replaced by the fixed-bot architecture.
+        # Capacity monitoring is no longer needed — each bot type is a single
+        # pre-configured Slack app identity.
 
     # ------------------------------------------------------------------
     # Discord — per-employee (unchanged)
@@ -338,70 +326,26 @@ class BotGatewayManager:
     async def _reconcile_slack_bots_per_employee(
         self, active_employees: list[Employee],
     ) -> None:
-        """One :class:`EmployeeSlackBot` per active employee with a Slack token
-        and an assigned slot (app-level token).
+        """Per-employee mode is deprecated in favor of fixed bots.
 
-        Mirrors the Discord reconciliation pattern.
+        The ``slack_app_slots`` table and ``SlackAppSlot`` model have been
+        removed.  This method is kept as a no-op to avoid crashing if someone
+        has ``slack_identity_mode=per_employee`` in their .env — it logs a
+        warning and skips reconciliation.
         """
+        logger.warning(
+            "slack_identity_mode=per_employee is deprecated. "
+            "Switch to slack_identity_mode=fixed and configure SLACK_BOT_*_APP_TOKEN "
+            "environment variables for each bot type."
+        )
+        # Stop any running per-employee bots since slots no longer exist
         per_emp_bots: dict[UUID, EmployeeSlackBot] = self.slack_bots  # type: ignore[assignment]
-
-        # Collect active employee IDs that have valid Slack config
-        active_slack_ids: set[UUID] = set()
-        for emp in active_employees:
-            if emp.slack_token_enc is None:
-                continue
-            # Must have an assigned slot with an app token
-            if emp.slack_slot is None:
-                logger.debug("Employee %s has no Slack slot — skipping", emp.id)
-                continue
-            active_slack_ids.add(emp.id)
-
-        # Stop bots for employees no longer active / without Slack
         for emp_id in list(per_emp_bots.keys()):
-            if emp_id not in active_slack_ids:
-                await self._stop_employee_slack_bot(emp_id)
+            await self._stop_employee_slack_bot(emp_id)
 
-        # Start / reconcile bots for active employees
-        for emp in active_employees:
-            if emp.id not in active_slack_ids:
-                continue
-            await self._reconcile_employee_slack_bot(emp)
-
-    async def _reconcile_employee_slack_bot(self, emp: Employee) -> None:
-        """Start, stop, or leave alone the EmployeeSlackBot for *emp*."""
-        per_emp_bots: dict[UUID, EmployeeSlackBot] = self.slack_bots  # type: ignore[assignment]
-
-        try:
-            bot_token = decrypt_slack_token(emp)
-        except Exception:
-            logger.exception("Failed to decrypt Slack token for employee %s", emp.id)
-            if emp.id in per_emp_bots:
-                await self._stop_employee_slack_bot(emp.id)
-            return
-
-        if bot_token is None or emp.slack_slot is None:
-            if emp.id in per_emp_bots:
-                await self._stop_employee_slack_bot(emp.id)
-            return
-
-        try:
-            app_token = decrypt_token(emp.slack_slot.app_token_enc)
-        except Exception:
-            logger.exception("Failed to decrypt Slack app token for employee %s", emp.id)
-            if emp.id in per_emp_bots:
-                await self._stop_employee_slack_bot(emp.id)
-            return
-
-        if emp.id in per_emp_bots:
-            existing = per_emp_bots[emp.id]
-            if existing.bot_token != bot_token or existing.app_token != app_token:
-                logger.info("Slack credentials changed for employee %s — restarting bot", emp.id)
-                await self._stop_employee_slack_bot(emp.id)
-            else:
-                # Bot already running with correct credentials
-                return
-
-        await self._start_employee_slack_bot(emp.id, bot_token, app_token)
+    # _reconcile_employee_slack_bot removed — per_employee mode is deprecated.
+    # The slot-based reconciliation (emp.slack_slot) no longer applies since
+    # the slack_app_slots table was dropped.  Use _reconcile_fixed_slack_bot.
 
     async def _start_employee_slack_bot(
         self, emp_id: UUID, bot_token: str, app_token: str,
