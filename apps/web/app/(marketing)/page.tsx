@@ -11,27 +11,27 @@ const features = [
   {
     title: "Create a specialist",
     description:
-      "Answer 5 questions on the web, name your specialist, define its domain. It joins your server and starts listening — no training, no prompts, no setup.",
+      "Answer 5 questions on the web, name your specialist, define what it does. It joins your server and starts listening. No training, no prompts, no setup.",
   },
   {
     title: "Specialize on anything",
     description:
-      "Engineering decisions, sales calls, customer research, recruiting, project management — give each specialist a focus and the more focused it is, the sharper it gets.",
+      "Engineering decisions, sales calls, customer research, recruiting, project management. Give each specialist a focus. The narrower the focus, the sharper it gets.",
   },
   {
     title: "It listens, you ask",
     description:
-      "Your specialist reads conversations and joins calls. Ask it anything and get answers with sources — who said what, when, and why.",
+      "Your specialist reads conversations and joins calls. Ask it anything and get answers with sources: who said what, when, and why.",
   },
   {
     title: "Learns from feedback",
     description:
-      "React 👍 or 👎 to its messages and your specialist learns what is actually useful. Over time it gets quieter, sharper, and indispensable.",
+      "React 👍 or 👎 to its messages and your specialist learns what's actually useful. Over time it gets quieter, sharper, and essential.",
   },
   {
     title: "Onboards like a veteran",
     description:
-      "When someone new joins, your specialist catches them up faster than any human can — because it was there for every decision, every call, every thread.",
+      "When someone new joins, your specialist catches them up faster than any human can. It was there for every decision, every call, every thread.",
   },
   {
     title: "Self-hosted, open source",
