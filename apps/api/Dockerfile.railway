@@ -10,7 +10,7 @@ WORKDIR /app
 ENV UV_COMPILE_BYTECODE=1
 
 # Copy dependency definition files from apps/api
-COPY apps/api/pyproject.toml apps/api/uv.lock ./
+COPY ./apps/api/pyproject.toml ./apps/api/uv.lock ./
 
 # Install dependencies only
 RUN uv sync --frozen --no-install-project --no-dev
@@ -27,9 +27,9 @@ COPY --from=builder /app/.venv /app/.venv
 ENV PATH="/app/.venv/bin:$PATH"
 
 # Copy application source code from apps/api
-COPY apps/api/app/ /app/app/
-COPY apps/api/alembic.ini /app/
-COPY apps/api/alembic/ /app/alembic/
+COPY ./apps/api/app/ /app/app/
+COPY ./apps/api/alembic.ini /app/
+COPY ./apps/api/alembic/ /app/alembic/
 
 # Persistent storage for uploads and embedded Cognee (SQLite + LanceDB + Kuzu)
 RUN mkdir -p /app/uploads /app/cognee_data/data /app/cognee_data/system /app/cognee_data/cache /app/cognee_data/logs
