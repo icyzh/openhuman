@@ -118,11 +118,13 @@ class TestGatewayManagerLifecycle:
     @pytest.mark.anyio
     async def test_lifespan_does_not_start_when_disabled(self):
         """When gateway_enabled=False, the lifespan should NOT start the gateway."""
-        from app.core.config import settings
+        from app.core.config import Settings
 
-        assert settings.gateway_enabled is False, (
-            "gateway_enabled must be False by default for dev safety"
-        )
+        with patch.dict("os.environ", {}, clear=True):
+            s = Settings(_env_file=None)  # type: ignore[call-arg]
+            assert s.gateway_enabled is False, (
+                "gateway_enabled must be False by default for dev safety"
+            )
 
 
 # =============================================================================
@@ -691,8 +693,10 @@ class TestErrorSanitization:
 
     def test_settings_gateway_disabled_by_default(self):
         """gateway_enabled must default to False for dev safety."""
+        import os
         from app.core.config import Settings
 
         # Create a fresh settings instance (ignores .env)
-        s = Settings(_env_file="")  # type: ignore[call-arg]
-        assert s.gateway_enabled is False
+        with patch.dict("os.environ", {}, clear=True):
+            s = Settings(_env_file=None)  # type: ignore[call-arg]
+            assert s.gateway_enabled is False

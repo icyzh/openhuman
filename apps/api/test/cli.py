@@ -57,15 +57,10 @@ from app.agent.tools.mcp.connectors import REGISTRY as MCP_REGISTRY  # noqa: E40
 from app.employees.templates import get_template  # noqa: E402
 from test.fixtures import (  # noqa: E402
     SEED_EMPLOYEES,
-    assign_slot_to_employee,
     clear_slack_token,
-    get_employee_slot_status,
     get_escalation_policy,
     get_slack_token_status,
-    get_slot_summary,
     print_banner,
-    provision_test_slots,
-    release_employee_slot,
     set_escalation_policy,
     set_slack_token,
     setup_test_db,
@@ -380,7 +375,10 @@ async def _interactive() -> None:
     except (KeyboardInterrupt, EOFError):
         print("\n👋 Goodbye!")
     finally:
-        await engine.dispose()
+        try:
+            await engine.dispose()
+        except (asyncio.CancelledError, Exception):
+            pass
 
 
 # ---------------------------------------------------------------------------
@@ -455,35 +453,33 @@ def main() -> None:
              "then test channel→employee routing logic (no real Slack connection needed).",
     )
 
-    # ---- Slack app slot management -------------------------------------------
+    # ---- Slack app slot management (Deprecated) ------------------------------
     parser.add_argument(
         "--provision-slots",
         type=int,
         default=None,
         metavar="N",
-        help="Provision N test Slack app slots for per-employee identity testing. "
-             "Each slot gets dummy encrypted credentials.",
+        help="[DEPRECATED] Provision N test Slack app slots.",
     )
     parser.add_argument(
         "--list-slots",
         action="store_true",
-        help="Show the Slack app slot pool status (available/assigned/total).",
+        help="[DEPRECATED] Show the Slack app slot pool status.",
     )
     parser.add_argument(
         "--slot-status",
         action="store_true",
-        help="Show per-employee Slack slot + connection status (use with --employee-id, "
-             "or without to show all employees).",
+        help="[DEPRECATED] Show per-employee Slack slot + connection status.",
     )
     parser.add_argument(
         "--assign-slot",
         action="store_true",
-        help="Assign an available Slack app slot to the employee (use with --employee-id).",
+        help="[DEPRECATED] Assign an available Slack app slot to the employee.",
     )
     parser.add_argument(
         "--release-slot",
         action="store_true",
-        help="Release the Slack app slot from the employee (use with --employee-id).",
+        help="[DEPRECATED] Release the Slack app slot from the employee.",
     )
 
     # ---- Escalation policy (Phase 5-6) ---------------------------------------
@@ -564,19 +560,16 @@ def main() -> None:
         async def _list() -> None:
             _e, sf, _ids = await setup_test_db(args.db_path)
             print_banner()
-            # Show slot pool summary
-            summary = await get_slot_summary(sf)
-            print(f"🎰 Slot pool: {summary['available']} available / {summary['assigned']} assigned / {summary['total']} total\n")
 
-            # Show Slack token + slot status for each employee
+            # Show Slack token status for each employee
             print("🔑 Slack status:\n")
             for cfg in SEED_EMPLOYEES:
                 eid = _ids.get(cfg["specialization"])
                 if eid:
-                    info = await get_employee_slot_status(sf, eid)
-                    if info:
-                        icon = {"connected": "✅", "slot_ready": "🔧", "token_only": "⚠️", "no_slot": "❌"}.get(info["status"], "?")
-                        print(f"  {icon} {cfg['name']:<20s}  {info['status']:<12s}  {info['detail']}")
+                    has_token = await get_slack_token_status(sf, eid)
+                    icon = "✅" if has_token else "❌"
+                    status_str = "token set" if has_token else "no token"
+                    print(f"  {icon} {cfg['name']:<20s}  {status_str}")
             print()
             await _e.dispose()
 
@@ -862,7 +855,7 @@ def main() -> None:
                             return
 
                         spec = MCP_REGISTRY[slug]
-                        if spec.auth_type not in ("pat_bearer", "api_key_header"):
+                        if spec.auth_type not in ("pat_bearer", "api_key_header", "none"):
                             print(f"❌ '{slug}' uses OAuth — cannot set a key directly.")
                             print(f"   Use the web UI or API for OAuth connectors.")
                             return
@@ -909,92 +902,9 @@ def main() -> None:
         asyncio.run(_mcp_op())
         return
 
-    # ---- Slots: provision ---------------------------------------------------
-    if args.provision_slots is not None:
-        async def _provision() -> None:
-            engine, sf, ids = await setup_test_db(args.db_path)
-            count = args.provision_slots
-            slots = await provision_test_slots(sf, count)
-            print(f"\n✅ Provisioned {len(slots)} test Slack app slot(s):\n")
-            for s in slots:
-                print(f"  Slot {s.id}  app_id={s.slack_app_id}  status={s.status}")
-            print()
-
-            # Also show summary
-            summary = await get_slot_summary(sf)
-            print(f"Pool: {summary['available']} available / {summary['assigned']} assigned / {summary['total']} total\n")
-            await engine.dispose()
-
-        asyncio.run(_provision())
-        return
-
-    # ---- Slots: list ---------------------------------------------------------
-    if args.list_slots:
-        async def _list_slots() -> None:
-            engine, sf, ids = await setup_test_db(args.db_path)
-            summary = await get_slot_summary(sf)
-            print_banner()
-            print("🎰 Slack App Slot Pool\n")
-            print(f"  Available : {summary['available']}")
-            print(f"  Assigned  : {summary['assigned']}")
-            print(f"  Disabled  : {summary['disabled']}")
-            print(f"  Total     : {summary['total']}")
-            print()
-
-            # Show per-employee slot status
-            if ids:
-                print("👤 Per-employee status:\n")
-                for spec, eid in ids.items():
-                    info = await get_employee_slot_status(sf, eid)
-                    if info:
-                        icon = {"connected": "✅", "slot_ready": "🔧", "token_only": "⚠️", "no_slot": "❌"}.get(info["status"], "?")
-                        print(f"  {icon} {info['name']:<22s}  {info['status']:<12s}  {info['detail']}")
-                print()
-            await engine.dispose()
-
-        asyncio.run(_list_slots())
-        return
-
-    # ---- Slots: status / assign / release -----------------------------------
-    if args.slot_status or args.assign_slot or args.release_slot:
-        if not args.employee_id:
-            print("❌ --employee-id is required for slot operations.")
-            sys.exit(1)
-        employee_id = UUID(args.employee_id)
-
-        async def _slot_op() -> None:
-            engine, sf, ids = await setup_test_db(args.db_path)
-
-            if args.assign_slot:
-                ok = await assign_slot_to_employee(sf, employee_id)
-                if ok:
-                    print(f"✅ Slot assigned to employee {employee_id}")
-                else:
-                    print(f"❌ No available slots — pool is exhausted. Provision more with --provision-slots N.")
-            elif args.release_slot:
-                ok = await release_employee_slot(sf, employee_id)
-                if ok:
-                    print(f"🔓 Slot released from employee {employee_id}")
-                else:
-                    print(f"❌ Employee {employee_id} not found or has no slot.")
-
-            if args.slot_status:
-                info = await get_employee_slot_status(sf, employee_id)
-                if info:
-                    icon = {"connected": "✅", "slot_ready": "🔧", "token_only": "⚠️", "no_slot": "❌"}.get(info["status"], "?")
-                    print(f"\n{icon} {info['name']}")
-                    print(f"   Status       : {info['status']}")
-                    print(f"   Detail       : {info['detail']}")
-                    print(f"   Has slot     : {info['has_slot']}")
-                    print(f"   Has token    : {info['has_token']}")
-                    print(f"   Team         : {info['slack_team_name'] or '—'}")
-                    print(f"   Bot user ID  : {info['slack_bot_user_id'] or '—'}")
-                else:
-                    print(f"❌ Employee {employee_id} not found.")
-
-            await engine.dispose()
-
-        asyncio.run(_slot_op())
+    # ---- Slots: deprecated ---------------------------------------------------
+    if args.provision_slots is not None or args.list_slots or args.slot_status or args.assign_slot or args.release_slot:
+        print("⚠️  Slack app slot-based commands are deprecated. Please use the fixed bot registry/environment variables.")
         return
 
     # ---- Escalation policy: show ----------------------------------------------
@@ -1170,4 +1080,8 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except KeyboardInterrupt:
+        import sys
+        sys.exit(0)

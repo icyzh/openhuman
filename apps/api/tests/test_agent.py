@@ -391,7 +391,7 @@ class TestFormatterNode:
             "output_guardrail_passed": True,
         }
         result = await formatter_node(state)  # type: ignore[arg-type]
-        assert result["response"] == "Hello! How can I help you today?"
+        assert result["response"] == "Hello!"
 
     @pytest.mark.anyio
     async def test_formatter_blocked_input_uses_preset_response(self):

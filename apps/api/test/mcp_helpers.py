@@ -96,7 +96,7 @@ async def add_mcp_connection(
     if spec is None:
         raise ValueError(f"Unknown connector slug: {slug}")
 
-    if spec.auth_type not in ("pat_bearer", "api_key_header"):
+    if spec.auth_type not in ("pat_bearer", "api_key_header", "none"):
         raise ValueError(
             f"Connector '{slug}' uses auth_type={spec.auth_type}. "
             f"Use the OAuth install flow instead."

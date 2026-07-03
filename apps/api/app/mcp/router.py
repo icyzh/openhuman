@@ -168,7 +168,7 @@ async def create_mcp_connection(
 
     # Only api_key_header and pat_bearer use the simple credential-paste flow.
     # OAuth2 connectors will use the Phase 2 install/callback flow.
-    if spec.auth_type not in ("api_key_header", "pat_bearer"):
+    if spec.auth_type not in ("api_key_header", "pat_bearer", "none"):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=(

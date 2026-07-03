@@ -8,15 +8,20 @@ def check_output(
     """
     config = guardrail_config or {}
 
-    # Check for blocked keywords or phrases (e.g. system instructions leaking)
-    blocked_patterns = [
+    # Hard-blocked: indicates actual system-prompt/instruction leakage, a
+    # real safety concern — the whole response is discarded and replaced.
+    hard_blocked_patterns = [
         "system prompt template",
-        "according to my instructions",
-        "as an ai",
     ]
-    for pattern in blocked_patterns:
+    for pattern in hard_blocked_patterns:
         if pattern.lower() in response.lower():
             return False, f"Response contained restricted phrase: '{pattern}'"
+
+    # Soft-flagged: stock AI-assistant phrasing ("as an AI", "according to
+    # my instructions") that reads badly but isn't a leakage/safety issue.
+    # These no longer fail the whole response — formatter_node's
+    # _strip_ai_isms() cleans them out of the final text instead, so a
+    # response isn't discarded just for one clunky sentence.
 
     # When citation requirements are enabled, verify the response provides
     # at least a minimal attribution signal.
