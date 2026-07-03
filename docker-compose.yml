@@ -1,14 +1,12 @@
-version: "3.8"
-
 services:
   postgres:
-    image: pgvector/pgvector:16-pgdg
+    image: pgvector/pgvector:pg16
     container_name: openhuman-db
     restart: always
     environment:
       POSTGRES_DB: openhuman
       POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: production-password-here
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-postgres}
     volumes:
       - pgdata:/var/lib/postgresql/data
     ports:
@@ -29,13 +27,24 @@ services:
       postgres:
         condition: service_healthy
     environment:
-      ENVIRONMENT: production
+      ENVIRONMENT: ${ENVIRONMENT:-development}
       API_HOST: 0.0.0.0
       API_PORT: 8000
-      DATABASE_URL: postgresql+asyncpg://postgres:production-password-here@postgres:5432/openhuman
-      JWT_SECRET_KEY: ${JWT_SECRET_KEY:-change-me-in-production-must-be-very-long}
-      ENCRYPTION_KEY: ${ENCRYPTION_KEY:-change-me-64-char-hex-string}
+      DATABASE_URL: postgresql+asyncpg://postgres:${DB_PASSWORD:-postgres}@postgres:5432/openhuman
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY}
       OPENAI_API_KEY: ${OPENAI_API_KEY}
+      OPENAI_BASE_URL: ${OPENAI_BASE_URL}
+      OPENAI_MODEL: ${OPENAI_MODEL:-openai/gpt-4o-mini}
+      COGNEE_LLM_PROVIDER: ${COGNEE_LLM_PROVIDER:-openai}
+      COGNEE_LLM_ENDPOINT: ${COGNEE_LLM_ENDPOINT}
+      COGNEE_LLM_API_KEY: ${COGNEE_LLM_API_KEY}
+      COGNEE_LLM_MODEL: ${COGNEE_LLM_MODEL:-openai/gpt-4o-mini}
+      COGNEE_EMBEDDING_PROVIDER: ${COGNEE_EMBEDDING_PROVIDER:-openai}
+      COGNEE_EMBEDDING_ENDPOINT: ${COGNEE_EMBEDDING_ENDPOINT}
+      COGNEE_EMBEDDING_MODEL: ${COGNEE_EMBEDDING_MODEL:-openai/text-embedding-3-small}
+      COGNEE_EMBEDDING_API_KEY: ${COGNEE_EMBEDDING_API_KEY}
+      CLERK_SECRET_KEY: ${CLERK_SECRET_KEY}
+      CLERK_JWT_KEY: ${CLERK_JWT_KEY}
       COGNEE_DATA_DIR: /app/cognee_data
       STORAGE_BACKEND: local
       UPLOAD_DIR: /app/uploads
@@ -46,10 +55,11 @@ services:
     ports:
       - "8000:8000"
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/api/health"]
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/health')"]
       interval: 10s
       timeout: 5s
-      retries: 3
+      retries: 5
+      start_period: 15s
 
   frontend:
     build:
@@ -57,6 +67,7 @@ services:
       dockerfile: apps/web/Dockerfile
       args:
         - NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL:-http://localhost:8000}
+        - NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=${NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY}
     container_name: openhuman-web
     restart: always
     depends_on:
@@ -66,6 +77,8 @@ services:
       PORT: 3000
       HOSTNAME: 0.0.0.0
       NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8000}
+      NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: ${NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY}
+      CLERK_SECRET_KEY: ${CLERK_SECRET_KEY}
     ports:
       - "3000:3000"
 

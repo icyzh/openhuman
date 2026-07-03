@@ -12,4 +12,5 @@ export interface CreateOrganizationRequest {
   name: string;
   description?: CreateOrganizationRequestDescription;
   what_it_does?: CreateOrganizationRequestWhatItDoes;
+  website_url?: string;
 }
