@@ -268,7 +268,7 @@ async def slack_oauth_callback(
     payload = _decode_oauth_state(state)
     if payload is None:
         return RedirectResponse(
-            f"{settings.frontend_url.rstrip('/')}/?slack=error&reason=invalid_state",
+            f"{settings.frontend_url.rstrip('/')}/dashboard?slack=error&reason=invalid_state",
             status_code=303,
         )
 

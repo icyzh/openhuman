@@ -79,7 +79,11 @@ function formatSize(bytes: number | null | undefined): string {
   return `${size.toFixed(i === 0 ? 0 : 1)} ${units[i]}`;
 }
 
-async function downloadDocument(docId: string, filename: string, token: string | null) {
+async function downloadDocument(
+  docId: string,
+  filename: string,
+  token: string | null,
+) {
   const response = await fetch(`${API_URL}/api/documents/${docId}/download`, {
     headers: { Authorization: `Bearer ${token}` },
   });
@@ -181,24 +185,14 @@ export default function EmployeeDetailPage() {
   );
 
   const searchParams = useSearchParams();
-  const [slackBanner, setSlackBanner] = useState<{
-    ok: boolean;
-    message: string;
-  } | null>(null);
 
   useEffect(() => {
     const slack = searchParams.get("slack");
     if (slack === "connected") {
-      setSlackBanner({
-        ok: true,
-        message: "Slack workspace connected successfully!",
-      });
+      toast.success("Slack workspace connected successfully!");
     } else if (slack === "error") {
       const reason = searchParams.get("reason") || "unknown error";
-      setSlackBanner({
-        ok: false,
-        message: `Slack connection failed: ${reason}`,
-      });
+      toast.error(`Slack connection failed: ${reason}`);
     }
     if (slack) {
       const next = new URL(window.location.href);
@@ -411,24 +405,6 @@ export default function EmployeeDetailPage() {
           {confirmDelete ? "Click again to confirm" : "Delete"}
         </Button>
       </div>
-
-      {slackBanner && (
-        <div
-          className={`rounded-lg border px-4 py-3 text-sm font-medium ${
-            slackBanner.ok
-              ? "border-green-500/30 bg-green-500/10 text-green-700 dark:text-green-400"
-              : "border-red-500/30 bg-red-500/10 text-red-700 dark:text-red-400"
-          }`}
-        >
-          {slackBanner.message}
-          <button
-            className="ml-3 underline hover:no-underline"
-            onClick={() => setSlackBanner(null)}
-          >
-            Dismiss
-          </button>
-        </div>
-      )}
 
       <div className="flex flex-col gap-1">
         {editingField === "name" ? (

@@ -1,11 +1,12 @@
 "use client";
 
-import { useMemo, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useEffect, useMemo, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { PlusIcon, SearchIcon, UsersIcon } from "lucide-react";
 
 import { useUser } from "@clerk/nextjs";
 import { useEmployeesListEmployeesRoute } from "@repo/api-client";
+import { toast } from "sonner";
 import { useOrgStore } from "@/stores/org";
 import { apiToEmployeeDisplay } from "@/types/employee";
 import { EmployeeCard } from "@/components/employee-card";
@@ -18,6 +19,23 @@ export default function DashboardPage() {
   const { user } = useUser();
   const orgId = useOrgStore((s) => s.orgId);
   const [search, setSearch] = useState("");
+  const searchParams = useSearchParams();
+
+  useEffect(() => {
+    const slack = searchParams.get("slack");
+    if (slack === "connected") {
+      toast.success("Slack workspace connected successfully!");
+    } else if (slack === "error") {
+      const reason = searchParams.get("reason") || "unknown error";
+      toast.error(`Slack connection failed: ${reason}`);
+    }
+    if (slack) {
+      const next = new URL(window.location.href);
+      next.searchParams.delete("slack");
+      next.searchParams.delete("reason");
+      window.history.replaceState({}, "", next.toString());
+    }
+  }, [searchParams]);
 
   const enabled = !!orgId;
   const {
@@ -91,11 +109,7 @@ export default function DashboardPage() {
           <p className="text-sm text-muted-foreground">
             Failed to load employees.
           </p>
-          <Button
-            variant="link"
-            onClick={() => refetch()}
-            className="mt-2"
-          >
+          <Button variant="link" onClick={() => refetch()} className="mt-2">
             Try again
           </Button>
         </div>
