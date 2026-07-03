@@ -1,15 +1,19 @@
 "use client";
 
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   ArrowLeftIcon,
-  FileTextIcon,
-  PlusIcon,
-  UploadIcon,
-  XIcon,
+  BotIcon,
+  CheckCircle2Icon,
+  Loader2Icon,
+  ShieldCheckIcon,
+  HeadphonesIcon,
+  TrendingUpIcon,
+  SparklesIcon,
+  ScaleIcon,
 } from "lucide-react";
 
 import {
@@ -17,37 +21,78 @@ import {
   useEmployeesCreateEmployeeRoute,
   useEmployeesListEmployeesRoute,
   getEmployeesListEmployeesRouteQueryKey,
-  useDocumentsUploadDocument,
 } from "@repo/api-client";
 import { useOrgStore } from "@/stores/org";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
 import { Spinner } from "@/components/ui/spinner";
 
-const EMPLOYEE_TYPES = [
+const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+
+// ── Fixed bot definitions (mirrors the API registry) ─────────────────────
+// We define these client-side for instant rendering; the API is the source
+// of truth for credential availability.
+
+interface FixedBot {
+  name: string;
+  role: string;
+  employee_type: string;
+  description: string;
+  icon: React.ElementType;
+  gradient: string;
+  accentColor: string;
+}
+
+const FIXED_BOTS: FixedBot[] = [
   {
-    id: "legal-compliance",
-    label: "Legal Compliance Officer",
+    name: "Alison",
+    role: "HR Specialist",
+    employee_type: "hr",
+    description:
+      "Manages onboarding, benefits, policies, and employee questions",
+    icon: ShieldCheckIcon,
+    gradient: "from-rose-500/10 to-pink-500/10",
+    accentColor: "text-rose-500",
+  },
+  {
+    name: "Alex",
+    role: "Customer Support",
+    employee_type: "support",
+    description:
+      "Handles customer inquiries, support tickets, and troubleshooting",
+    icon: HeadphonesIcon,
+    gradient: "from-blue-500/10 to-cyan-500/10",
+    accentColor: "text-blue-500",
+  },
+  {
+    name: "Marcus",
+    role: "Sales Representative",
+    employee_type: "sales",
+    description:
+      "Qualifies leads, researches prospects, and tracks pipeline metrics",
+    icon: TrendingUpIcon,
+    gradient: "from-emerald-500/10 to-green-500/10",
+    accentColor: "text-emerald-500",
+  },
+  {
+    name: "Jordan",
+    role: "General Assistant",
+    employee_type: "general",
+    description:
+      "Versatile assistant for research, calculations, and general tasks",
+    icon: SparklesIcon,
+    gradient: "from-violet-500/10 to-purple-500/10",
+    accentColor: "text-violet-500",
+  },
+  {
+    name: "Taylor",
+    role: "Legal & Compliance",
+    employee_type: "legal-compliance",
     description: "Reviews contracts, policies, and regulatory documents",
+    icon: ScaleIcon,
+    gradient: "from-amber-500/10 to-orange-500/10",
+    accentColor: "text-amber-500",
   },
-  {
-    id: "support",
-    label: "Support Employee",
-    description: "Handles customer inquiries and support tickets",
-  },
-  {
-    id: "hr",
-    label: "HR Employee",
-    description: "Manages onboarding, benefits, and employee questions",
-  },
-  {
-    id: "general",
-    label: "General",
-    description: "Versatile assistant for any team need",
-  },
-] as const;
+];
 
 export default function OnboardPage() {
   const router = useRouter();
@@ -55,24 +100,8 @@ export default function OnboardPage() {
   const orgId = useOrgStore((s) => s.orgId);
   const createMutation = useEmployeesCreateEmployeeRoute();
 
-  const [employeeType, setEmployeeType] = useState<string | null>(null);
-  const [name, setName] = useState("");
-  const [role, setRole] = useState("");
-  const [specialization, setSpecialization] = useState("");
-  const [duties, setDuties] = useState<string[]>([]);
-  const [dutyInput, setDutyInput] = useState("");
-
-  // File upload state
-  const uploadInputRef = useRef<HTMLInputElement>(null);
-  const uploadDocMutation = useDocumentsUploadDocument();
-  const [uploadingFiles, setUploadingFiles] = useState<
-    {
-      file: File;
-      status: "pending" | "uploading" | "done" | "error";
-      error?: string;
-    }[]
-  >([]);
-  const [isBulkUploading, setIsBulkUploading] = useState(false);
+  const [addingType, setAddingType] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   // Fetch existing employees to determine which types are already deployed
   const { data: existingEmployees } = useEmployeesListEmployeesRoute(
@@ -91,110 +120,47 @@ export default function OnboardPage() {
     );
   }, [existingEmployees]);
 
-  const allTypesTaken = takenTypes.size >= EMPLOYEE_TYPES.length;
+  const handleAddBot = useCallback(
+    async (bot: FixedBot) => {
+      if (!orgId || addingType) return;
 
-  const isValid = name.trim().length > 0 && !!orgId && !!employeeType;
+      setAddingType(bot.employee_type);
+      setError(null);
 
-  const handleAddDuty = () => {
-    const trimmed = dutyInput.trim();
-    if (!trimmed) return;
-    setDuties((prev) => [...prev, trimmed]);
-    setDutyInput("");
-  };
+      try {
+        // 1. Create the employee with the fixed bot name/role
+        const result = await createMutation.mutateAsync({
+          orgId: orgId,
+          data: {
+            name: bot.name,
+            employee_type: bot.employee_type,
+            role: bot.role,
+          },
+        });
 
-  const handleRemoveDuty = (index: number) => {
-    setDuties((prev) => prev.filter((_, i) => i !== index));
-  };
-
-  const handleSubmit = async () => {
-    if (!isValid) return;
-    try {
-      const result = await createMutation.mutateAsync({
-        orgId: orgId!,
-        data: {
-          name: name.trim(),
-          employee_type: employeeType!,
-          role: role.trim() || undefined,
-          specialization: specialization.trim() || undefined,
-          duties: duties.length > 0 ? duties : undefined,
-        },
-      });
-      if (orgId) {
+        // Invalidate the employee list cache
         queryClient.invalidateQueries({
           queryKey: getEmployeesListEmployeesRouteQueryKey(orgId),
         });
-      }
 
-      // Upload queued files for the new employee
-      const pending = uploadingFiles.filter((f) => f.status !== "done");
-      if (pending.length > 0) {
-        setIsBulkUploading(true);
-        let hasErrors = false;
-        for (let i = 0; i < uploadingFiles.length; i++) {
-          const entry = uploadingFiles[i];
-          if (!entry || entry.status === "done") continue;
-          setUploadingFiles((prev) =>
-            prev.map((f, idx) =>
-              idx === i ? { ...f, status: "uploading" } : f,
-            ),
+        // 2. Redirect to Slack OAuth install
+        const installUrl = `${API_URL}/api/slack/install?employee_id=${result.id}&org_id=${orgId}`;
+        window.location.href = installUrl;
+      } catch (err) {
+        setAddingType(null);
+        if (err instanceof ApiError && err.status === 409) {
+          setError(
+            `${bot.name} is already deployed. Each bot type can only be added once.`,
           );
-          try {
-            await uploadDocMutation.mutateAsync({
-              data: {
-                file: entry.file as unknown as string,
-                organization_id: orgId!,
-                employee_id: result.id as unknown as string,
-              },
-            });
-            setUploadingFiles((prev) =>
-              prev.map((f, idx) => (idx === i ? { ...f, status: "done" } : f)),
-            );
-          } catch {
-            hasErrors = true;
-            setUploadingFiles((prev) =>
-              prev.map((f, idx) =>
-                idx === i
-                  ? { ...f, status: "error", error: "Upload failed" }
-                  : f,
-              ),
-            );
-          }
+        } else if (err instanceof Error) {
+          setError(err.message);
+        } else {
+          setError("Failed to add bot. Please try again.");
         }
-        setIsBulkUploading(false);
-        if (!hasErrors) {
-          router.push("/dashboard");
-        }
-        // If errors, stay on page so user can see failures and retry/continue
-        return;
       }
-
-      router.push("/dashboard");
-    } catch {
-      // Error rendered below via createMutation.error
-    }
-  };
-
-  const addUploadFiles = useCallback((newFiles: FileList | null) => {
-    if (!newFiles) return;
-    setUploadingFiles((prev) => [
-      ...prev,
-      ...Array.from(newFiles).map((file) => ({
-        file,
-        status: "pending" as const,
-      })),
-    ]);
-  }, []);
-
-  const removeUploadFile = useCallback((index: number) => {
-    setUploadingFiles((prev) => prev.filter((_, i) => i !== index));
-  }, []);
-
-  const fileKey = (f: File) => `${f.name}-${f.size}-${f.lastModified}`;
-
-  const pendingCount = uploadingFiles.filter(
-    (f) => f.status !== "done" && f.status !== "error",
-  ).length;
-  const errorCount = uploadingFiles.filter((f) => f.status === "error").length;
+    },
+    [orgId, addingType, createMutation, queryClient],
+  );
 
   return (
     <div className="flex flex-1 flex-col gap-8 px-6 py-6">
@@ -210,306 +176,110 @@ export default function OnboardPage() {
         </Button>
       </div>
 
-      <div className="mx-auto flex w-full max-w-2xl flex-col gap-10">
-        <div className="flex flex-col gap-3">
+      <div className="mx-auto flex w-full max-w-3xl flex-col gap-8">
+        {/* Header */}
+        <div className="flex flex-col gap-3 text-center">
           <h1 className="text-2xl font-semibold tracking-tight text-foreground">
-            Create your AI employee
+            Add an AI employee to your team
           </h1>
           <p className="text-base text-muted-foreground">
-            Give them a name and role. You can add one employee of each type.
+            Pick a bot to add to your Slack workspace. Each bot has a fixed
+            identity and specialization.
           </p>
         </div>
 
-        {/* Team complete banner */}
-        {allTypesTaken && (
-          <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800 dark:border-amber-800/30 dark:bg-amber-900/20 dark:text-amber-300">
-            Your team is complete. You&rsquo;ve deployed one employee of each
-            type.{" "}
-            <Link href="/dashboard" className="underline font-medium">
-              View your team
-            </Link>
+        {/* Error banner */}
+        {error && (
+          <div className="rounded-lg border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive">
+            {error}
           </div>
         )}
 
-        {/* Employee type tiles */}
-        <div className="flex flex-col gap-3">
-          <Label className="text-base font-medium">Employee type</Label>
-          <div className="grid grid-cols-2 gap-3">
-            {EMPLOYEE_TYPES.map((type) => {
-              const isSelected = employeeType === type.id;
-              const isTaken = takenTypes.has(type.id);
-              const isClickable = !isTaken || isSelected;
-              return (
-                <button
-                  key={type.id}
-                  type="button"
-                  disabled={!isClickable}
-                  onClick={() => {
-                    if (!isClickable) return;
-                    setEmployeeType(type.id);
-                    setRole(type.label);
-                  }}
-                  className={`flex flex-col gap-1.5 rounded-xl border-2 p-4 text-left transition-colors ${
-                    isSelected
+        {/* Bot grid */}
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          {FIXED_BOTS.map((bot) => {
+            const isTaken = takenTypes.has(bot.employee_type);
+            const isAdding = addingType === bot.employee_type;
+            const isDisabled = isTaken || !!addingType;
+            const Icon = bot.icon;
+
+            return (
+              <button
+                key={bot.employee_type}
+                type="button"
+                disabled={isDisabled}
+                onClick={() => handleAddBot(bot)}
+                className={`group relative flex flex-col gap-4 rounded-2xl border-2 p-5 text-left transition-all duration-200 ${
+                  isTaken
+                    ? "cursor-default border-border/50 bg-muted/20 opacity-60"
+                    : isAdding
                       ? "border-primary bg-primary/5"
-                      : isTaken
-                        ? "cursor-not-allowed border-border/50 bg-muted/30 opacity-50"
-                        : "border-border hover:border-primary/40 hover:bg-muted/50"
-                  }`}
-                >
-                  <span className="text-base font-medium text-foreground">
-                    {type.label}
-                  </span>
-                  <span className="text-sm text-muted-foreground">
-                    {type.description}
-                  </span>
-                  {isTaken && !isSelected && (
-                    <span className="mt-1 text-xs text-muted-foreground/60">
-                      Already deployed
-                    </span>
-                  )}
-                </button>
-              );
-            })}
-          </div>
-        </div>
-
-        {/* Name */}
-        <div className="flex flex-col gap-2">
-          <Label htmlFor="name" className="text-base font-medium">
-            Name <span className="text-destructive">*</span>
-          </Label>
-          <p className="text-sm text-muted-foreground">
-            What should your team call them? e.g. Allison, Marcus, Alex.
-          </p>
-          <Input
-            id="name"
-            placeholder="Allison"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-          />
-        </div>
-
-        {/* Role */}
-        <div className="flex flex-col gap-2">
-          <Label htmlFor="role" className="text-base font-medium">
-            Role
-          </Label>
-          <p className="text-sm text-muted-foreground">
-            What do they do? e.g. Backend Engineer, Product Manager, Support
-            Lead.
-          </p>
-          <Input
-            id="role"
-            placeholder="Backend Engineer"
-            value={role}
-            onChange={(e) => setRole(e.target.value)}
-          />
-        </div>
-
-        {/* Specialization */}
-        <div className="flex flex-col gap-2">
-          <Label htmlFor="specialization" className="text-base font-medium">
-            Specialization
-          </Label>
-          <p className="text-sm text-muted-foreground">
-            What are they especially good at? e.g. Technical billing, SEO
-            content, security audits.
-          </p>
-          <Input
-            id="specialization"
-            placeholder="Technical billing & refunds"
-            value={specialization}
-            onChange={(e) => setSpecialization(e.target.value)}
-          />
-        </div>
-
-        {/* Duties */}
-        <div className="flex flex-col gap-3">
-          <div className="flex flex-col gap-1">
-            <Label className="text-base font-medium">Duties</Label>
-            <p className="text-sm text-muted-foreground">
-              What are this employee&rsquo;s responsibilities? Add each duty one
-              at a time.
-            </p>
-          </div>
-          {duties.length > 0 && (
-            <div className="flex flex-col gap-2">
-              {duties.map((duty, i) => (
-                <div
-                  key={i}
-                  className="flex items-start gap-2 rounded-lg border border-border bg-muted/30 px-3 py-2.5"
-                >
-                  <span className="min-w-0 flex-1 text-base text-foreground">
-                    {duty}
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => handleRemoveDuty(i)}
-                    className="mt-0.5 shrink-0 rounded-sm text-muted-foreground hover:text-foreground"
+                      : addingType
+                        ? "cursor-not-allowed border-border/50 opacity-50"
+                        : "border-border hover:border-primary/50 hover:shadow-md hover:shadow-primary/5 hover:-translate-y-0.5"
+                }`}
+              >
+                {/* Icon + Name */}
+                <div className="flex items-start gap-3">
+                  <div
+                    className={`flex size-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br ${bot.gradient}`}
                   >
-                    <XIcon className="size-4" />
-                  </button>
+                    <Icon className={`size-5 ${bot.accentColor}`} />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2">
+                      <span className="text-base font-semibold text-foreground">
+                        {bot.name}
+                      </span>
+                      {isTaken && (
+                        <CheckCircle2Icon className="size-4 text-emerald-500" />
+                      )}
+                    </div>
+                    <span className="text-sm text-muted-foreground">
+                      {bot.role}
+                    </span>
+                  </div>
                 </div>
-              ))}
-            </div>
-          )}
-          <div className="flex flex-col gap-2">
-            <Textarea
-              placeholder="e.g. Read all PDFs shared in #legal and review them for compliance risks..."
-              value={dutyInput}
-              onChange={(e) => setDutyInput(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
-                  e.preventDefault();
-                  handleAddDuty();
-                }
-              }}
-              rows={3}
-            />
-            <Button
-              type="button"
-              variant="outline"
-              onClick={handleAddDuty}
-              className="shrink-0 w-fit"
-            >
-              <PlusIcon />
-              Add duty
-            </Button>
-          </div>
-        </div>
 
-        {/* Knowledge upload */}
-        <div className="flex flex-col gap-3">
-          <div className="flex flex-col gap-1">
-            <Label className="text-base font-medium">Knowledge files</Label>
-            <p className="text-sm text-muted-foreground">
-              Upload PDFs, documents, or markdown files this agent should know
-              about. You can always add more later.
-            </p>
-          </div>
+                {/* Description */}
+                <p className="text-sm leading-relaxed text-muted-foreground">
+                  {bot.description}
+                </p>
 
-          <div
-            onClick={() => uploadInputRef.current?.click()}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" || e.key === " ")
-                uploadInputRef.current?.click();
-            }}
-            role="button"
-            tabIndex={0}
-            className="flex cursor-pointer flex-col items-center gap-2 rounded-xl border-2 border-dashed border-border p-6 text-center transition-colors hover:border-primary/40"
-          >
-            <UploadIcon className="size-6 text-muted-foreground/60" />
-            <p className="text-sm font-medium text-foreground">
-              Click to upload files
-            </p>
-            <p className="text-xs text-muted-foreground">
-              PDF, Word, Excel, Markdown, text, HTML &middot; no size limit
-            </p>
-            <input
-              ref={uploadInputRef}
-              type="file"
-              accept=".pdf,.md,.txt,.csv,.json,.html,.docx,.pptx,.xlsx,.doc,.xls,.ppt,.odt,.rtf"
-              multiple
-              className="hidden"
-              onChange={(e) => addUploadFiles(e.target.files)}
-            />
-          </div>
-
-          {uploadingFiles.length > 0 && (
-            <div className="space-y-2">
-              {uploadingFiles.map((entry, i) => (
-                <div
-                  key={fileKey(entry.file)}
-                  className="flex items-center gap-3 rounded-lg border border-border px-3 py-2.5"
-                >
-                  <FileTextIcon className="size-4 shrink-0 text-muted-foreground" />
-                  <span className="min-w-0 flex-1 truncate text-sm">
-                    {entry.file.name}
-                  </span>
-                  {entry.status === "uploading" && (
-                    <Spinner className="size-4" />
-                  )}
-                  {entry.status === "done" && (
-                    <span className="text-xs text-emerald-600">Uploaded</span>
-                  )}
-                  {entry.status === "error" && (
-                    <span className="text-xs text-destructive">
-                      {entry.error ?? "Error"}
+                {/* Status */}
+                <div className="mt-auto pt-1">
+                  {isTaken ? (
+                    <span className="inline-flex items-center gap-1.5 text-xs font-medium text-emerald-600 dark:text-emerald-400">
+                      <CheckCircle2Icon className="size-3.5" />
+                      Active in your workspace
+                    </span>
+                  ) : isAdding ? (
+                    <span className="inline-flex items-center gap-1.5 text-xs font-medium text-primary">
+                      <Loader2Icon className="size-3.5 animate-spin" />
+                      Connecting to Slack…
+                    </span>
+                  ) : (
+                    <span className="inline-flex items-center gap-1.5 text-xs font-medium text-muted-foreground/70 transition-colors group-hover:text-primary">
+                      <BotIcon className="size-3.5" />
+                      Click to add to Slack
                     </span>
                   )}
-                  {entry.status !== "uploading" && entry.status !== "done" && (
-                    <button
-                      type="button"
-                      onClick={() => removeUploadFile(i)}
-                      className="text-muted-foreground hover:text-foreground"
-                      aria-label={`Remove ${entry.file.name}`}
-                    >
-                      <XIcon className="size-4" />
-                    </button>
-                  )}
                 </div>
-              ))}
-            </div>
-          )}
-
-          {errorCount > 0 && (
-            <p className="text-sm text-destructive">
-              {errorCount} file{errorCount !== 1 ? "s" : ""} failed to upload.
-              Remove them and try again, or continue.
-            </p>
-          )}
+              </button>
+            );
+          })}
         </div>
 
-        {/* Submit */}
-        <div className="flex flex-col gap-3 border-t border-border pt-6">
-          {createMutation.isError && (
-            <p className="text-sm text-destructive">
-              {createMutation.error instanceof ApiError &&
-              createMutation.error.status === 409
-                ? "This employee type is already deployed. Each type can only be added once."
-                : createMutation.error instanceof Error
-                  ? createMutation.error.message
-                  : "Failed to create employee. Please try again."}
-            </p>
-          )}
-          <div className="flex items-center justify-end gap-3">
-            <Button
-              variant="outline"
-              size="lg"
-              onClick={() => router.push("/dashboard")}
-              disabled={isBulkUploading}
-            >
-              Cancel
-            </Button>
-            {errorCount > 0 ? (
-              <Button
-                size="lg"
-                onClick={() => router.push("/dashboard")}
-                variant="secondary"
-              >
-                Continue anyway
-              </Button>
-            ) : (
-              <Button
-                size="lg"
-                onClick={handleSubmit}
-                disabled={
-                  !isValid ||
-                  createMutation.isPending ||
-                  isBulkUploading ||
-                  (!!employeeType && takenTypes.has(employeeType))
-                }
-              >
-                {createMutation.isPending
-                  ? "Creating…"
-                  : isBulkUploading
-                    ? "Uploading…"
-                    : "Onboard"}
-              </Button>
-            )}
-          </div>
-        </div>
+        {/* Footer hint */}
+        <p className="text-center text-xs text-muted-foreground/60">
+          Each bot will appear in your Slack workspace with its own identity.
+          <br />
+          You can manage them from your{" "}
+          <Link href="/dashboard" className="underline">
+            dashboard
+          </Link>{" "}
+          at any time.
+        </p>
       </div>
     </div>
   );

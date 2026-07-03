@@ -28,7 +28,7 @@ from app.employees.service import (
     get_active_employees_with_tokens,
 )
 from app.gateway.discord_bot import EmployeeDiscordBot
-from app.gateway.slack_app_provisioning import count_available_slots
+from app.gateway.fixed_bots import get_fixed_bot
 from app.gateway.slack_bot import EmployeeSlackBot, WorkspaceSlackBot
 
 logger = logging.getLogger(__name__)
@@ -137,7 +137,9 @@ class BotGatewayManager:
             await self._reconcile_discord_bot(emp)
 
         # --- Slack ------------------------------------------------------------
-        if settings.slack_identity_mode == "per_employee":
+        if settings.slack_identity_mode == "fixed":
+            await self._reconcile_slack_bots_fixed(active_employees)
+        elif settings.slack_identity_mode == "per_employee":
             await self._reconcile_slack_bots_per_employee(active_employees)
         else:
             await self._reconcile_slack_bots_shared(active_employees)
@@ -430,3 +432,82 @@ class BotGatewayManager:
             return
         await bot.disconnect()
         logger.info("Stopped EmployeeSlackBot for employee %s", emp_id)
+
+    # ------------------------------------------------------------------
+    # Slack — fixed mode (named bots)
+    # ------------------------------------------------------------------
+
+    async def _reconcile_slack_bots_fixed(
+        self, active_employees: list[Employee],
+    ) -> None:
+        """One :class:`EmployeeSlackBot` per active employee with a Slack token.
+
+        The app_token comes from the fixed bot registry (keyed by employee_type)
+        rather than a DB slot.  The bot_token is org-specific (from OAuth).
+        """
+        per_emp_bots: dict[UUID, EmployeeSlackBot] = self.slack_bots  # type: ignore[assignment]
+
+        # Collect active employee IDs that have valid Slack config
+        active_slack_ids: set[UUID] = set()
+        for emp in active_employees:
+            if emp.slack_token_enc is None:
+                continue
+            # Must have a fixed bot configured for this employee type
+            if not emp.employee_type:
+                logger.debug("Employee %s has no employee_type — skipping", emp.id)
+                continue
+            fixed_bot = get_fixed_bot(emp.employee_type)
+            if fixed_bot is None or not fixed_bot.app_token:
+                logger.debug(
+                    "Employee %s type '%s' has no fixed bot app_token — skipping",
+                    emp.id, emp.employee_type,
+                )
+                continue
+            active_slack_ids.add(emp.id)
+
+        # Stop bots for employees no longer active / without Slack
+        for emp_id in list(per_emp_bots.keys()):
+            if emp_id not in active_slack_ids:
+                await self._stop_employee_slack_bot(emp_id)
+
+        # Start / reconcile bots for active employees
+        for emp in active_employees:
+            if emp.id not in active_slack_ids:
+                continue
+            await self._reconcile_fixed_slack_bot(emp)
+
+    async def _reconcile_fixed_slack_bot(self, emp: Employee) -> None:
+        """Start, stop, or leave alone the EmployeeSlackBot for *emp* (fixed mode)."""
+        per_emp_bots: dict[UUID, EmployeeSlackBot] = self.slack_bots  # type: ignore[assignment]
+
+        try:
+            bot_token = decrypt_slack_token(emp)
+        except Exception:
+            logger.exception("Failed to decrypt Slack token for employee %s", emp.id)
+            if emp.id in per_emp_bots:
+                await self._stop_employee_slack_bot(emp.id)
+            return
+
+        if bot_token is None or not emp.employee_type:
+            if emp.id in per_emp_bots:
+                await self._stop_employee_slack_bot(emp.id)
+            return
+
+        fixed_bot = get_fixed_bot(emp.employee_type)
+        if fixed_bot is None or not fixed_bot.app_token:
+            if emp.id in per_emp_bots:
+                await self._stop_employee_slack_bot(emp.id)
+            return
+
+        app_token = fixed_bot.app_token
+
+        if emp.id in per_emp_bots:
+            existing = per_emp_bots[emp.id]
+            if existing.bot_token != bot_token or existing.app_token != app_token:
+                logger.info("Slack credentials changed for employee %s — restarting bot", emp.id)
+                await self._stop_employee_slack_bot(emp.id)
+            else:
+                # Bot already running with correct credentials
+                return
+
+        await self._start_employee_slack_bot(emp.id, bot_token, app_token)

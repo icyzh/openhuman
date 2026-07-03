@@ -95,19 +95,33 @@ class Settings(BaseSettings):
     slack_client_secret: str = ""
     slack_oauth_redirect_uri: str = ""
 
-    # Slack per-employee identity (Pattern A)
-    slack_identity_mode: str = "shared"
-    """Feature flag: 'shared' = one global Slack app (legacy), 'per_employee' = one
-    app slot per AI employee (Pattern A)."""
+    # Slack identity mode
+    slack_identity_mode: str = "fixed"
+    """Feature flag: 'fixed' = named bots per employee type (default),
+    'shared' = one global Slack app (legacy), 'per_employee' = one
+    app slot per AI employee (Pattern A, deprecated)."""
 
-    slack_slot_pool_threshold: int = 5
-    """Alert when available slot count drops below this threshold."""
-
-    slack_config_token: str = ""
-    """xoxe- config token for Slack manifest API (Phase 2 dynamic provisioning)."""
-
-    slack_config_refresh_token: str = ""
-    """Refresh token for rotating the config token (Phase 2)."""
+    # Fixed bot credentials — one Slack app per employee type
+    # HR bot (Alison)
+    slack_bot_hr_client_id: str = ""
+    slack_bot_hr_client_secret: str = ""
+    slack_bot_hr_app_token: str = ""
+    # Support bot (Alex)
+    slack_bot_support_client_id: str = ""
+    slack_bot_support_client_secret: str = ""
+    slack_bot_support_app_token: str = ""
+    # Sales bot (Marcus)
+    slack_bot_sales_client_id: str = ""
+    slack_bot_sales_client_secret: str = ""
+    slack_bot_sales_app_token: str = ""
+    # General bot (Jordan)
+    slack_bot_general_client_id: str = ""
+    slack_bot_general_client_secret: str = ""
+    slack_bot_general_app_token: str = ""
+    # Legal-compliance bot (Taylor)
+    slack_bot_legal_client_id: str = ""
+    slack_bot_legal_client_secret: str = ""
+    slack_bot_legal_app_token: str = ""
 
     # Frontend URL (used for OAuth redirects back to the dashboard)
     frontend_url: str = "http://localhost:3000"

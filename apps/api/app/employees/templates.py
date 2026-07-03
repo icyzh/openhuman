@@ -30,7 +30,7 @@ class EmployeeTemplate(BaseModel):
 # ---------------------------------------------------------------------------
 
 HR_TEMPLATE = EmployeeTemplate(
-    name="HR Specialist",
+    name="Alison",
     role="Human Resources Specialist",
     system_prompt_template=(
         "You are {name}, the HR Specialist for {org_name}.\n"
@@ -61,7 +61,7 @@ HR_TEMPLATE = EmployeeTemplate(
 )
 
 SALES_TEMPLATE = EmployeeTemplate(
-    name="Sales Representative",
+    name="Marcus",
     role="Sales Development Representative",
     system_prompt_template=(
         "You are {name}, the Sales Representative for {org_name}.\n"
@@ -92,7 +92,7 @@ SALES_TEMPLATE = EmployeeTemplate(
 )
 
 SUPPORT_TEMPLATE = EmployeeTemplate(
-    name="Customer Support Agent",
+    name="Alex",
     role="Customer Support Specialist",
     system_prompt_template=(
         "You are {name}, the Customer Support Specialist for {org_name}.\n"
@@ -122,7 +122,7 @@ SUPPORT_TEMPLATE = EmployeeTemplate(
 )
 
 GENERAL_TEMPLATE = EmployeeTemplate(
-    name="General Assistant",
+    name="Jordan",
     role="AI Assistant",
     system_prompt_template=(
         "You are {name}, an AI assistant for {org_name}.\n"
@@ -154,8 +154,11 @@ GENERAL_TEMPLATE = EmployeeTemplate(
 # Registry — keyed by specialization slug
 TEMPLATES: dict[str, EmployeeTemplate] = {
     "hr_specialist": HR_TEMPLATE,
+    "hr": HR_TEMPLATE,
     "sales_rep": SALES_TEMPLATE,
+    "sales": SALES_TEMPLATE,
     "support_agent": SUPPORT_TEMPLATE,
+    "support": SUPPORT_TEMPLATE,
     "general": GENERAL_TEMPLATE,
 }
 

@@ -22,7 +22,6 @@ import {
   useEmployeesUpdateEmployeeRoute,
   useEmployeesDeleteEmployeeRoute,
   useEmployeesSetStatus,
-  useEmployeesPatchSlackSlotRoute,
   getEmployeesListEmployeesRouteQueryKey,
   getEmployeesGetEmployeeRouteQueryKey,
   useDocumentsListOrgDocuments,
@@ -155,7 +154,6 @@ export default function EmployeeDetailPage() {
         status: apiEmployee.status,
         hasDiscord: apiEmployee.has_discord_token,
         hasSlack: apiEmployee.has_slack_token,
-        hasSlackSlot: apiEmployee.has_slack_slot,
         slackTeamName: apiEmployee.slack_team_name ?? null,
         deployedAt: apiEmployee.created_at,
       }
@@ -215,35 +213,7 @@ export default function EmployeeDetailPage() {
   const [localRole, setLocalRole] = useState("");
   const [localSpecialization, setLocalSpecialization] = useState("");
 
-  // Slack credentials config state
-  const [showSlackConfig, setShowSlackConfig] = useState(false);
-  const [clientId, setClientId] = useState("");
-  const [clientSecret, setClientSecret] = useState("");
-  const [appToken, setAppToken] = useState("");
-  const patchSlackSlotMutation = useEmployeesPatchSlackSlotRoute();
-
-  const handleSaveSlackCredentials = useCallback(async () => {
-    if (!orgId) return;
-    try {
-      await patchSlackSlotMutation.mutateAsync({
-        orgId,
-        empId,
-        data: {
-          client_id: clientId.trim() || undefined,
-          client_secret: clientSecret.trim() || undefined,
-          app_token: appToken.trim() || undefined,
-        },
-      });
-      toast.success("Slack credentials updated successfully!");
-      setClientId("");
-      setClientSecret("");
-      setAppToken("");
-      setShowSlackConfig(false);
-      invalidate();
-    } catch {
-      toast.error("Failed to update Slack credentials");
-    }
-  }, [orgId, empId, clientId, clientSecret, appToken, patchSlackSlotMutation, invalidate]);
+  // Slack credentials config state removed — fixed mode uses env-based credentials
 
   // Document management
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -542,9 +512,7 @@ export default function EmployeeDetailPage() {
                   ? `Connected (${employee.slackTeamName})`
                   : employee.hasSlack
                     ? "Connected"
-                    : employee.hasSlackSlot
-                      ? "Slot assigned — not connected"
-                      : "Not connected"
+                    : "Not connected"
               }
             />
             {orgId && (
@@ -554,7 +522,7 @@ export default function EmployeeDetailPage() {
                   <span className="text-sm font-medium text-green-600 dark:text-green-400">
                     Connected ({employee.slackTeamName})
                   </span>
-                ) : employee.hasSlackSlot ? (
+                ) : (
                   <a
                     href={slackInstallUrl(employee.id, orgId)}
                     className="inline-flex items-center gap-1 text-sm font-medium text-primary hover:underline"
@@ -562,10 +530,6 @@ export default function EmployeeDetailPage() {
                     <ExternalLinkIcon className="size-3.5" />
                     Add {employee.name} to Slack
                   </a>
-                ) : (
-                  <span className="text-sm text-muted-foreground">
-                    No slot available
-                  </span>
                 )}
               </div>
             )}
@@ -658,15 +622,10 @@ export default function EmployeeDetailPage() {
                       <span className="text-xs text-green-600 dark:text-green-400">
                         Connected to {employee.slackTeamName}
                       </span>
-                    ) : employee.hasSlackSlot ? (
+                    ) : (
                       <span className="text-xs text-muted-foreground">
                         Install {employee.name}&apos;s Slack app so it can
                         respond to @mentions and DMs.
-                      </span>
-                    ) : (
-                      <span className="text-xs text-amber-600 dark:text-amber-400">
-                        No Slack app slot available. Contact support to increase
-                        capacity.
                       </span>
                     )}
                   </div>
@@ -674,7 +633,7 @@ export default function EmployeeDetailPage() {
                     <span className="inline-flex shrink-0 items-center gap-1.5 rounded-md bg-green-100 px-3 py-1.5 text-sm font-medium text-green-700 dark:bg-green-900/30 dark:text-green-400">
                       Connected
                     </span>
-                  ) : employee.hasSlackSlot ? (
+                  ) : (
                     <a
                       href={slackInstallUrl(employee.id, orgId)}
                       className="inline-flex shrink-0 items-center gap-1.5 rounded-md bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground hover:bg-primary/90"
@@ -682,85 +641,13 @@ export default function EmployeeDetailPage() {
                       <ExternalLinkIcon className="size-3.5" />
                       Connect
                     </a>
-                  ) : (
-                    <span className="inline-flex shrink-0 items-center gap-1.5 rounded-md bg-muted px-3 py-1.5 text-sm font-medium text-muted-foreground">
-                      Unavailable
-                    </span>
                   )}
                 </div>
               )}
 
-              {orgId && employee.hasSlackSlot && (
-                <div className="flex flex-col gap-3 rounded-lg border border-border bg-muted/20 p-4">
-                  <div className="flex items-center justify-between">
-                    <div className="flex flex-col gap-0.5">
-                      <span className="text-sm font-medium text-foreground flex items-center gap-1.5">
-                        <SettingsIcon className="size-4 text-muted-foreground" />
-                        Slack App Credentials
-                      </span>
-                      <span className="text-xs text-muted-foreground">
-                        Configure custom credentials for this employee slot.
-                      </span>
-                    </div>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => setShowSlackConfig(!showSlackConfig)}
-                    >
-                      {showSlackConfig ? "Hide" : "Configure"}
-                    </Button>
-                  </div>
 
-                  {showSlackConfig && (
-                    <div className="flex flex-col gap-4 mt-2 border-t border-border pt-4">
-                      <div className="flex flex-col gap-1.5">
-                        <Label htmlFor="slack-client-id" className="text-xs font-semibold">Client ID</Label>
-                        <Input
-                          id="slack-client-id"
-                          placeholder="e.g. 1234567890.1234567890"
-                          value={clientId}
-                          onChange={(e) => setClientId(e.target.value)}
-                        />
-                      </div>
-                      <div className="flex flex-col gap-1.5">
-                        <Label htmlFor="slack-client-secret" className="text-xs font-semibold">Client Secret</Label>
-                        <Input
-                          id="slack-client-secret"
-                          type="password"
-                          placeholder="••••••••••••••••"
-                          value={clientSecret}
-                          onChange={(e) => setClientSecret(e.target.value)}
-                        />
-                      </div>
-                      <div className="flex flex-col gap-1.5">
-                        <Label htmlFor="slack-app-token" className="text-xs font-semibold">App-Level Token (Socket Mode)</Label>
-                        <Input
-                          id="slack-app-token"
-                          type="password"
-                          placeholder="xapp-1-..."
-                          value={appToken}
-                          onChange={(e) => setAppToken(e.target.value)}
-                        />
-                      </div>
-                      <Button
-                        size="sm"
-                        className="w-full"
-                        onClick={handleSaveSlackCredentials}
-                        disabled={patchSlackSlotMutation.isPending}
-                      >
-                        {patchSlackSlotMutation.isPending ? (
-                          <>
-                            <Spinner className="mr-1.5 size-3.5" />
-                            Saving...
-                          </>
-                        ) : (
-                          "Save Credentials"
-                        )}
-                      </Button>
-                    </div>
-                  )}
-                </div>
-              )}
+
+
 
               <Separator />
 

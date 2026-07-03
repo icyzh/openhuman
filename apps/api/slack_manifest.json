@@ -12,7 +12,7 @@
   },
   "oauth_config": {
     "redirect_urls": [
-      "http://localhost:8000/api/slack/oauth/callback"
+      "https://openhuman-v2-production.up.railway.app/api/slack/oauth/callback"
     ],
     "scopes": {
       "bot": [

@@ -18,12 +18,7 @@ from app.employees.schemas import (
     EmployeeResponse,
     UpdateEmployeeRequest,
 )
-from app.gateway.models import SlackAppSlot
-from app.gateway.slack_app_provisioning import (
-    assign_slot_to_employee,
-    release_slot,
-    update_slack_app_manifest,
-)
+from app.gateway.fixed_bots import get_fixed_bot
 from app.memory.service import (
     add_user_to_tenant,
     create_dataset,
@@ -102,7 +97,6 @@ def _to_response(emp: Employee) -> EmployeeResponse:
         status=emp.status,
         has_discord_token=emp.discord_token_enc is not None,
         has_slack_token=emp.slack_token_enc is not None,
-        has_slack_slot=emp.slack_slot_id is not None,
         slack_team_name=emp.slack_team_name,
         slack_bot_user_id=emp.slack_bot_user_id,
         cognee_user_id=emp.cognee_user_id,
@@ -140,10 +134,19 @@ async def create_employee(
                 f"An employee of type '{data.employee_type}' already exists in this organization."
             )
 
+    # Fixed mode: override name/role from the fixed bot registry
+    emp_name = data.name
+    emp_role = data.role
+    if settings.slack_identity_mode == "fixed" and data.employee_type:
+        fixed_bot = get_fixed_bot(data.employee_type)
+        if fixed_bot:
+            emp_name = fixed_bot.name
+            emp_role = fixed_bot.role
+
     emp = Employee(
         org_id=org_id,
-        name=data.name,
-        role=data.role,
+        name=emp_name,
+        role=emp_role,
         personality=data.personality,
         specialization=data.specialization,
         employee_type=data.employee_type,
@@ -153,15 +156,6 @@ async def create_employee(
     db.add(emp)
     await db.flush()
 
-    # Pattern A: assign a Slack app slot so this employee can get its own identity
-    if settings.slack_identity_mode == "per_employee":
-        slot = await assign_slot_to_employee(db, emp)
-        if slot is None:
-            await db.rollback()
-            raise PoolExhaustionError(
-                "No available Slack app slots. Provision more slots before "
-                "creating additional employees in per_employee mode."
-            )
 
     try:
         await db.commit()
@@ -342,9 +336,7 @@ async def delete_employee(
     if emp is None:
         return False
 
-    # Pattern A: release the Slack app slot back to the pool
-    if settings.slack_identity_mode == "per_employee":
-        await release_slot(db, emp)
+    # (Slot release removed — fixed mode has no slots to release)
 
     # ── Best-effort Cognee cleanup ──────────────────────────────────────
     if emp.cognee_dataset_name:
@@ -422,7 +414,6 @@ async def get_active_employees_with_tokens(db: AsyncSession) -> list[Employee]:
             Employee.status == "active",
             (Employee.discord_token_enc.is_not(None)) | (Employee.slack_token_enc.is_not(None)),
         )
-        .options(selectinload(Employee.slack_slot))
     )
     return list(result.scalars().all())
 
@@ -441,40 +432,3 @@ def decrypt_slack_token(emp: Employee) -> str | None:
     return decrypt_token(emp.slack_token_enc)
 
 
-async def update_slack_slot_credentials(
-    db: AsyncSession,
-    org_id: UUID,
-    emp_id: UUID,
-    user_id: UUID,
-    client_id: str | None = None,
-    client_secret: str | None = None,
-    app_token: str | None = None,
-) -> EmployeeResponse | None:
-    org = await _get_org(db, org_id, user_id)
-    if org is None:
-        return None
-    emp = await db.scalar(
-        select(Employee)
-        .where(Employee.id == emp_id, Employee.org_id == org_id)
-    )
-    if emp is None or emp.slack_slot_id is None:
-        return None
-
-    slot = await db.scalar(
-        select(SlackAppSlot)
-        .where(SlackAppSlot.id == emp.slack_slot_id)
-    )
-    if slot is None:
-        return None
-
-    if client_id:
-        slot.client_id = client_id
-    if client_secret:
-        slot.client_secret_enc = encrypt_token(client_secret)
-    if app_token:
-        slot.app_token_enc = encrypt_token(app_token)
-
-    await db.commit()
-
-    emp = await _get_employee_with_assignments(db, emp_id, org_id)
-    return _to_response(emp)

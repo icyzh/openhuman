@@ -29,7 +29,6 @@ import app.documents.models  # noqa: F401
 import app.employees.models  # noqa: F401
 import app.organizations.models  # noqa: F401
 import app.agent.tools.mcp.models  # noqa: F401
-import app.gateway.models  # noqa: F401
 from app.agent.checkpointer import close_checkpointer, init_checkpointer
 from app.agent.router import router as agent_router
 from app.auth.router import router as auth_router
@@ -38,8 +37,8 @@ from app.core.config import settings
 from app.documents.router import router as doc_router
 from app.employees.router import router as emp_router
 from app.gateway.manager import BotGatewayManager
-from app.gateway.router import router as slack_slots_router
 from app.gateway.slack_oauth import router as slack_oauth_router
+from app.gateway.fixed_bots_router import router as fixed_bots_router
 from app.health.router import router as health_router
 from app.mcp.router import oauth_router as mcp_oauth_router
 from app.mcp.router import router as mcp_router
@@ -119,7 +118,7 @@ app.include_router(doc_router)
 app.include_router(agent_router)
 app.include_router(memory_router)
 app.include_router(slack_oauth_router)
-app.include_router(slack_slots_router)
+app.include_router(fixed_bots_router)
 app.include_router(mcp_router)
 app.include_router(mcp_oauth_router)
 

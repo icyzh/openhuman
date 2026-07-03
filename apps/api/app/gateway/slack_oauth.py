@@ -14,11 +14,13 @@ GET /api/slack/oauth/callback
 
 Identity modes
 --------------
+- **fixed** (default): Each employee type maps to a pre-registered Slack app
+  with a fixed name (e.g. "Alison" for HR, "Alex" for Support).  The bot's
+  ``client_id`` / ``client_secret`` come from the fixed bot registry.
 - **shared** (legacy): One global Slack app for all employees.  Uses
   ``SLACK_CLIENT_ID`` / ``SLACK_CLIENT_SECRET`` from settings.
-- **per_employee** (Pattern A): Each employee has its own Slack app
-  identity via a pre-provisioned ``SlackAppSlot``.  The slot holds its
-  own ``client_id`` / ``client_secret`` for OAuth.
+- **per_employee** (Pattern A, deprecated): Each employee has its own Slack app
+  identity via a pre-provisioned ``SlackAppSlot``.
 """
 
 from __future__ import annotations
@@ -47,7 +49,7 @@ import app.agent.tools.mcp.models  # noqa: F401
 import app.gateway.models  # noqa: F401
 
 from app.employees.models import Employee
-from app.gateway.models import SlackAppSlot
+from app.gateway.fixed_bots import get_fixed_bot
 
 logger = logging.getLogger(__name__)
 
@@ -140,18 +142,16 @@ def _frontend_redirect(
     return RedirectResponse(url, status_code=303)
 
 
-async def _load_employee_with_slot(
-    session, emp_uuid: UUID, org_uuid: UUID
-) -> tuple[Employee | None, SlackAppSlot | None]:
-    """Load an employee and its assigned Slack app slot (if any)."""
-    emp = await session.scalar(
-        select(Employee)
-        .where(Employee.id == emp_uuid, Employee.org_id == org_uuid)
-        .options(selectinload(Employee.slack_slot))
-    )
-    if emp is None:
-        return None, None
-    return emp, emp.slack_slot
+def _build_redirect_uri(request: Request) -> str:
+    """Build the OAuth redirect URI from the request, handling proxy headers."""
+    redirect_uri = settings.slack_oauth_redirect_uri
+    if not redirect_uri or "<YOUR-RAILWAY-API-DOMAIN>" in redirect_uri:
+        base_url = str(request.base_url).rstrip("/")
+        proto = request.headers.get("x-forwarded-proto") or request.url.scheme
+        if proto == "https" and base_url.startswith("http://"):
+            base_url = base_url.replace("http://", "https://")
+        redirect_uri = f"{base_url}/api/slack/oauth/callback"
+    return redirect_uri
 
 
 # ---------------------------------------------------------------------------
@@ -172,8 +172,8 @@ async def slack_install(
     parameter so the callback can associate the token with the right
     employee.
 
-    In **per_employee** mode the authorize URL is built from the employee's
-    assigned ``SlackAppSlot`` rather than the global settings.
+    In **fixed** mode the authorize URL uses the fixed bot's client_id
+    based on the employee's ``employee_type``.
     """
     # Validate UUIDs
     try:
@@ -188,7 +188,11 @@ async def slack_install(
         )
 
     async with async_session_factory() as session:
-        emp, slot = await _load_employee_with_slot(session, emp_uuid, org_uuid)
+        emp = await session.scalar(
+            select(Employee).where(
+                Employee.id == emp_uuid, Employee.org_id == org_uuid
+            )
+        )
 
     if emp is None:
         return _frontend_redirect(
@@ -201,26 +205,22 @@ async def slack_install(
     actual_redirect_to = redirect_to or f"{settings.frontend_url.rstrip('/')}/dashboard/{emp_uuid}"
     state = _encode_oauth_state(emp_uuid, org_uuid, actual_redirect_to)
     scope = ",".join(_SLACK_BOT_SCOPES)
+    redirect_uri = _build_redirect_uri(request)
 
-    if settings.slack_identity_mode == "per_employee":
-        # ---- Pattern A: per-slot OAuth -----------------------------------
-        if slot is None:
+    if settings.slack_identity_mode == "fixed":
+        # ---- Fixed mode: look up client_id from the fixed bot registry ----
+        fixed_bot = get_fixed_bot(emp.employee_type) if emp.employee_type else None
+        if fixed_bot is None or not fixed_bot.client_id:
             return _frontend_redirect(
                 employee_id,
                 success=False,
-                detail="No Slack app slot assigned — capacity may be full.",
+                detail=f"No fixed Slack bot configured for employee type '{emp.employee_type}'.",
                 redirect_to=redirect_to,
             )
-        client_id = slot.client_id
-        redirect_uri = settings.slack_oauth_redirect_uri
-        if not redirect_uri or "<YOUR-RAILWAY-API-DOMAIN>" in redirect_uri:
-            base_url = str(request.base_url).rstrip("/")
-            proto = request.headers.get("x-forwarded-proto") or request.url.scheme
-            if proto == "https" and base_url.startswith("http://"):
-                base_url = base_url.replace("http://", "https://")
-            redirect_uri = f"{base_url}/api/slack/oauth/callback"
-    else:
-        # ---- Shared mode (legacy): global app ----------------------------
+        client_id = fixed_bot.client_id
+
+    elif settings.slack_identity_mode == "shared":
+        # ---- Shared mode (legacy): global app ----
         if not settings.slack_client_id:
             logger.error("Slack OAuth is not configured (missing client_id).")
             return _frontend_redirect(
@@ -230,13 +230,16 @@ async def slack_install(
                 redirect_to=redirect_to,
             )
         client_id = settings.slack_client_id
-        redirect_uri = settings.slack_oauth_redirect_uri
-        if not redirect_uri or "<YOUR-RAILWAY-API-DOMAIN>" in redirect_uri:
-            base_url = str(request.base_url).rstrip("/")
-            proto = request.headers.get("x-forwarded-proto") or request.url.scheme
-            if proto == "https" and base_url.startswith("http://"):
-                base_url = base_url.replace("http://", "https://")
-            redirect_uri = f"{base_url}/api/slack/oauth/callback"
+
+    else:
+        # ---- per_employee (deprecated) — kept for backward compat ----
+        logger.error("per_employee identity mode is deprecated. Use 'fixed' instead.")
+        return _frontend_redirect(
+            employee_id,
+            success=False,
+            detail="Slack identity mode 'per_employee' is deprecated.",
+            redirect_to=redirect_to,
+        )
 
     authorize_url = (
         f"{_SLACK_AUTHORIZE_URL}"
@@ -268,8 +271,8 @@ async def slack_oauth_callback(
     3. Encrypts and stores the token on the employee record.
     4. Redirects the browser back to the employee's dashboard page.
 
-    In **per_employee** mode the exchange uses the slot's client secret
-    rather than the global one, and persists workspace metadata.
+    In **fixed** mode the exchange uses the fixed bot's client secret
+    based on the employee's ``employee_type``.
     """
     # ---- 1. Validate state --------------------------------------------------
     payload = _decode_oauth_state(state)
@@ -284,7 +287,12 @@ async def slack_oauth_callback(
     redirect_to = payload.get("redirect_to")
 
     async with async_session_factory() as session:
-        emp, slot = await _load_employee_with_slot(session, UUID(employee_id), UUID(org_id))
+        emp = await session.scalar(
+            select(Employee).where(
+                Employee.id == UUID(employee_id),
+                Employee.org_id == UUID(org_id),
+            )
+        )
 
     if emp is None:
         return _frontend_redirect(
@@ -295,24 +303,22 @@ async def slack_oauth_callback(
         )
 
     # Determine which credentials to use
-    if settings.slack_identity_mode == "per_employee":
-        if slot is None:
+    redirect_uri = _build_redirect_uri(request)
+
+    if settings.slack_identity_mode == "fixed":
+        fixed_bot = get_fixed_bot(emp.employee_type) if emp.employee_type else None
+        if fixed_bot is None or not fixed_bot.is_configured:
             return _frontend_redirect(
                 employee_id,
                 success=False,
-                detail="No Slack app slot assigned.",
+                detail=f"No fixed Slack bot configured for type '{emp.employee_type}'.",
                 redirect_to=redirect_to,
             )
-        oauth_client_id = slot.client_id
-        oauth_client_secret = decrypt_token(slot.client_secret_enc)
-        oauth_redirect_uri = settings.slack_oauth_redirect_uri
-        if not oauth_redirect_uri or "<YOUR-RAILWAY-API-DOMAIN>" in oauth_redirect_uri:
-            base_url = str(request.base_url).rstrip("/")
-            proto = request.headers.get("x-forwarded-proto") or request.url.scheme
-            if proto == "https" and base_url.startswith("http://"):
-                base_url = base_url.replace("http://", "https://")
-            oauth_redirect_uri = f"{base_url}/api/slack/oauth/callback"
-    else:
+        oauth_client_id = fixed_bot.client_id
+        oauth_client_secret = fixed_bot.client_secret
+        oauth_redirect_uri = redirect_uri
+
+    elif settings.slack_identity_mode == "shared":
         if not settings.slack_client_id or not settings.slack_client_secret:
             logger.error("Slack OAuth config incomplete — cannot exchange code.")
             return _frontend_redirect(
@@ -323,13 +329,15 @@ async def slack_oauth_callback(
             )
         oauth_client_id = settings.slack_client_id
         oauth_client_secret = settings.slack_client_secret
-        oauth_redirect_uri = settings.slack_oauth_redirect_uri
-        if not oauth_redirect_uri or "<YOUR-RAILWAY-API-DOMAIN>" in oauth_redirect_uri:
-            base_url = str(request.base_url).rstrip("/")
-            proto = request.headers.get("x-forwarded-proto") or request.url.scheme
-            if proto == "https" and base_url.startswith("http://"):
-                base_url = base_url.replace("http://", "https://")
-            oauth_redirect_uri = f"{base_url}/api/slack/oauth/callback"
+        oauth_redirect_uri = redirect_uri
+
+    else:
+        return _frontend_redirect(
+            employee_id,
+            success=False,
+            detail="Unsupported Slack identity mode.",
+            redirect_to=redirect_to,
+        )
 
     # ---- 2. Exchange code for token -----------------------------------------
     try:

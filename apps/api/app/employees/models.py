@@ -14,7 +14,6 @@ from app.core.database import Base
 if TYPE_CHECKING:
     from app.channel_assignments.models import ChannelAssignment
     from app.documents.models import Document
-    from app.gateway.models import SlackAppSlot
     from app.organizations.models import Organization
 
 
@@ -26,7 +25,7 @@ class Employee(Base):
             name="ck_employees_status",
         ),
         CheckConstraint(
-            "employee_type IS NULL OR employee_type IN ('legal-compliance', 'support', 'hr', 'general')",
+            "employee_type IS NULL OR employee_type IN ('legal-compliance', 'support', 'hr', 'general', 'sales')",
             name="ck_employees_employee_type",
         ),
         sa.Index(
@@ -58,16 +57,10 @@ class Employee(Base):
     discord_token_enc: Mapped[str | None] = mapped_column(Text, nullable=True)
     slack_token_enc: Mapped[str | None] = mapped_column(Text, nullable=True)
 
-    # Slack per-employee identity (Pattern A)
+    # Slack workspace metadata
     slack_team_id: Mapped[str | None] = mapped_column(String(50), nullable=True)
     slack_team_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
     slack_bot_user_id: Mapped[str | None] = mapped_column(String(50), nullable=True)
-    slack_slot_id: Mapped[UUID | None] = mapped_column(
-        Uuid,
-        ForeignKey("slack_app_slots.id", ondelete="SET NULL"),
-        nullable=True,
-        unique=True,
-    )
 
     mcp_connections: Mapped[list | None] = mapped_column(JSONB, nullable=True)
     memory_policy: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
@@ -104,10 +97,4 @@ class Employee(Base):
         "Document",
         back_populates="employee",
         passive_deletes=True,
-    )
-    slack_slot: Mapped[SlackAppSlot | None] = relationship(
-        "SlackAppSlot",
-        primaryjoin="Employee.slack_slot_id == SlackAppSlot.id",
-        uselist=False,
-        viewonly=True,
     )

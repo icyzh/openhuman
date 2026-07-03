@@ -53,8 +53,9 @@ export function getStatusConfig(status: string) {
 }
 
 export const EMPLOYEE_TYPE_LABELS: Record<string, string> = {
-  "legal-compliance": "Legal Compliance Officer",
-  support: "Support Employee",
-  hr: "HR Employee",
-  general: "General",
+  "legal-compliance": "Legal & Compliance",
+  support: "Customer Support",
+  hr: "HR Specialist",
+  general: "General Assistant",
+  sales: "Sales Representative",
 };

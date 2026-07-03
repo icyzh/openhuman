@@ -5,7 +5,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from app.channel_assignments.schemas import ChannelAssignmentResponse
 
-_VALID_EMPLOYEE_TYPES_PATTERN = r"^(legal-compliance|support|hr|general)$"
+_VALID_EMPLOYEE_TYPES_PATTERN = r"^(legal-compliance|support|hr|general|sales)$"
 
 
 class CreateEmployeeRequest(BaseModel):
@@ -51,10 +51,6 @@ class StatusRequest(BaseModel):
     status: str  # "active" | "inactive"
 
 
-class UpdateSlackSlotRequest(BaseModel):
-    client_id: str | None = None
-    client_secret: str | None = None
-    app_token: str | None = None
 
 
 class EmployeeResponse(BaseModel):
@@ -74,7 +70,7 @@ class EmployeeResponse(BaseModel):
     status: str
     has_discord_token: bool
     has_slack_token: bool
-    has_slack_slot: bool = False
+
     slack_team_name: str | None = None
     slack_bot_user_id: str | None = None
     cognee_user_id: str | None = None
