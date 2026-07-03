@@ -26,7 +26,7 @@ from __future__ import annotations
 import logging
 from uuid import UUID
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Query, Request
 from fastapi.responses import RedirectResponse
 from itsdangerous import BadData, URLSafeTimedSerializer
 from slack_sdk.web.async_client import AsyncWebClient
@@ -160,6 +160,7 @@ async def _load_employee_with_slot(
 
 @router.get("/install")
 async def slack_install(
+    request: Request,
     employee_id: str = Query(..., description="Employee UUID"),
     org_id: str = Query(..., description="Organization UUID"),
     redirect_to: str | None = Query(None, description="URL to redirect back to after callback"),
@@ -211,18 +212,16 @@ async def slack_install(
             )
         client_id = slot.client_id
         redirect_uri = settings.slack_oauth_redirect_uri
-        if not redirect_uri:
-            logger.error("Slack OAuth redirect_uri not configured.")
-            return _frontend_redirect(
-                employee_id,
-                success=False,
-                detail="Slack integration is not configured on this server.",
-                redirect_to=redirect_to,
-            )
+        if not redirect_uri or "<YOUR-RAILWAY-API-DOMAIN>" in redirect_uri:
+            base_url = str(request.base_url).rstrip("/")
+            proto = request.headers.get("x-forwarded-proto") or request.url.scheme
+            if proto == "https" and base_url.startswith("http://"):
+                base_url = base_url.replace("http://", "https://")
+            redirect_uri = f"{base_url}/api/slack/oauth/callback"
     else:
         # ---- Shared mode (legacy): global app ----------------------------
-        if not settings.slack_client_id or not settings.slack_oauth_redirect_uri:
-            logger.error("Slack OAuth is not configured (missing client_id or redirect_uri).")
+        if not settings.slack_client_id:
+            logger.error("Slack OAuth is not configured (missing client_id).")
             return _frontend_redirect(
                 employee_id,
                 success=False,
@@ -231,6 +230,12 @@ async def slack_install(
             )
         client_id = settings.slack_client_id
         redirect_uri = settings.slack_oauth_redirect_uri
+        if not redirect_uri or "<YOUR-RAILWAY-API-DOMAIN>" in redirect_uri:
+            base_url = str(request.base_url).rstrip("/")
+            proto = request.headers.get("x-forwarded-proto") or request.url.scheme
+            if proto == "https" and base_url.startswith("http://"):
+                base_url = base_url.replace("http://", "https://")
+            redirect_uri = f"{base_url}/api/slack/oauth/callback"
 
     authorize_url = (
         f"{_SLACK_AUTHORIZE_URL}"
@@ -251,6 +256,7 @@ async def slack_install(
 
 @router.get("/oauth/callback")
 async def slack_oauth_callback(
+    request: Request,
     code: str = Query(..., description="Temporary OAuth code from Slack"),
     state: str = Query(..., description="State parameter echoed back by Slack"),
 ) -> RedirectResponse:
@@ -299,6 +305,12 @@ async def slack_oauth_callback(
         oauth_client_id = slot.client_id
         oauth_client_secret = decrypt_token(slot.client_secret_enc)
         oauth_redirect_uri = settings.slack_oauth_redirect_uri
+        if not oauth_redirect_uri or "<YOUR-RAILWAY-API-DOMAIN>" in oauth_redirect_uri:
+            base_url = str(request.base_url).rstrip("/")
+            proto = request.headers.get("x-forwarded-proto") or request.url.scheme
+            if proto == "https" and base_url.startswith("http://"):
+                base_url = base_url.replace("http://", "https://")
+            oauth_redirect_uri = f"{base_url}/api/slack/oauth/callback"
     else:
         if not settings.slack_client_id or not settings.slack_client_secret:
             logger.error("Slack OAuth config incomplete — cannot exchange code.")
@@ -311,6 +323,12 @@ async def slack_oauth_callback(
         oauth_client_id = settings.slack_client_id
         oauth_client_secret = settings.slack_client_secret
         oauth_redirect_uri = settings.slack_oauth_redirect_uri
+        if not oauth_redirect_uri or "<YOUR-RAILWAY-API-DOMAIN>" in oauth_redirect_uri:
+            base_url = str(request.base_url).rstrip("/")
+            proto = request.headers.get("x-forwarded-proto") or request.url.scheme
+            if proto == "https" and base_url.startswith("http://"):
+                base_url = base_url.replace("http://", "https://")
+            oauth_redirect_uri = f"{base_url}/api/slack/oauth/callback"
 
     # ---- 2. Exchange code for token -----------------------------------------
     try:

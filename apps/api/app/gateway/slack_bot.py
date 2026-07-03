@@ -169,6 +169,25 @@ class EmployeeSlackBot:
             )
             return
 
+        # Fetch employee and organization details from database for customization & ingestion
+        employee_name = "OpenHuman Agent"
+        org = None
+        try:
+            async with async_session_factory() as session:
+                emp = await session.get(Employee, self.employee_id)
+                if emp:
+                    if emp.role:
+                        employee_name = f"{emp.name} ({emp.role})"
+                    else:
+                        employee_name = emp.name
+                    org = await session.scalar(
+                        select(Organization).where(
+                            Organization.id == emp.org_id
+                        )
+                    )
+        except Exception:
+            logger.exception("Failed to fetch employee/org info for Slack event")
+
         # -- Phase 3: lightweight cancel keyword fast path -------------------
         if is_cancel_intent(text):
             root_ts = thread_ts or "direct"
@@ -181,6 +200,7 @@ class EmployeeSlackBot:
                     text=f"🫡 Cancelled: {names}.",
                     channel=channel,
                     thread_ts=thread_ts,
+                    username=employee_name,
                 )
             else:
                 await say(
@@ -190,50 +210,33 @@ class EmployeeSlackBot:
                     ),
                     channel=channel,
                     thread_ts=thread_ts,
+                    username=employee_name,
                 )
             return
 
         # ── Auto-ingest Slack message into org memory ────────────────────
-        employee_name = "OpenHuman Agent"
-        try:
-            async with async_session_factory() as session:
-                emp = await session.get(Employee, self.employee_id)
-                if emp:
-                    if emp.role:
-                        employee_name = f"{emp.name} ({emp.role})"
-                    else:
-                        employee_name = emp.name
-
-                    org = await session.scalar(
-                        select(Organization).where(
-                            Organization.id == emp.org_id
-                        )
-                    )
-                    if (
-                        org
-                        and org.cognee_dataset_name
-                        and org.cognee_system_user_id
-                    ):
-                        speaker = event.get("user", "unknown")
-                        ch = event.get("channel", "unknown")
-                        ts = event.get("ts", "")
-                        ingest_text = (
-                            f"Slack message from <@{speaker}> "
-                            f"in <#{ch}> at {ts}:\n{text}"
-                        )
-                        await remember(
-                            ingest_text,
-                            org.cognee_dataset_name,
-                            org.cognee_system_user_id,
-                            dataset_id=org.cognee_dataset_id,
-                            background=True,
-                        )
-        except Exception:
-            logger.debug(
-                "Slack message Cognee ingest skipped for employee %s",
-                self.employee_id,
-                exc_info=True,
-            )
+        if org and org.cognee_dataset_name and org.cognee_system_user_id:
+            try:
+                speaker = event.get("user", "unknown")
+                ch = event.get("channel", "unknown")
+                ts = event.get("ts", "")
+                ingest_text = (
+                    f"Slack message from <@{speaker}> "
+                    f"in <#{ch}> at {ts}:\n{text}"
+                )
+                await remember(
+                    ingest_text,
+                    org.cognee_dataset_name,
+                    org.cognee_system_user_id,
+                    dataset_id=org.cognee_dataset_id,
+                    background=True,
+                )
+            except Exception:
+                logger.debug(
+                    "Slack message Cognee ingest skipped for employee %s",
+                    self.employee_id,
+                    exc_info=True,
+                )
         # ── End auto-ingest ──────────────────────────────────────────────
 
         # ── Handle file attachments — download → bucket → Cognee ──────────
