@@ -1,3 +1,4 @@
+import { Footer } from "@/components/footer";
 import { SiteNav } from "@/components/site-nav";
 
 export default function MarketingLayout({
@@ -9,6 +10,7 @@ export default function MarketingLayout({
     <>
       <SiteNav />
       {children}
+      <Footer />
     </>
   );
 }
