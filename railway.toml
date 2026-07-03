@@ -1,11 +1,7 @@
-[build]
-builder = "DOCKERFILE"
-dockerfilePath = "apps/api/Dockerfile.railway"
-watchPatterns = ["apps/api/**"]
+# Root railway.toml — keep generic.
+# Service-specific config lives in apps/<name>/railway.toml.
+# Set each service's "Config Path" in the Railway dashboard accordingly.
 
 [deploy]
-startCommand = "sh -c \"uvicorn app.main:app --host 0.0.0.0 --port $PORT --workers 1\""
-healthcheckPath = "/api/health"
-healthcheckTimeout = 300
 restartPolicyType = "ON_FAILURE"
 numReplicas = 1
