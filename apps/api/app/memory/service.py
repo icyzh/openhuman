@@ -211,6 +211,15 @@ async def forget_dataset(dataset_name: str) -> dict:
     """
     try:
         await cognee.forget(dataset=dataset_name, memory_only=True)
+    except AttributeError as e:
+        err_msg = str(e)
+        if "'NoneType' object has no attribute" in err_msg or "id" in err_msg:
+            logger.info(
+                "Cognee forget_dataset skipped for dataset %s: dataset does not exist in Cognee. Error: %s",
+                dataset_name, err_msg
+            )
+            return {"status": "skipped", "reason": "Dataset does not exist"}
+        raise
     except Exception as e:
         err_msg = str(e)
         if "UnsupportedAdministrationCommand" in err_msg or "CREATE DATABASE" in err_msg or "DROP DATABASE" in err_msg:
