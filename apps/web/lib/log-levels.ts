@@ -13,6 +13,7 @@ export function eventTypeToLevel(
 ): "trace" | "debug" | "info" | "warn" | "error" | "fatal" {
   switch (eventType) {
     // Debug level — internal operations
+    case "ai_engine":
     case "tool_usage":
     case "memory_operation":
     case "mcp_connected":

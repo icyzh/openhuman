@@ -1,7 +1,7 @@
 "use client";
 
-import { Search } from "lucide-react";
-import { useState } from "react";
+import { RefreshCw, Search } from "lucide-react";
+import { useMemo, useState } from "react";
 import { useAuth } from "@clerk/nextjs";
 import { useEmployeesListEmployeesRoute } from "@repo/api-client";
 
@@ -12,6 +12,13 @@ import { useOrgStore } from "@/stores/org";
 import { useActivityLogs } from "./_hooks/use-activity-logs";
 
 const LEVELS = ["trace", "debug", "info", "warn", "error", "fatal"] as const;
+const BOT_TYPE_LABELS: Record<string, string> = {
+  general: "General",
+  hr: "HR",
+  support: "Support",
+  sales: "Sales",
+  "legal-compliance": "Legal & Compliance",
+};
 
 function readEmployeeId(): string | undefined {
   if (typeof window === "undefined") return undefined;
@@ -26,6 +33,7 @@ export default function ActivityPage() {
 
   const [search, setSearch] = useState("");
   const [level, setLevel] = useState("");
+  const [botType, setBotType] = useState("");
   const [employeeId, setEmployeeId] = useState<string>(
     readEmployeeId() ?? "",
   );
@@ -35,18 +43,38 @@ export default function ActivityPage() {
     query: { enabled: !!orgId },
   });
 
-  const { entries, total, loading, loadingMore, hasMore, loadMore } =
+  const botTypeOptions = useMemo(() => {
+    const types = new Set(
+      (apiEmployees ?? [])
+        .map((emp) => emp.employee_type)
+        .filter((value): value is string => Boolean(value)),
+    );
+    return Array.from(types).sort((a, b) =>
+      (BOT_TYPE_LABELS[a] ?? a).localeCompare(BOT_TYPE_LABELS[b] ?? b),
+    );
+  }, [apiEmployees]);
+
+  const visibleBots = useMemo(() => {
+    if (!apiEmployees) return [];
+    if (!botType) return apiEmployees;
+    return apiEmployees.filter((emp) => emp.employee_type === botType);
+  }, [apiEmployees, botType]);
+
+  const { entries, total, loading, loadingMore, hasMore, loadMore, refreshing, refresh } =
     useActivityLogs(orgId!, getToken, {
       employeeId: employeeId || undefined,
+      employeeType: botType || undefined,
       level: level || undefined,
       search,
     });
 
-  const hasFilters = search.trim() !== "" || level !== "" || employeeId !== "";
+  const hasFilters =
+    search.trim() !== "" || level !== "" || employeeId !== "" || botType !== "";
 
   const clearFilters = () => {
     setSearch("");
     setLevel("");
+    setBotType("");
     setEmployeeId("");
   };
 
@@ -65,25 +93,69 @@ export default function ActivityPage() {
             <h1 className="text-2xl font-semibold tracking-tight text-foreground">
               Activity
             </h1>
-            <span className="text-xs text-muted-foreground">
-              {hasFilters
-                ? `${entries.length} of ${total} entries`
-                : `${total} entries`}
-            </span>
+            <div className="flex items-center gap-3">
+              <span className="text-xs text-muted-foreground">
+                {hasFilters
+                  ? `${entries.length} of ${total} entries`
+                  : `${total} entries`}
+              </span>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => void refresh()}
+                disabled={refreshing}
+              >
+                <RefreshCw
+                  className={`size-4 ${refreshing ? "animate-spin" : ""}`}
+                />
+                Refresh
+              </Button>
+            </div>
           </div>
 
           {/* Filters row */}
           <div className="mt-5 flex flex-wrap items-center gap-3">
-            {/* Employee dropdown */}
-            {apiEmployees && apiEmployees.length > 0 && (
+            {/* Bot type dropdown */}
+            {botTypeOptions.length > 0 && (
+              <select
+                value={botType}
+                onChange={(e) => {
+                  const nextBotType = e.target.value;
+                  const nextVisibleBots = !nextBotType
+                    ? (apiEmployees ?? [])
+                    : (apiEmployees ?? []).filter(
+                        (emp) => emp.employee_type === nextBotType,
+                      );
+                  setBotType(nextBotType);
+                  if (
+                    employeeId &&
+                    nextVisibleBots.every((bot) => bot.id !== employeeId)
+                  ) {
+                    setEmployeeId("");
+                  }
+                }}
+                aria-label="Filter by bot type"
+                className="h-9 rounded-lg border border-border bg-card/60 px-3 text-sm text-foreground outline-none transition-colors focus:border-ring focus:ring-3 focus:ring-ring/50"
+              >
+                <option value="">All bot types</option>
+                {botTypeOptions.map((type) => (
+                  <option key={type} value={type}>
+                    {BOT_TYPE_LABELS[type] ?? type}
+                  </option>
+                ))}
+              </select>
+            )}
+
+            {/* Bot dropdown */}
+            {visibleBots.length > 0 && (
               <select
                 value={employeeId}
                 onChange={(e) => setEmployeeId(e.target.value)}
-                aria-label="Filter by employee"
+                aria-label="Filter by bot"
                 className="h-9 rounded-lg border border-border bg-card/60 px-3 text-sm text-foreground outline-none transition-colors focus:border-ring focus:ring-3 focus:ring-ring/50"
               >
-                <option value="">All employees</option>
-                {apiEmployees.map((emp) => (
+                <option value="">All bots</option>
+                {visibleBots.map((emp) => (
                   <option key={emp.id} value={emp.id}>
                     {emp.name}
                   </option>
@@ -114,7 +186,11 @@ export default function ActivityPage() {
           </div>
 
           {/* Level filter */}
-          <div className="mt-3 flex flex-wrap items-center gap-1" role="group" aria-label="Filter by log level">
+          <div
+            className="mt-3 flex flex-wrap items-center gap-1"
+            role="group"
+            aria-label="Filter by log level"
+          >
             <span className="mr-1 text-[11px] font-medium text-muted-foreground">
               Level
             </span>

@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@clerk/nextjs";
 import {
@@ -8,100 +8,90 @@ import {
   useOrganizationsListOrganizations,
   useOrganizationsUpdateOrganization,
 } from "@repo/api-client";
-import { useAuthMe, useAuthUpdateMe } from "@repo/api-client";
+import { useAuthUpdateMe } from "@repo/api-client";
 import { useOrgStore } from "@/stores/org";
 import { Spinner } from "@/components/ui/spinner";
 import { OrgSetupForm } from "./_components/org-setup-form";
 import type { OrgSetupFormData } from "./_components/org-setup-form";
-import { KnowledgeUpload } from "./_components/knowledge-upload";
-
-type Step = "form" | "upload";
 
 export default function SetupPage() {
   const router = useRouter();
   const { isSignedIn, isLoaded } = useAuth();
-  const { setOrg } = useOrgStore();
-  const [step, setStep] = useState<Step>("form");
-  const [createdOrgId, setCreatedOrgId] = useState<string | null>(null);
-  const [orgName, setOrgName] = useState("");
-  const [isCreating, setIsCreating] = useState(false);
+  const setOrg = useOrgStore((s) => s.setOrg);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const createMutation = useOrganizationsCreateOrganization();
+  const createOrgMutation = useOrganizationsCreateOrganization();
   const updateOrgMutation = useOrganizationsUpdateOrganization();
   const updateUserMutation = useAuthUpdateMe();
 
-  const { data: orgs, isLoading: listLoading } =
-    useOrganizationsListOrganizations({
-      query: { enabled: isLoaded && isSignedIn },
-    });
-
-  const { data: currentUser, isLoading: userLoading } = useAuthMe({
+  const { data: orgs, isLoading: orgsLoading } = useOrganizationsListOrganizations({
     query: { enabled: isLoaded && isSignedIn },
   });
 
-  const handleOrgDetailsSaved = useCallback(
-    async (data: OrgSetupFormData) => {
-      if (!createdOrgId) return;
-      setIsCreating(true);
-      setError(null);
-      try {
-        await updateOrgMutation.mutateAsync({
-          orgId: createdOrgId,
-          data: {
-            name: data.name,
-            description: data.description || undefined,
-            what_it_does: data.what_it_does || undefined,
-            website_url: data.website_url || undefined,
-          },
-        });
-        setOrgName(data.name);
-        setStep("upload");
-      } catch {
-        setError("Failed to update organization. Please try again.");
-      } finally {
-        setIsCreating(false);
-      }
-    },
-    [createdOrgId, updateOrgMutation],
-  );
+  const existingOrg = useMemo(() => orgs?.[0] ?? null, [orgs]);
+  const shouldGoToDashboard = !orgsLoading && !!existingOrg;
 
-  const completeSetup = useCallback(async () => {
-    if (!createdOrgId) return;
-    try {
-      await updateUserMutation.mutateAsync({ data: { onboarding_completed: true } });
-    } catch {
-      // Non-blocking — the dashboard guard will redirect back if needed
-    }
-    setOrg(createdOrgId, orgName);
-    router.replace("/onboard");
-  }, [createdOrgId, orgName, setOrg, router, updateUserMutation]);
-
-  const handleUploadComplete = useCallback(() => {
-    completeSetup();
-  }, [completeSetup]);
-
-  const handleSkipUpload = useCallback(() => {
-    completeSetup();
-  }, [completeSetup]);
-
-  // Guard: if already onboarded, redirect to dashboard
   useEffect(() => {
-    if (currentUser?.onboarding_completed) {
-      router.replace("/dashboard");
+    if (!shouldGoToDashboard || !existingOrg) {
+      if (shouldGoToDashboard) {
+        router.replace("/dashboard");
+      }
       return;
     }
-    // Store the existing org ID for PATCH (org is auto-created by backend)
-    if (orgs && orgs.length > 0 && !createdOrgId) {
-      const first = orgs[0];
-      if (!first) return;
-      setCreatedOrgId(first.id);
-      setOrgName(first.name);
-    }
-  }, [orgs, currentUser, router, createdOrgId]);
 
-  // Still loading Clerk auth state or user profile
-  if (!isLoaded || userLoading) {
+    setOrg(existingOrg.id, existingOrg.name);
+    router.replace("/dashboard");
+  }, [existingOrg, router, setOrg, shouldGoToDashboard]);
+
+  const handleSubmit = useCallback(
+    async (data: OrgSetupFormData) => {
+      setIsSubmitting(true);
+      setError(null);
+
+      try {
+        const org = existingOrg
+          ? await updateOrgMutation.mutateAsync({
+              orgId: existingOrg.id,
+              data: {
+                name: data.name,
+                description: data.description || undefined,
+                what_it_does: data.what_it_does || undefined,
+                website_url: data.website_url || undefined,
+              },
+            })
+          : await createOrgMutation.mutateAsync({
+              data: {
+                name: data.name,
+                description: data.description || undefined,
+                what_it_does: data.what_it_does || undefined,
+                website_url: data.website_url || undefined,
+              },
+            });
+
+        await updateUserMutation.mutateAsync({
+          data: { onboarding_completed: true },
+        });
+
+        setOrg(org.id, org.name);
+        router.replace("/dashboard");
+      } catch {
+        setError("Failed to set up your organization. Please try again.");
+      } finally {
+        setIsSubmitting(false);
+      }
+    },
+    [
+      createOrgMutation,
+      existingOrg,
+      router,
+      setOrg,
+      updateOrgMutation,
+      updateUserMutation,
+    ],
+  );
+
+  if (!isLoaded || orgsLoading) {
     return (
       <div className="flex justify-center">
         <Spinner />
@@ -109,58 +99,26 @@ export default function SetupPage() {
     );
   }
 
-  // Already onboarded — redirect guard
-  if (currentUser?.onboarding_completed) {
+  if (shouldGoToDashboard) {
     return null;
-  }
-
-  if (listLoading) {
-    return (
-      <div className="flex justify-center">
-        <Spinner />
-      </div>
-    );
   }
 
   return (
     <div className="space-y-6">
-      {step === "form" && (
-        <>
-          <div className="space-y-1.5 text-center">
-            <h1 className="text-xl font-semibold tracking-tight text-foreground">
-              Set up your workspace
-            </h1>
-            <p className="text-sm text-muted-foreground">
-              Tell us about your company to get started
-            </p>
-          </div>
-          <OrgSetupForm
-            onSubmit={handleOrgDetailsSaved}
-            isSubmitting={isCreating}
-            error={error}
-          />
-        </>
-      )}
+      <div className="space-y-1.5 text-center">
+        <h1 className="text-xl font-semibold tracking-tight text-foreground">
+          Set up your workspace
+        </h1>
+        <p className="text-sm text-muted-foreground">
+          Add your organization details to get started
+        </p>
+      </div>
 
-      {step === "upload" && createdOrgId && (
-        <>
-          <div className="space-y-1.5 text-center">
-            <h1 className="text-xl font-semibold tracking-tight text-foreground">
-              Add your knowledge base
-            </h1>
-            <p className="text-sm text-muted-foreground">
-              Upload PDFs or markdown files about your company.
-              <br />
-              You can always add more later.
-            </p>
-          </div>
-          <KnowledgeUpload
-            orgId={createdOrgId}
-            onComplete={handleUploadComplete}
-            onSkip={handleSkipUpload}
-          />
-        </>
-      )}
+      <OrgSetupForm
+        onSubmit={handleSubmit}
+        isSubmitting={isSubmitting}
+        error={error}
+      />
     </div>
   );
 }

@@ -3,7 +3,7 @@
 import { Suspense, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@clerk/nextjs";
-import { useOrganizationsListOrganizations, useAuthMe } from "@repo/api-client";
+import { useOrganizationsListOrganizations } from "@repo/api-client";
 import { useOrgStore } from "@/stores/org";
 import { DashboardShell } from "@/app/(dashboard)/_components/dashboard-shell";
 import { Button } from "@/components/ui/button";
@@ -11,53 +11,38 @@ import { Spinner } from "@/components/ui/spinner";
 
 function OrgInitializer({ children }: { children: React.ReactNode }) {
   const router = useRouter();
+  const orgId = useOrgStore((s) => s.orgId);
+  const orgName = useOrgStore((s) => s.orgName);
+  const setOrg = useOrgStore((s) => s.setOrg);
+  const clearOrg = useOrgStore((s) => s.clearOrg);
   const { isSignedIn, isLoaded } = useAuth();
-  const { setOrg } = useOrgStore();
 
   const {
     data: orgs,
-    isLoading: listLoading,
+    isLoading: orgsLoading,
     isError,
     refetch,
   } = useOrganizationsListOrganizations({
     query: { enabled: isLoaded && isSignedIn },
   });
 
-  const {
-    data: currentUser,
-    isLoading: userLoading,
-  } = useAuthMe({
-    query: { enabled: isLoaded && isSignedIn },
-  });
-
   useEffect(() => {
-    if (listLoading || userLoading || !orgs) return;
+    if (!isLoaded || orgsLoading) return;
 
-    if (orgs.length > 0) {
-      const first = orgs[0];
-      if (!first) return;
+    const firstOrg = orgs?.[0] ?? null;
 
-      if (!currentUser?.onboarding_completed) {
-        // New user — redirect to org setup, regardless of cached orgId
-        router.replace("/setup");
-        return;
-      }
-
-      // Existing user — always pull org from API (fixes stale localStorage)
-      setOrg(first.id, first.name);
-    } else {
-      // No orgs at all — redirect to setup
+    if (!firstOrg) {
+      clearOrg();
       router.replace("/setup");
+      return;
     }
-  }, [orgs, listLoading, userLoading, currentUser, setOrg, router]);
 
-  if (!isLoaded || listLoading || userLoading) {
-    return (
-      <div className="flex h-screen items-center justify-center">
-        <Spinner />
-      </div>
-    );
-  }
+    setOrg(firstOrg.id, firstOrg.name);
+  }, [clearOrg, isLoaded, orgs, orgsLoading, router, setOrg]);
+
+  const firstOrg = orgs?.[0] ?? null;
+  const orgReady =
+    !!firstOrg && orgId === firstOrg.id && orgName === firstOrg.name;
 
   if (isError) {
     return (
@@ -70,6 +55,14 @@ function OrgInitializer({ children }: { children: React.ReactNode }) {
             Try again
           </Button>
         </div>
+      </div>
+    );
+  }
+
+  if (!isLoaded || orgsLoading || !orgReady) {
+    return (
+      <div className="flex h-screen items-center justify-center">
+        <Spinner />
       </div>
     );
   }

@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.agent.guardrails import check_input
 from app.agent.state import AgentState
+from app.activity.service import record_activity_from_context
 from app.employees.models import Employee
 from app.employees.templates import get_template
 
@@ -74,6 +75,16 @@ async def input_guardrail_node(
             config.get("configurable", {}).get("employee_id"),
             reason,
             content[:100],
+        )
+        await record_activity_from_context(
+            "ai_engine",
+            "Input guardrail blocked request",
+            status="blocked",
+            metadata={
+                "stage": "input_guardrail",
+                "reason": reason,
+                "input_preview": content[:200],
+            },
         )
         return {
             "input_blocked": True,

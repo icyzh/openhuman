@@ -11,6 +11,7 @@ async function fetchActivityEvents(
   orgId: string,
   params: {
     employeeId?: string;
+    employeeType?: string;
     level?: string;
     search?: string;
     offset?: number;
@@ -23,6 +24,7 @@ async function fetchActivityEvents(
     offset: String(params.offset ?? 0),
   });
   if (params.employeeId) searchParams.set("employee_id", params.employeeId);
+  if (params.employeeType) searchParams.set("employee_type", params.employeeType);
   if (params.search) searchParams.set("q", params.search);
   if (params.level) {
     const types = levelToEventTypes(params.level);
@@ -54,6 +56,7 @@ function levelToEventTypes(level: string): string[] {
       return []; // No event types map to trace — returns all
     case "debug":
       return [
+        "ai_engine",
         "tool_usage",
         "memory_operation",
         "mcp_connected",
@@ -86,14 +89,16 @@ export function useActivityLogs(
   getToken: () => Promise<string | null>,
   params: {
     employeeId?: string;
+    employeeType?: string;
     level?: string;
     search?: string;
   },
 ) {
-  const { employeeId, level, search = "" } = params;
+  const { employeeId, employeeType, level, search = "" } = params;
 
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
   const [entries, setEntries] = useState<ActivityEventResponse[]>([]);
   const [total, setTotal] = useState(0);
   const [offset, setOffset] = useState(0);
@@ -119,14 +124,21 @@ export function useActivityLogs(
   const loadingMoreRef = useRef(false);
 
   const load = useCallback(
-    async (currentOffset: number, append = false) => {
+    async (
+      currentOffset: number,
+      options?: { append?: boolean; background?: boolean },
+    ) => {
       if (!orgId) return;
+      const append = options?.append ?? false;
+      const background = options?.background ?? false;
 
       // Prevent concurrent loadMore calls
       if (append && loadingMoreRef.current) return;
       if (append) loadingMoreRef.current = true;
 
-      if (currentOffset === 0) {
+      if (background) {
+        setRefreshing(true);
+      } else if (currentOffset === 0) {
         setLoading(true);
       } else {
         setLoadingMore(true);
@@ -139,6 +151,7 @@ export function useActivityLogs(
           orgId,
           {
             employeeId,
+            employeeType,
             level: level || undefined,
             search: debouncedSearch || undefined,
             offset: currentOffset,
@@ -165,19 +178,20 @@ export function useActivityLogs(
         }
       } finally {
         if (thisRequestId === requestIdRef.current) {
-          setLoading(false);
-          setLoadingMore(false);
+          if (!background) setLoading(false);
+          if (append) setLoadingMore(false);
+          if (background) setRefreshing(false);
         }
         if (append) loadingMoreRef.current = false;
       }
     },
-    [orgId, employeeId, level, debouncedSearch, getToken],
+    [orgId, employeeId, employeeType, level, debouncedSearch, getToken],
   );
 
   // Reload when filters change
   const prevFiltersRef = useRef("");
   useEffect(() => {
-    const key = `${employeeId ?? ""}|${level ?? ""}|${debouncedSearch}`;
+    const key = `${employeeId ?? ""}|${employeeType ?? ""}|${level ?? ""}|${debouncedSearch}`;
     if (key !== prevFiltersRef.current) {
       prevFiltersRef.current = key;
       setEntries([]);
@@ -189,18 +203,26 @@ export function useActivityLogs(
       prevFiltersRef.current = "loaded";
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [employeeId, level, debouncedSearch]);
+  }, [employeeId, employeeType, level, debouncedSearch]);
 
   const loadMore = useCallback(() => {
-    if (offset < total && !loadingMoreRef.current) load(offset, true);
+    if (offset < total && !loadingMoreRef.current) {
+      load(offset, { append: true });
+    }
   }, [offset, total, load]);
+
+  const refresh = useCallback(async () => {
+    await load(0, { background: true });
+  }, [load]);
 
   return {
     entries,
     total,
     loading,
     loadingMore,
+    refreshing,
     hasMore: offset < total,
     loadMore,
+    refresh,
   };
 }

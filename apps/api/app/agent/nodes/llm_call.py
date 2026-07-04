@@ -7,6 +7,7 @@ from langchain_core.tools import BaseTool
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.activity.service import record_activity_from_context
 from app.agent.llm import get_llm
 from app.agent.state import AgentState
 from app.employees.models import Employee
@@ -76,6 +77,16 @@ async def llm_call_node(state: AgentState, config: RunnableConfig) -> dict:
         len(allowed_tools),
         [t.name for t in allowed_tools],
     )
+    await record_activity_from_context(
+        "ai_engine",
+        "LLM invoked",
+        status="running",
+        metadata={
+            "stage": "llm_call",
+            "bound_tools_count": len(allowed_tools),
+            "tools": [t.name for t in allowed_tools],
+        },
+    )
 
     # Call LLM
     response = await llm.ainvoke(state["messages"], config=config)
@@ -86,16 +97,38 @@ async def llm_call_node(state: AgentState, config: RunnableConfig) -> dict:
     if isinstance(response, AIMessage):
         content = response.content
         raw_text = str(content) if content else ""
-        
+
         if response.tool_calls:
+            tool_names = [tc["name"] for tc in response.tool_calls]
             logger.info(
                 "[LLM Node] LLM chose to call tools: %s",
-                [tc["name"] for tc in response.tool_calls],
+                tool_names,
+            )
+            await record_activity_from_context(
+                "ai_engine",
+                f"LLM selected {len(tool_names)} tool(s)",
+                status="succeeded",
+                metadata={
+                    "stage": "llm_decision",
+                    "decision": "tool_call",
+                    "tool_names": tool_names,
+                    "response_preview": raw_text[:200] if raw_text else None,
+                },
             )
         else:
             logger.debug(
                 "[LLM Node] LLM responded with content: '%s...'",
                 raw_text[:200],
+            )
+            await record_activity_from_context(
+                "ai_engine",
+                "LLM returned text response",
+                status="succeeded",
+                metadata={
+                    "stage": "llm_decision",
+                    "decision": "text_response",
+                    "response_preview": raw_text[:200],
+                },
             )
 
     # MessagesState handles appending the response message automatically

@@ -85,7 +85,7 @@ export function SignUpForm() {
       }
 
       if (signUp.status === "complete" && signUp.createdSessionId) {
-        await signUp.finalize({ navigate: () => router.push("/setup") });
+        await signUp.finalize({ navigate: () => router.push("/dashboard") });
         return;
       }
 
@@ -120,7 +120,7 @@ export function SignUpForm() {
       }
 
       if (signUp.status === "complete" && signUp.createdSessionId) {
-        await signUp.finalize({ navigate: () => router.push("/setup") });
+        await signUp.finalize({ navigate: () => router.push("/dashboard") });
         return;
       }
 

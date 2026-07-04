@@ -1,6 +1,7 @@
 from langchain_core.messages import AIMessage
 import logging
 
+from app.activity.service import record_activity_from_context
 from app.agent.guardrails import check_output
 from app.agent.state import AgentState
 
@@ -34,6 +35,16 @@ async def output_guardrail_node(state: AgentState) -> dict:
             "[Output Guardrail Blocked] Response blocked. Reason: %s | Output: '%s...'",
             reason,
             content[:100],
+        )
+        await record_activity_from_context(
+            "ai_engine",
+            "Output guardrail blocked response",
+            status="blocked",
+            metadata={
+                "stage": "output_guardrail",
+                "reason": reason,
+                "output_preview": content[:200],
+            },
         )
         return {
             "output_guardrail_passed": False,

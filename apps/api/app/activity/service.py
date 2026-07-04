@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from datetime import datetime, timedelta, timezone
 from uuid import UUID
 
@@ -14,9 +15,11 @@ from app.activity.schemas import (
 )
 
 _PAGE_SIZE = 50
+logger = logging.getLogger(__name__)
 
 # Allowed event_type values — used to validate user input before SQL interpolation
 _ALLOWED_EVENT_TYPES = frozenset({
+    "ai_engine",
     "agent_run",
     "agent_conversation",
     "document_upload",
@@ -68,6 +71,48 @@ async def record_activity(
     db.add(event)
     await db.commit()
     return event
+
+
+async def record_activity_from_context(
+    event_type: str,
+    summary: str,
+    *,
+    status: str | None = None,
+    description: str | None = None,
+    metadata: dict | None = None,
+    occurred_at: datetime | None = None,
+) -> None:
+    """Best-effort helper for graph nodes that only have contextvars available."""
+    try:
+        from app.activity.context import (
+            activity_employee_id,
+            activity_employee_name,
+            activity_org_id,
+            activity_platform,
+        )
+        from app.core.database import async_session_factory
+
+        org_id = activity_org_id.get()
+        if not org_id:
+            return
+
+        employee_id = activity_employee_id.get()
+        async with async_session_factory() as session:
+            await record_activity(
+                session,
+                UUID(org_id),
+                event_type,
+                summary,
+                employee_id=UUID(employee_id) if employee_id else None,
+                employee_name=activity_employee_name.get(),
+                platform=activity_platform.get(),
+                status=status,
+                description=description,
+                metadata=metadata,
+                occurred_at=occurred_at,
+            )
+    except Exception:
+        logger.debug("Failed to record contextual activity for %s", event_type, exc_info=True)
 
 
 # ── CTE template (shared by feed + count queries) ──────────────────────────
@@ -235,6 +280,7 @@ def _build_org_and_filters(
     org_id: UUID,
     event_types: list[str] | None,
     employee_id: UUID | None,
+    employee_type: str | None,
     q: str | None = None,
     *,  # start parameter placeholders
     date_from_label: str = "date_from",
@@ -243,7 +289,7 @@ def _build_org_and_filters(
     """Build the WHERE clause for org-scoping and optional filters.
 
     Returns a SQL fragment that references named parameters:
-      :org_id, :date_from, :date_to, :employee_id
+      :org_id, :date_from, :date_to, :employee_id, :employee_type
     and a literal ARRAY[...] for event_types (safe — values are validated enum labels).
     """
     clauses = [
@@ -275,9 +321,17 @@ def _build_org_and_filters(
     if employee_id is not None:
         clauses.append("AND ae.employee_id = :employee_id")
 
+    if employee_type:
+        clauses.append(
+            "AND ae.employee_id IN ("
+            "SELECT id FROM employees WHERE org_id = :org_id AND employee_type = :employee_type"
+            ")"
+        )
+
     if q:
-        # ILIKE search on summary
-        clauses.append("AND ae.summary ILIKE :q")
+        clauses.append(
+            "AND (ae.summary ILIKE :q OR COALESCE(ae.description, '') ILIKE :q)"
+        )
 
     return "\n    ".join(clauses)
 
@@ -291,6 +345,7 @@ async def get_activity_feed(
     *,
     event_types: list[str] | None = None,
     employee_id: UUID | None = None,
+    employee_type: str | None = None,
     q: str | None = None,
     date_from: datetime | None = None,
     date_to: datetime | None = None,
@@ -304,7 +359,7 @@ async def get_activity_feed(
         date_from = date_to - timedelta(days=90)
 
     where_clause = _build_org_and_filters(
-        org_id, event_types, employee_id, q,
+        org_id, event_types, employee_id, employee_type, q,
         date_from_label="df", date_to_label="dt",
     )
 
@@ -338,6 +393,8 @@ async def get_activity_feed(
     }
     if employee_id is not None:
         params["employee_id"] = employee_id
+    if employee_type:
+        params["employee_type"] = employee_type
     if q:
         params["q"] = f"%{q}%"
 

@@ -266,6 +266,27 @@ async def run_agent(
     activity_platform.set(data.platform)
     activity_channel_id.set(data.channel_id)
 
+    if emp_org_id:
+        try:
+            await record_activity(
+                db,
+                emp_org_id,
+                "ai_engine",
+                "Agent run started",
+                employee_id=employee_id,
+                employee_name=employee_name,
+                platform=data.platform,
+                status="running",
+                metadata={
+                    "stage": "agent_run",
+                    "thread_key": thread_key,
+                    "channel_id": data.channel_id,
+                    "user_id": data.user_id,
+                },
+            )
+        except Exception:
+            logger.exception("Failed to record agent run start activity")
+
     try:
         result_state = await graph.ainvoke(initial_state, config=config)
 
@@ -281,6 +302,29 @@ async def run_agent(
             elapsed,
             error,
         )
+
+        if emp_org_id:
+            try:
+                await record_activity(
+                    db,
+                    emp_org_id,
+                    "ai_engine",
+                    "Agent run completed",
+                    employee_id=employee_id,
+                    employee_name=employee_name,
+                    platform=data.platform,
+                    status="failed" if error else "succeeded",
+                    metadata={
+                        "stage": "agent_run",
+                        "thread_key": thread_key,
+                        "channel_id": data.channel_id,
+                        "tool_rounds": tool_rounds,
+                        "elapsed_seconds": round(elapsed, 3),
+                        "error": error,
+                    },
+                )
+            except Exception:
+                logger.exception("Failed to record agent run completion activity")
 
         # Record guardrail events (best-effort)
         if emp_org_id and result_state.get("input_blocked"):
@@ -358,6 +402,23 @@ async def run_agent(
         # Record failure activity (best-effort)
         if emp_org_id:
             try:
+                await record_activity(
+                    db,
+                    emp_org_id,
+                    "ai_engine",
+                    "Agent run failed",
+                    employee_id=employee_id,
+                    employee_name=employee_name,
+                    platform=data.platform,
+                    status="failed",
+                    metadata={
+                        "stage": "agent_run",
+                        "thread_key": thread_key,
+                        "channel_id": data.channel_id,
+                        "elapsed_seconds": round(elapsed, 3),
+                        "error": str(exc),
+                    },
+                )
                 await record_activity(
                     db,
                     emp_org_id,
