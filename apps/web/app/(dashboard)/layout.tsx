@@ -12,7 +12,7 @@ import { Spinner } from "@/components/ui/spinner";
 function OrgInitializer({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const { isSignedIn, isLoaded } = useAuth();
-  const { orgId, setOrg } = useOrgStore();
+  const { setOrg } = useOrgStore();
 
   const {
     data: orgs,
@@ -20,7 +20,7 @@ function OrgInitializer({ children }: { children: React.ReactNode }) {
     isError,
     refetch,
   } = useOrganizationsListOrganizations({
-    query: { enabled: isLoaded && isSignedIn && !orgId },
+    query: { enabled: isLoaded && isSignedIn },
   });
 
   const {
@@ -31,24 +31,25 @@ function OrgInitializer({ children }: { children: React.ReactNode }) {
   });
 
   useEffect(() => {
-    if (orgId) return;
     if (listLoading || userLoading || !orgs) return;
 
     if (orgs.length > 0) {
       const first = orgs[0];
       if (!first) return;
 
-      if (currentUser?.onboarding_completed) {
-        // Existing user — set org and render dashboard
-        setOrg(first.id, first.name);
-      } else {
-        // New user — send to org setup first
+      if (!currentUser?.onboarding_completed) {
+        // New user — redirect to org setup, regardless of cached orgId
         router.replace("/setup");
+        return;
       }
+
+      // Existing user — always pull org from API (fixes stale localStorage)
+      setOrg(first.id, first.name);
     } else {
+      // No orgs at all — redirect to setup
       router.replace("/setup");
     }
-  }, [orgs, listLoading, userLoading, currentUser, setOrg, router, orgId]);
+  }, [orgs, listLoading, userLoading, currentUser, setOrg, router]);
 
   if (!isLoaded || listLoading || userLoading) {
     return (

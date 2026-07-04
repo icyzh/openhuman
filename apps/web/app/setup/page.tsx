@@ -20,7 +20,7 @@ type Step = "form" | "upload";
 export default function SetupPage() {
   const router = useRouter();
   const { isSignedIn, isLoaded } = useAuth();
-  const { setOrg, orgId } = useOrgStore();
+  const { setOrg } = useOrgStore();
   const [step, setStep] = useState<Step>("form");
   const [createdOrgId, setCreatedOrgId] = useState<string | null>(null);
   const [orgName, setOrgName] = useState("");
@@ -33,7 +33,7 @@ export default function SetupPage() {
 
   const { data: orgs, isLoading: listLoading } =
     useOrganizationsListOrganizations({
-      query: { enabled: isLoaded && isSignedIn && !orgId },
+      query: { enabled: isLoaded && isSignedIn },
     });
 
   const { data: currentUser, isLoading: userLoading } = useAuthMe({
