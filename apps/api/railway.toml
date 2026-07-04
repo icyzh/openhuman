@@ -2,13 +2,7 @@
 builder = "DOCKERFILE"
 dockerfilePath = "Dockerfile"
 watchPatterns = [
-  "app/**",
-  "alembic/**",
-  "alembic.ini",
-  "pyproject.toml",
-  "uv.lock",
-  "Dockerfile",
-  "railway.toml",
+  "apps/api/**",
 ]
 
 [deploy]
