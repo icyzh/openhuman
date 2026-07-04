@@ -1,6 +1,7 @@
 "use client";
 
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useCallback } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import {
   Search,
   ExternalLink,
@@ -23,6 +24,7 @@ import {
   PhoneCall,
   Layout,
   Flame,
+  Loader2,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Input } from "@/components/ui/input";
@@ -38,6 +40,13 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { BrandLogo } from "@/components/brand-logos";
+import { useOrgStore } from "@/stores/org";
+import {
+  useMcpListMcpConnectors,
+  useMcpCreateMcpConnection,
+  useMcpDeleteMcpConnection,
+  useEmployeesListEmployeesRoute,
+} from "@repo/api-client";
 
 // Define categories
 type Category = "All" | "Productivity" | "Development" | "Data & DBs" | "Communication" | "AI & Search";
@@ -605,10 +614,91 @@ export default function McpMarketplacePage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedCategory, setSelectedCategory] = useState<Category>("All");
   const [selectedServer, setSelectedServer] = useState<McpServer | null>(null);
-  const [installedServers, setInstalledServers] = useState<Record<string, boolean>>({
-    gmail: true, // Default connected
-    gamma: true, // Default connected
+  const [connectingSlugs, setConnectingSlugs] = useState<Set<string>>(new Set());
+
+  const orgId = useOrgStore((s) => s.orgId);
+
+  const { data: connectors } = useMcpListMcpConnectors(orgId ?? "", {
+    query: { enabled: !!orgId },
   });
+
+  const { data: employees } = useEmployeesListEmployeesRoute(orgId ?? "", {
+    query: { enabled: !!orgId },
+  });
+
+  const empId = employees?.[0]?.id;
+
+  const connectedSlugs = useMemo(() => {
+    const slugs = new Set<string>();
+    if (connectors) {
+      for (const c of connectors) {
+        if (c.is_connected) slugs.add(c.slug);
+      }
+    }
+    return slugs;
+  }, [connectors]);
+
+  const queryClient = useQueryClient();
+  const createMutation = useMcpCreateMcpConnection();
+  const deleteMutation = useMcpDeleteMcpConnection();
+
+  const invalidate = useCallback(() => {
+    queryClient.invalidateQueries({ queryKey: [`/api/organizations/${orgId}/mcp-connectors`] });
+  }, [queryClient, orgId]);
+
+  const handleInstallToggle = async (e: React.MouseEvent, server: McpServer) => {
+    e.stopPropagation();
+    if (!orgId || !empId) {
+      toast.error("Organization or employee not loaded.");
+      return;
+    }
+
+    const isCurrentlyInstalled = connectedSlugs.has(server.id);
+    setConnectingSlugs((prev) => new Set(prev).add(server.id));
+
+    try {
+      if (isCurrentlyInstalled) {
+        await deleteMutation.mutateAsync({
+          orgId,
+          empId,
+          slug: server.id,
+        });
+        await invalidate();
+        toast.success(`Revoked access to ${server.name}.`);
+      } else {
+        if (server.authType === "OAuth2") {
+          const token = typeof window !== "undefined" && window.Clerk?.session
+            ? await window.Clerk.session.getToken()
+            : null;
+          const apiUrl = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
+          const url = `${apiUrl}/api/organizations/${orgId}/employees/${empId}/mcp-connections/${server.id}/install?token=${encodeURIComponent(token ?? "")}&redirect_to=${encodeURIComponent(window.location.href)}`;
+          window.location.href = url;
+          return;
+        }
+
+        await createMutation.mutateAsync({
+          orgId,
+          empId,
+          slug: server.id,
+          data: {
+            credential: "",
+            scopes: [],
+            org_wide: false,
+          },
+        });
+        await invalidate();
+        toast.success(`Successfully installed and authorized ${server.name}!`);
+      }
+    } catch (err: any) {
+      toast.error(`Failed to ${isCurrentlyInstalled ? "disconnect" : "connect"} ${server.name}. ${err?.message ?? ""}`);
+    } finally {
+      setConnectingSlugs((prev) => {
+        const next = new Set(prev);
+        next.delete(server.id);
+        return next;
+      });
+    }
+  };
 
   // Filter servers
   const filteredServers = useMemo(() => {
@@ -623,22 +713,6 @@ export default function McpMarketplacePage() {
       return matchesSearch && matchesCategory;
     });
   }, [searchQuery, selectedCategory]);
-
-  const handleInstallToggle = (e: React.MouseEvent, server: McpServer) => {
-    e.stopPropagation(); // Avoid opening details modal
-    const isCurrentlyInstalled = installedServers[server.id];
-    
-    setInstalledServers((prev) => ({
-      ...prev,
-      [server.id]: !isCurrentlyInstalled,
-    }));
-
-    if (isCurrentlyInstalled) {
-      toast.success(`Revoked access to ${server.name}.`);
-    } else {
-      toast.success(`Successfully installed and authorized ${server.name}!`);
-    }
-  };
 
   const categories: Category[] = ["All", "Productivity", "Development", "Data & DBs", "Communication", "AI & Search"];
 
@@ -709,7 +783,8 @@ export default function McpMarketplacePage() {
       {filteredServers.length > 0 ? (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {filteredServers.map((server) => {
-            const isInstalled = installedServers[server.id];
+            const isInstalled = connectedSlugs.has(server.id);
+            const isLoading = connectingSlugs.has(server.id);
 
             return (
               <Card
@@ -757,6 +832,7 @@ export default function McpMarketplacePage() {
                   <Button
                     size="sm"
                     variant={isInstalled ? "outline" : "default"}
+                    disabled={isLoading}
                     onClick={(e) => handleInstallToggle(e, server)}
                     className={`h-7 px-3 text-[10px] font-bold transition-all rounded-md shrink-0 flex items-center gap-1 ${
                       isInstalled
@@ -764,7 +840,12 @@ export default function McpMarketplacePage() {
                         : ""
                     }`}
                   >
-                    {isInstalled ? (
+                    {isLoading ? (
+                      <>
+                        <Loader2 className="size-3 animate-spin" />
+                        {isInstalled ? "Revoking..." : "Connecting..."}
+                      </>
+                    ) : isInstalled ? (
                       <>
                         <CheckCircle className="size-3.5 fill-current" />
                         Connected
@@ -904,15 +985,22 @@ export default function McpMarketplacePage() {
                 </Button>
                 <Button
                   size="sm"
+                  disabled={connectingSlugs.has(selectedServer.id)}
                   onClick={(e) => {
                     handleInstallToggle(e, selectedServer);
                     setSelectedServer(null);
                   }}
                   className={`flex-1 sm:flex-none ${
-                    installedServers[selectedServer.id] ? "bg-emerald-600 hover:bg-emerald-700" : ""
+                    connectedSlugs.has(selectedServer.id) ? "bg-emerald-600 hover:bg-emerald-700" : ""
                   }`}
                 >
-                  {installedServers[selectedServer.id] ? "Disconnect" : "Connect Server"}
+                  {connectingSlugs.has(selectedServer.id) ? (
+                    <><Loader2 className="size-3 animate-spin mr-1" />Working...</>
+                  ) : connectedSlugs.has(selectedServer.id) ? (
+                    "Disconnect"
+                  ) : (
+                    "Connect Server"
+                  )}
                 </Button>
               </div>
             </DialogFooter>
