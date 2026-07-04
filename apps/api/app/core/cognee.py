@@ -57,7 +57,7 @@ def apply_cognee_config() -> None:
 
     # Route all Cognee storage (SQLite system DB, LanceDB vectors, Kuzu graphs,
     # cache, logs) to the persistent volume so data survives deploys.
-    data_dir = settings.cognee_data_dir  # /app/cognee_data
+    data_dir = os.path.abspath(settings.cognee_data_dir)  # /app/cognee_data
 
     if os.environ.get("VERCEL") == "1":
         os.environ["SYSTEM_ROOT_DIRECTORY"] = "/tmp/cognee_system"

@@ -11,6 +11,7 @@ import {
   GitGraphIcon,
   MailIcon,
   PlusIcon,
+  Presentation,
   Trash2Icon,
   UploadIcon,
   XIcon,
@@ -857,6 +858,7 @@ export default function EmployeeDetailPage() {
               </h3>
             </CardHeader>
             <CardContent className="flex flex-col gap-4">
+              {/* Gmail Connection Row */}
               <div className="flex items-center justify-between rounded-lg border border-border bg-muted/30 px-4 py-3">
                 <div className="flex items-center gap-3">
                   <div className="flex size-10 items-center justify-center rounded-lg border border-border bg-background">
@@ -894,6 +896,54 @@ export default function EmployeeDetailPage() {
                 ) : (
                   <a
                     href={`${API_URL}/api/organizations/${orgId}/employees/${empId}/mcp-connections/gmail/install?redirect_to=${encodeURIComponent(
+                      window.location.origin + window.location.pathname
+                    )}`}
+                    className="inline-flex shrink-0 items-center gap-1.5 rounded-md bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground hover:bg-primary/90"
+                  >
+                    <ExternalLinkIcon className="size-3.5" />
+                    Connect
+                  </a>
+                )}
+              </div>
+
+              {/* Gamma Connection Row */}
+              <div className="flex items-center justify-between rounded-lg border border-border bg-muted/30 px-4 py-3">
+                <div className="flex items-center gap-3">
+                  <div className="flex size-10 items-center justify-center rounded-lg border border-border bg-background">
+                    <Presentation className="size-5 text-primary" />
+                  </div>
+                  <div className="flex flex-col gap-0.5">
+                    <span className="text-sm font-medium text-foreground">
+                      Gamma Presentations
+                    </span>
+                    {mcpConnectionsData?.connections?.some(
+                      (c) => c.connector_slug === "gamma" && c.status === "connected"
+                    ) ? (
+                      <span className="text-xs text-green-600 dark:text-green-400 font-medium">
+                        Connected
+                      </span>
+                    ) : (
+                      <span className="text-xs text-muted-foreground">
+                        Let {employee.name} generate presentations, documents, and web pages.
+                      </span>
+                    )}
+                  </div>
+                </div>
+                {mcpConnectionsData?.connections?.some(
+                  (c) => c.connector_slug === "gamma" && c.status === "connected"
+                ) ? (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="text-destructive hover:bg-destructive/10 hover:text-destructive shrink-0"
+                    onClick={() => handleDisconnectMcp("gamma")}
+                    disabled={deleteMcpConnectionMutation.isPending}
+                  >
+                    Disconnect
+                  </Button>
+                ) : (
+                  <a
+                    href={`${API_URL}/api/organizations/${orgId}/employees/${empId}/mcp-connections/gamma/install?redirect_to=${encodeURIComponent(
                       window.location.origin + window.location.pathname
                     )}`}
                     className="inline-flex shrink-0 items-center gap-1.5 rounded-md bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground hover:bg-primary/90"

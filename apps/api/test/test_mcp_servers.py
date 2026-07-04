@@ -31,6 +31,7 @@ async def test_all_servers():
         "vercel": os.getenv("VERCEL_TOKEN"),
         "web_search": None, # none needed
         "gmail": os.getenv("GMAIL_TOKEN"), # OAuth access token for testing
+        "gamma": os.getenv("GAMMA_TOKEN"), # OAuth access token for testing
     }
     
     for slug, spec in REGISTRY.items():

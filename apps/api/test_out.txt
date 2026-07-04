@@ -1,0 +1,1253 @@
+============================= test session starts ==============================
+platform linux -- Python 3.12.13, pytest-9.1.1, pluggy-1.6.0
+rootdir: /mnt/work/PROJECTS/openhuman/apps/api
+configfile: pyproject.toml
+plugins: asyncio-1.4.0, typeguard-4.5.2, anyio-4.14.1, langsmith-0.9.4
+asyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+collected 3 items
+
+tests/test_auth_api.py EEE                                               [100%]
+
+==================================== ERRORS ====================================
+_______________ ERROR at setup of test_me_rejects_missing_token ________________
+
+self = JSONB(astext_type=Text())
+visitor = <sqlalchemy.dialects.sqlite.base.SQLiteTypeCompiler object at 0x7f53d1bda180>
+kw = {'type_expression': Column('personality', JSONB(astext_type=Text()), table=<employees>)}
+
+    def _compiler_dispatch(
+        self: Visitable, visitor: Any, **kw: Any
+    ) -> str:
+        """Look for an attribute named "visit_<visit_name>" on the
+        visitor, and call it with the same kw params.
+    
+        """
+        try:
+>           meth = getter(visitor)
+                   ^^^^^^^^^^^^^^^
+E           AttributeError: 'SQLiteTypeCompiler' object has no attribute 'visit_JSONB'. Did you mean: 'visit_JSON'?
+
+.venv/lib/python3.12/site-packages/sqlalchemy/sql/visitors.py:134: AttributeError
+
+The above exception was the direct cause of the following exception:
+
+self = <sqlalchemy.dialects.sqlite.base.SQLiteDDLCompiler object at 0x7f53d1a8b3b0>
+create = <sqlalchemy.sql.ddl.CreateTable object at 0x7f53d1c2cfe0>, kw = {}
+
+    def visit_create_table(self, create, **kw):
+        table = create.element
+        preparer = self.preparer
+    
+        text = "\nCREATE "
+        if table._prefixes:
+            text += " ".join(table._prefixes) + " "
+    
+        text += "TABLE "
+        if create.if_not_exists:
+            text += "IF NOT EXISTS "
+    
+        text += preparer.format_table(table) + " "
+    
+        create_table_suffix = self.create_table_suffix(table)
+        if create_table_suffix:
+            text += create_table_suffix + " "
+    
+        text += "("
+    
+        separator = "\n"
+    
+        # if only one primary key, specify it along with the column
+        first_pk = False
+        for create_column in create.columns:
+            column = create_column.element
+            try:
+>               processed = self.process(
+                    create_column, first_pk=column.primary_key and not first_pk
+                )
+
+.venv/lib/python3.12/site-packages/sqlalchemy/sql/compiler.py:6842: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+.venv/lib/python3.12/site-packages/sqlalchemy/sql/compiler.py:948: in process
+    return obj._compiler_dispatch(self, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.12/site-packages/sqlalchemy/sql/visitors.py:138: in _compiler_dispatch
+    return meth(self, **kw)  # type: ignore  # noqa: E501
+           ^^^^^^^^^^^^^^^^
+.venv/lib/python3.12/site-packages/sqlalchemy/sql/compiler.py:6873: in visit_create_column
+    text = self.get_column_specification(column, first_pk=first_pk)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.12/site-packages/sqlalchemy/dialects/sqlite/base.py:1700: in get_column_specification
+    coltype = self.dialect.type_compiler_instance.process(
+.venv/lib/python3.12/site-packages/sqlalchemy/sql/compiler.py:993: in process
+    return type_._compiler_dispatch(self, **kw)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.12/site-packages/sqlalchemy/sql/visitors.py:136: in _compiler_dispatch
+    return visitor.visit_unsupported_compilation(self, err, **kw)  # type: ignore  # noqa: E501
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <sqlalchemy.dialects.sqlite.base.SQLiteTypeCompiler object at 0x7f53d1bda180>
+element = JSONB(astext_type=Text())
+err = AttributeError("'SQLiteTypeCompiler' object has no attribute 'visit_JSONB'")
+kw = {'type_expression': Column('personality', JSONB(astext_type=Text()), table=<employees>)}
+
+    def visit_unsupported_compilation(
+        self, element: Any, err: Exception, **kw: Any
+    ) -> NoReturn:
+>       raise exc.UnsupportedCompilationError(self, element) from err
+E       sqlalchemy.exc.UnsupportedCompilationError: Compiler <sqlalchemy.dialects.sqlite.base.SQLiteTypeCompiler object at 0x7f53d1bda180> can't render element of type JSONB (Background on this error at: https://sqlalche.me/e/20/l7de)
+
+.venv/lib/python3.12/site-packages/sqlalchemy/sql/compiler.py:998: UnsupportedCompilationError
+
+The above exception was the direct cause of the following exception:
+
+tmp_path = PosixPath('/tmp/pytest-of-icybear/pytest-6/test_me_rejects_missing_token0')
+
+    @pytest.fixture()
+    def client(tmp_path) -> Generator[TestClient, None, None]:
+        database_url = f"sqlite+aiosqlite:///{tmp_path / 'auth.db'}"
+        engine = create_async_engine(database_url)
+    
+        @event.listens_for(engine.sync_engine, "connect")
+        def register_uuid_function(dbapi_connection, _connection_record) -> None:
+            dbapi_connection.create_function("gen_random_uuid", 0, lambda: uuid4().hex)
+    
+        session_factory = async_sessionmaker(
+            engine,
+            class_=AsyncSession,
+            expire_on_commit=False,
+        )
+    
+        async def prepare_database() -> None:
+            async with engine.begin() as connection:
+                await connection.run_sync(Base.metadata.create_all)
+    
+        async def override_get_db() -> AsyncGenerator[AsyncSession, None]:
+            async with session_factory() as session:
+                yield session
+    
+        test_app = FastAPI()
+        test_app.include_router(auth_router)
+        test_app.dependency_overrides[get_db] = override_get_db
+    
+>       anyio.run(prepare_database)
+
+tests/test_auth_api.py:51: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+.venv/lib/python3.12/site-packages/anyio/_core/_eventloop.py:83: in run
+    return async_backend.run(func, args, {}, backend_options)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.12/site-packages/anyio/_backends/_asyncio.py:2436: in run
+    return runner.run(wrapper())
+           ^^^^^^^^^^^^^^^^^^^^^
+/home/icybear/.local/share/uv/python/cpython-3.12.13-linux-x86_64-gnu/lib/python3.12/asyncio/runners.py:118: in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/home/icybear/.local/share/uv/python/cpython-3.12.13-linux-x86_64-gnu/lib/python3.12/asyncio/base_events.py:691: in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+.venv/lib/python3.12/site-packages/anyio/_backends/_asyncio.py:2419: in wrapper
+    return await func(*args)
+           ^^^^^^^^^^^^^^^^^
+tests/test_auth_api.py:41: in prepare_database
+    await connection.run_sync(Base.metadata.create_all)
+.venv/lib/python3.12/site-packages/sqlalchemy/ext/asyncio/engine.py:888: in run_sync
+    return await greenlet_spawn(
+.venv/lib/python3.12/site-packages/sqlalchemy/util/_concurrency_py3k.py:203: in greenlet_spawn
+    result = context.switch(value)
+             ^^^^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.12/site-packages/sqlalchemy/sql/schema.py:5930: in create_all
+    bind._run_ddl_visitor(
+.venv/lib/python3.12/site-packages/sqlalchemy/engine/base.py:2469: in _run_ddl_visitor
+    ).traverse_single(element)
+      ^^^^^^^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.12/site-packages/sqlalchemy/sql/visitors.py:661: in traverse_single
+    return meth(obj, **kw)
+           ^^^^^^^^^^^^^^^
+.venv/lib/python3.12/site-packages/sqlalchemy/sql/ddl.py:985: in visit_metadata
+    self.traverse_single(
+.venv/lib/python3.12/site-packages/sqlalchemy/sql/visitors.py:661: in traverse_single
+    return meth(obj, **kw)
+           ^^^^^^^^^^^^^^^
+.venv/lib/python3.12/site-packages/sqlalchemy/sql/ddl.py:1023: in visit_table
+    )._invoke_with(self.connection)
+      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.12/site-packages/sqlalchemy/sql/ddl.py:322: in _invoke_with
+    return bind.execute(self)
+           ^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.12/site-packages/sqlalchemy/engine/base.py:1421: in execute
+    return meth(
+.venv/lib/python3.12/site-packages/sqlalchemy/sql/ddl.py:188: in _execute_on_connection
+    return connection._execute_ddl(
+.venv/lib/python3.12/site-packages/sqlalchemy/engine/base.py:1529: in _execute_ddl
+    compiled = ddl.compile(
+.venv/lib/python3.12/site-packages/sqlalchemy/sql/elements.py:311: in compile
+    return self._compiler(dialect, **kw)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.12/site-packages/sqlalchemy/sql/ddl.py:77: in _compiler
+    return dialect.ddl_compiler(dialect, self, **kw)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.12/site-packages/sqlalchemy/sql/compiler.py:902: in __init__
+    self.string = self.process(self.statement, **compile_kwargs)
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.12/site-packages/sqlalchemy/sql/compiler.py:948: in process
+    return obj._compiler_dispatch(self, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.12/site-packages/sqlalchemy/sql/visitors.py:138: in _compiler_dispatch
+    return meth(self, **kw)  # type: ignore  # noqa: E501
+           ^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <sqlalchemy.dialects.sqlite.base.SQLiteDDLCompiler object at 0x7f53d1a8b3b0>
+create = <sqlalchemy.sql.ddl.CreateTable object at 0x7f53d1c2cfe0>, kw = {}
+
+    def visit_create_table(self, create, **kw):
+        table = create.element
+        preparer = self.preparer
+    
+        text = "\nCREATE "
+        if table._prefixes:
+            text += " ".join(table._prefixes) + " "
+    
+        text += "TABLE "
+        if create.if_not_exists:
+            text += "IF NOT EXISTS "
+    
+        text += preparer.format_table(table) + " "
+    
+        create_table_suffix = self.create_table_suffix(table)
+        if create_table_suffix:
+            text += create_table_suffix + " "
+    
+        text += "("
+    
+        separator = "\n"
+    
+        # if only one primary key, specify it along with the column
+        first_pk = False
+        for create_column in create.columns:
+            column = create_column.element
+            try:
+                processed = self.process(
+                    create_column, first_pk=column.primary_key and not first_pk
+                )
+                if processed is not None:
+                    text += separator
+                    separator = ", \n"
+                    text += "\t" + processed
+                if column.primary_key:
+                    first_pk = True
+            except exc.CompileError as ce:
+>               raise exc.CompileError(
+                    "(in table '%s', column '%s'): %s"
+                    % (table.description, column.name, ce.args[0])
+                ) from ce
+E               sqlalchemy.exc.CompileError: (in table 'employees', column 'personality'): Compiler <sqlalchemy.dialects.sqlite.base.SQLiteTypeCompiler object at 0x7f53d1bda180> can't render element of type JSONB
+
+.venv/lib/python3.12/site-packages/sqlalchemy/sql/compiler.py:6852: CompileError
+------------------------------ Captured log setup ------------------------------
+DEBUG    asyncio:selector_events.py:64 Using selector: EpollSelector
+DEBUG    aiosqlite:core.py:62 executing <function connect.<locals>.connector at 0x7f53d1a477e0>
+DEBUG    aiosqlite:core.py:67 operation <function connect.<locals>.connector at 0x7f53d1a477e0> completed
+DEBUG    aiosqlite:core.py:62 executing functools.partial(<built-in method create_function of sqlite3.Connection object at 0x7f53d1a3da80>, 'regexp', 2, <function SQLiteDialect_pysqlite.on_connect.<locals>.regexp at 0x7f53d1a1f2e0>, deterministic=True)
+DEBUG    aiosqlite:core.py:67 operation functools.partial(<built-in method create_function of sqlite3.Connection object at 0x7f53d1a3da80>, 'regexp', 2, <function SQLiteDialect_pysqlite.on_connect.<locals>.regexp at 0x7f53d1a1f2e0>, deterministic=True) completed
+DEBUG    aiosqlite:core.py:62 executing functools.partial(<built-in method create_function of sqlite3.Connection object at 0x7f53d1a3da80>, 'floor', 1, <built-in function floor>, deterministic=True)
+DEBUG    aiosqlite:core.py:67 operation functools.partial(<built-in method create_function of sqlite3.Connection object at 0x7f53d1a3da80>, 'floor', 1, <built-in function floor>, deterministic=True) completed
+DEBUG    aiosqlite:core.py:62 executing functools.partial(<built-in method cursor of sqlite3.Connection object at 0x7f53d1a3da80>)
+DEBUG    aiosqlite:core.py:67 operation functools.partial(<built-in method cursor of sqlite3.Connection object at 0x7f53d1a3da80>) completed
+DEBUG    aiosqlite:core.py:62 executing functools.partial(<built-in method execute of sqlite3.Cursor object at 0x7f53d1a2b3c0>, 'PRAGMA read_uncommitted', [])
+DEBUG    aiosqlite:core.py:67 operation functools.partial(<built-in method execute of sqlite3.Cursor object at 0x7f53d1a2b3c0>, 'PRAGMA read_uncommitted', []) completed
+DEBUG    aiosqlite:core.py:62 executing functools.partial(<built-in method fetchall of sqlite3.Cursor object at 0x7f53d1a2b3c0>)
+DEBUG    aiosqlite:core.py:67 operation functools.partial(<built-in method fetchall of sqlite3.Cursor object at 0x7f53d1a2b3c0>) completed
+DEBUG    aiosqlite:core.py:62 executing functools.partial(<built-in method close of sqlite3.Cursor object at 0x7f53d1a2b3c0>)
+DEBUG    aiosqlite:core.py:67 operation functools.partial(<built-in method close of sqlite3.Cursor object at 0x7f53d1a2b3c0>) completed
+DEBUG    aiosqlite:core.py:62 executing functools.partial(<built-in method rollback of sqlite3.Connection object at 0x7f53d1a3da80>)
+DEBUG    aiosqlite:core.py:67 operation functools.partial(<built-in method rollback of sqlite3.Connection object at 0x7f53d1a3da80>) completed
+DEBUG    aiosqlite:core.py:62 executing functools.partial(<built-in method create_function of sqlite3.Connection object at 0x7f53d1a3da80>, 'gen_random_uuid', 0, <function client.<locals>.register_uuid_function.<locals>.<lambda> at 0x7f53d1a47f60>, deterministic=False)
+DEBUG    aiosqlite:core.py:67 operation functools.partial(<built-in method create_function of sqlite3.Connection object at 0x7f53d1a3da80>, 'gen_random_uuid', 0, <function client.<locals>.register_uuid_function.<locals>.<lambda> at 0x7f53d1a47f60>, deterministic=False) completed
+DEBUG    aiosqlite:core.py:62 executing functools.partial(<built-in method cursor of sqlite3.Connection object at 0x7f53d1a3da80>)
+DEBUG    aiosqlite:core.py:67 operation functools.partial(<built-in method cursor of sqlite3.Connection object at 0x7f53d1a3da80>) completed
+DEBUG    aiosqlite:core.py:62 executing functools.partial(<built-in method execute of sqlite3.Cursor object at 0x7f53d1a2b5c0>, 'PRAGMA main.table_info("users")', ())
+DEBUG    aiosqlite:core.py:67 operation functools.partial(<built-in method execute of sqlite3.Cursor object at 0x7f53d1a2b5c0>, 'PRAGMA main.table_info("users")', ()) completed
+DEBUG    aiosqlite:core.py:62 executing functools.partial(<built-in method fetchall of sqlite3.Cursor object at 0x7f53d1a2b5c0>)
+DEBUG    aiosqlite:core.py:67 operation functools.partial(<built-in method fetchall of sqlite3.Cursor object at 0x7f53d1a2b5c0>) completed
+DEBUG    aiosqlite:core.py:62 executing functools.partial(<built-in method close of sqlite3.Cursor object at 0x7f53d1a2b5c0>)
+DEBUG    aiosqlite:core.py:67 operation functools.partial(<built-in method close of sqlite3.Cursor object at 0x7f53d1a2b5c0>) completed
+DEBUG    aiosqlite:core.py:62 executing functools.partial(<built-in method cursor of sqlite3.Connection object at 0x7f53d1a3da80>)
+DEBUG    aiosqlite:core.py:67 operation functools.partial(<built-in method cursor of sqlite3.Connection object at 0x7f53d1a3da80>) completed
+DEBUG    aiosqlite:core.py:62 executing functools.partial(<built-in method execute of sqlite3.Cursor object at 0x7f53d1a2a740>, 'PRAGMA temp.table_info("users")', ())
+DEBUG    aiosqlite:core.py:67 operation functools.partial(<built-in method execute of sqlite3.Cursor object at 0x7f53d1a2a740>, 'PRAGMA temp.table_info("users")', ()) completed
+DEBUG    aiosqlite:core.py:62 executing functools.partial(<built-in method fetchall of sqlite3.Cursor object at 0x7f53d1a2a740>)
+DEBUG    aiosqlite:core.py:67 operation functools.partial(<built-in method fetchall of sqlite3.Cursor object at 0x7f53d1a2a740>) completed
+DEBUG    aiosqlite:core.py:62 executing functools.partial(<built-in method close of sqlite3.Cursor object at 0x7f53d1a2a740>)
+DEBUG    aiosqlite:core.py:67 operation functools.partial(<built-in method close of sqlite3.Cursor object at 0x7f53d1a2a740>) completed
+DEBUG    aiosqlite:core.py:62 executing functools.partial(<built-in method cursor of sqlite3.Connection object at 0x7f53d1a3da80>)
+DEBUG    aiosqlite:core.py:67 operation functools.partial(<built-in method cursor of sqlite3.Connection object at 0x7f53d1a3da80>) completed
+DEBUG    aiosqlite:core.py:62 executing functools.partial(<built-in method execute of sqlite3.Cursor object at 0x7f53d1a2b6c0>, 'PRAGMA main.table_info("channel_assignments")', ())
+DEBUG    aiosqlite:core.py:67 operation functools.partial(<built-in method execute of sqlite3.Cursor object at 0x7f53d1a2b6c0>, 'PRAGMA main.table_info("channel_assignments")', ()) completed
+DEBUG    aiosqlite:core.py:62 executing functools.partial(<built-in method fetchall of sqlite3.Cursor object at 0x7f53d1a2b6c0>)
+DEBUG    aiosqlite:core.py:67 operation functools.partial(<built-in method fetchall of sqlite3.Cursor object at 0x7f53d1a2b6c0>) completed
+DEBUG    aiosqlite:core.py:62 executing functools.partial(<built-in method close of sqlite3.Cursor object at 0x7f53d1a2b6c0>)
+DEBUG    aiosqlite:core.py:67 operation functools.partial(<built-in method close of sqlite3.Cursor object at 0x7f53d1a2b6c0>) completed
+DEBUG    aiosqlite:core.py:62 executing functools.partial(<built-in method cursor of sqlite3.Connection object at 0x7f53d1a3da80>)
+DEBUG    aiosqlite:core.py:67 operation functools.partial(<built-in method cursor of sqlite3.Connection object at 0x7f53d1a3da80>) completed
+DEBUG    aiosqlite:core.py:62 executing functools.partial(<built-in method execute of sqlite3.Cursor object at 0x7f53d1a2b740>, 'PRAGMA temp.table_info("channel_assignments")', ())
+DEBUG    aiosqlite:core.py:67 operation functools.partial(<built-in method execute of sqlite3.Cursor object at 0x7f53d1a2b740>, 'PRAGMA temp.table_info("channel_assignments")', ()) completed
+DEBUG    aiosqlite:core.py:62 executing functools.partial(<built-in method fetchall of sqlite3.Cursor object at 0x7f53d1a2b740>)
+DEBUG    aiosqlite:core.py:67 operation functools.partial(<built-in method fetchall of sqlite3.Cursor object at 0x7f53d1a2b740>) completed
+DEBUG    aiosqlite:core.py:62 executing functools.partial(<built-in method close of sqlite3.Cursor object at 0x7f53d1a2b740>)
+DEBUG    aiosqlite:core.py:67 operation functools.partial(<built-in method close of sqlite3.Cursor object at 0x7f53d1a2b740>) completed
+DEBUG    aiosqlite:core.py:62 executing functools.partial(<built-in method cursor of sqlite3.Connection object at 0x7f53d1a3da80>)
+DEBUG    aiosqlite:core.py:67 operation functools.partial(<built-in method cursor of sqlite3.Connection object at 0x7f53d1a3da80>) completed
+DEBUG    aiosqlite:core.py:62 executing functools.partial(<built-in method execute of sqlite3.Cursor object at 0x7f53d1a2b840>, 'PRAGMA main.table_info("documents")', ())
+DEBUG    aiosqlite:core.py:67 operation functools.partial(<built-in method execute of sqlite3.Cursor object at 0x7f53d1a2b840>, 'PRAGMA main.table_info("documents")', ()) completed
+DEBUG    aiosqlite:core.py:62 executing functools.partial(<built-in method fetchall of sqlite3.Cursor object at 0x7f53d1a2b840>)
+DEBUG    aiosqlite:core.py:67 operation functools.partial(<built-in method fetchall of sqlite3.Cursor object at 0x7f53d1a2b840>) completed
+DEBUG    aiosqlite:core.py:62 executing functools.partial(<built-in method close of sqlite3.Cursor object at 0x7f53d1a2b840>)
+DEBUG    aiosqlite:core.py:67 operation functools.partial(<built-in method close of sqlite3.Cursor object at 0x7f53d1a2b840>) completed
+DEBUG    aiosqlite:core.py:62 executing functools.partial(<built-in method cursor of sqlite3.Connection object at 0x7f53d1a3da80>)
+DEBUG    aiosqlite:core.py:67 operation functools.partial(<built-in method cursor of sqlite3.Connection object at 0x7f53d1a3da80>) completed
+DEBUG    aiosqlite:core.py:62 executing functools.partial(<built-in method execute of sqlite3.Cursor object at 0x7f53d1a2b8c0>, 'PRAGMA temp.table_info("documents")', ())
+DEBUG    aiosqlite:core.py:67 operation functools.partial(<built-in method execute of sqlite3.Cursor object at 0x7f53d1a2b8c0>, 'PRAGMA temp.table_info("documents")', ()) completed
+DEBUG    aiosqlite:core.py:62 executing functools.partial(<built-in method fetchall of sqlite3.Cursor object at 0x7f53d1a2b8c0>)
+DEBUG    aiosqlite:core.py:67 operation functools.partial(<built-in method fetchall of sqlite3.Cursor object at 0x7f53d1a2b8c0>) completed
+DEBUG    aiosqlite:core.py:62 executing functools.partial(<built-in method close of sqlite3.Cursor object at 0x7f53d1a2b8c0>)
+DEBUG    aiosqlite:core.py:67 operation functools.partial(<built-in method close of sqlite3.Cursor object at 0x7f53d1a2b8c0>) completed
+DEBUG    aiosqlite:core.py:62 executing functools.partial(<built-in method cursor of sqlite3.Connection object at 0x7f53d1a3da80>)
+DEBUG    aiosqlite:core.py:67 operation functools.partial(<built-in method cursor of sqlite3.Connection object at 0x7f53d1a3da80>) completed
+DEBUG    aiosqlite:core.py:62 executing functools.partial(<built-in method execute of sqlite3.Cursor object at 0x7f53d1a2b9c0>, 'PRAGMA main.table_info("employees")', ())
+DEBUG    aiosqlite:core.py:67 operation functools.partial(<built-in method execute of sqlite3.Cursor object at 0x7f53d1a2b9c0>, 'PRAGMA main.table_info("employees")', ()) completed
+DEBUG    aiosqlite:core.py:62 executing functools.partial(<built-in method fetchall of sqlite3.Cursor object at 0x7f53d1a2b9c0>)
+DEBUG    aiosqlite:core.py:67 operation functools.partial(<built-in method fetchall of sqlite3.Cursor object at 0x7f53d1a2b9c0>) completed
+DEBUG    aiosqlite:core.py:62 executing functools.partial(<built-in method close of sqlite3.Cursor object at 0x7f53d1a2b9c0>)
+DEBUG    aiosqlite:core.py:67 operation functools.partial(<built-in method close of sqlite3.Cursor object at 0x7f53d1a2b9c0>) completed
+DEBUG    aiosqlite:core.py:62 executing functools.partial(<built-in method cursor of sqlite3.Connection object at 0x7f53d1a3da80>)
+DEBUG    aiosqlite:core.py:67 operation functools.partial(<built-in method cursor of sqlite3.Connection object at 0x7f53d1a3da80>) completed
+DEBUG    aiosqlite:core.py:62 executing functools.partial(<built-in method execute of sqlite3.Cursor object at 0x7f53d1a2ba40>, 'PRAGMA temp.table_info("employees")', ())
+DEBUG    aiosqlite:core.py:67 operation functools.partial(<built-in method execute of sqlite3.Cursor object at 0x7f53d1a2ba40>, 'PRAGMA temp.table_info("employees")', ()) completed
+DEBUG    aiosqlite:core.py:62 executing functools.partial(<built-in method fetchall of sqlite3.Cursor object at 0x7f53d1a2ba40>)
+DEBUG    aiosqlite:core.py:67 operation functools.partial(<built-in method fetchall of sqlite3.Cursor object at 0x7f53d1a2ba40>) completed
+DEBUG    aiosqlite:core.py:62 executing functools.partial(<built-in method close of sqlite3.Cursor object at 0x7f53d1a2ba40>)
+DEBUG    aiosqlite:core.py:67 operation functools.partial(<built-in method close of sqlite3.Cursor object at 0x7f53d1a2ba40>) completed
+DEBUG    aiosqlite:core.py:62 executing functools.partial(<built-in method cursor of sqlite3.Connection object at 0x7f53d1a3da80>)
+DEBUG    aiosqlite:core.py:67 operation functools.partial(<built-in method cursor of sqlite3.Connection object at 0x7f53d1a3da80>) completed
+DEBUG    aiosqlite:core.py:62 executing functools.partial(<built-in method execute of sqlite3.Cursor object at 0x7f53d1a2bbc0>, 'PRAGMA main.table_info("organizations")', ())
+DEBUG    aiosqlite:core.py:67 operation functools.partial(<built-in method execute of sqlite3.Cursor object at 0x7f53d1a2bbc0>, 'PRAGMA main.table_info("organizations")', ()) completed
+DEBUG    aiosqlite:core.py:62 executing functools.partial(<built-in method fetchall of sqlite3.Cursor object at 0x7f53d1a2bbc0>)
+DEBUG    aiosqlite:core.py:67 operation functools.partial(<built-in method fetchall of sqlite3.Cursor object at 0x7f53d1a2bbc0>) completed
+DEBUG    aiosqlite:core.py:62 executing functools.partial(<built-in method close of sqlite3.Cursor object at 0x7f53d1a2bbc0>)
+DEBUG    aiosqlite:core.py:67 operation functools.partial(<built-in method close of sqlite3.Cursor object at 0x7f53d1a2bbc0>) completed
+DEBUG    aiosqlite:core.py:62 executing functools.partial(<built-in method cursor of sqlite3.Connection object at 0x7f53d1a3da80>)
+DEBUG    aiosqlite:core.py:67 operation functools.partial(<built-in method cursor of sqlite3.Connection object at 0x7f53d1a3da80>) completed
+DEBUG    aiosqlite:core.py:62 executing functools.partial(<built-in method execute of sqlite3.Cursor object at 0x7f53d1a2bc40>, 'PRAGMA temp.table_info("organizations")', ())
+DEBUG    aiosqlite:core.py:67 operation functools.partial(<built-in method execute of sqlite3.Cursor object at 0x7f53d1a2bc40>, 'PRAGMA temp.table_info("organizations")', ()) completed
+DEBUG    aiosqlite:core.py:62 executing functools.partial(<built-in method fetchall of sqlite3.Cursor object at 0x7f53d1a2bc40>)
+DEBUG    aiosqlite:core.py:67 operation functools.partial(<built-in method fetchall of sqlite3.Cursor object at 0x7f53d1a2bc40>) completed
+DEBUG    aiosqlite:core.py:62 executing functools.partial(<built-in method close of sqlite3.Cursor object at 0x7f53d1a2bc40>)
+DEBUG    aiosqlite:core.py:67 operation functools.partial(<built-in method close of sqlite3.Cursor object at 0x7f53d1a2bc40>) completed
+DEBUG    aiosqlite:core.py:62 executing functools.partial(<built-in method cursor of sqlite3.Connection object at 0x7f53d1a3da80>)
+DEBUG    aiosqlite:core.py:67 operation functools.partial(<built-in method cursor of sqlite3.Connection object at 0x7f53d1a3da80>) completed
+DEBUG    aiosqlite:core.py:62 executing functools.partial(<built-in method execute of sqlite3.Cursor object at 0x7f53d1a2bd40>, 'PRAGMA main.table_info("agent_jobs")', ())
+DEBUG    aiosqlite:core.py:67 operation functools.partial(<built-in method execute of sqlite3.Cursor object at 0x7f53d1a2bd40>, 'PRAGMA main.table_info("agent_jobs")', ()) completed
+DEBUG    aiosqlite:core.py:62 executing functools.partial(<built-in method fetchall of sqlite3.Cursor object at 0x7f53d1a2bd40>)
+DEBUG    aiosqlite:core.py:67 operation functools.partial(<built-in method fetchall of sqlite3.Cursor object at 0x7f53d1a2bd40>) completed
+DEBUG    aiosqlite:core.py:62 executing functools.partial(<built-in method close of sqlite3.Cursor object at 0x7f53d1a2bd40>)
+DEBUG    aiosqlite:core.py:67 operation functools.partial(<built-in method close of sqlite3.Cursor object at 0x7f53d1a2bd40>) completed
+DEBUG    aiosqlite:core.py:62 executing functools.partial(<built-in method cursor of sqlite3.Connection object at 0x7f53d1a3da80>)
+DEBUG    aiosqlite:core.py:67 operation functools.partial(<built-in method cursor of sqlite3.Connection object at 0x7f53d1a3da80>) completed
+DEBUG    aiosqlite:core.py:62 executing functools.partial(<built-in method execute of sqlite3.Cursor object at 0x7f53d1a2bdc0>, 'PRAGMA temp.table_info("agent_jobs")', ())
+DEBUG    aiosqlite:core.py:67 operation functools.partial(<built-in method execute of sqlite3.Cursor object at 0x7f53d1a2bdc0>, 'PRAGMA temp.table_info("agent_jobs")', ()) completed
+DEBUG    aiosqlite:core.py:62 executing functools.partial(<built-in method fetchall of sqlite3.Cursor object at 0x7f53d1a2bdc0>)
+DEBUG    aiosqlite:core.py:67 operation functools.partial(<built-in method fetchall of sqlite3.Cursor object at 0x7f53d1a2bdc0>) completed
+DEBUG    aiosqlite:core.py:62 executing functools.partial(<built-in method close of sqlite3.Cursor object at 0x7f53d1a2bdc0>)
+DEBUG    aiosqlite:core.py:67 operation functools.partial(<built-in method close of sqlite3.Cursor object at 0x7f53d1a2bdc0>) completed
+DEBUG    aiosqlite:core.py:62 executing functools.partial(<built-in method cursor of sqlite3.Connection object at 0x7f53d1a3da80>)
+DEBUG    aiosqlite:core.py:67 operation functools.partial(<built-in method cursor of sqlite3.Connection object at 0x7f53d1a3da80>) completed
+DEBUG    aiosqlite:core.py:62 executing functools.partial(<built-in method execute of sqlite3.Cursor object at 0x7f53d1a2bec0>, 'PRAGMA main.table_info("mcp_connections")', ())
+DEBUG    aiosqlite:core.py:67 operation functools.partial(<built-in method execute of sqlite3.Cursor object at 0x7f53d1a2bec0>, 'PRAGMA main.table_info("mcp_connections")', ()) completed
+DEBUG    aiosqlite:core.py:62 executing functools.partial(<built-in method fetchall of sqlite3.Cursor object at 0x7f53d1a2bec0>)
+DEBUG    aiosqlite:core.py:67 operation functools.partial(<built-in method fetchall of sqlite3.Cursor object at 0x7f53d1a2bec0>) completed
+DEBUG    aiosqlite:core.py:62 executing functools.partial(<built-in method close of sqlite3.Cursor object at 0x7f53d1a2bec0>)
+DEBUG    aiosqlite:core.py:67 operation functools.partial(<built-in method close of sqlite3.Cursor object at 0x7f53d1a2bec0>) completed
+DEBUG    aiosqlite:core.py:62 executing functools.partial(<built-in method cursor of sqlite3.Connection object at 0x7f53d1a3da80>)
+DEBUG    aiosqlite:core.py:67 operation functools.partial(<built-in method cursor of sqlite3.Connection object at 0x7f53d1a3da80>) completed
+DEBUG    aiosqlite:core.py:62 executing functools.partial(<built-in method execute of sqlite3.Cursor object at 0x7f53d1a2bf40>, 'PRAGMA temp.table_info("mcp_connections")', ())
+DEBUG    aiosqlite:core.py:67 operation functools.partial(<built-in method execute of sqlite3.Cursor object at 0x7f53d1a2bf40>, 'PRAGMA temp.table_info("mcp_connections")', ()) completed
+DEBUG    aiosqlite:core.py:62 executing functools.partial(<built-in method fetchall of sqlite3.Cursor object at 0x7f53d1a2bf40>)
+DEBUG    aiosqlite:core.py:67 operation functools.partial(<built-in method fetchall of sqlite3.Cursor object at 0x7f53d1a2bf40>) completed
+DEBUG    aiosqlite:core.py:62 executing functools.partial(<built-in method close of sqlite3.Cursor object at 0x7f53d1a2bf40>)
+DEBUG    aiosqlite:core.py:67 operation functools.partial(<built-in method close of sqlite3.Cursor object at 0x7f53d1a2bf40>) completed
+DEBUG    aiosqlite:core.py:62 executing functools.partial(<built-in method cursor of sqlite3.Connection object at 0x7f53d1a3da80>)
+DEBUG    aiosqlite:core.py:67 operation functools.partial(<built-in method cursor of sqlite3.Connection object at 0x7f53d1a3da80>) completed
+DEBUG    aiosqlite:core.py:62 executing functools.partial(<built-in method execute of sqlite3.Cursor object at 0x7f53d1a962c0>, "\nCREATE TABLE users (\n\tid CHAR(32) DEFAULT (gen_random_uuid()) NOT NULL, \n\tclerk_id VARCHAR(255) NOT NULL, \n\temail VARCHAR(255) NOT NULL, \n\tname VARCHAR(255) NOT NULL, \n\tis_active BOOLEAN DEFAULT 'true' NOT NULL, \n\tonboarding_completed BOOLEAN DEFAULT true NOT NULL, \n\tcreated_at DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL, \n\tupdated_at DATETIME, \n\tPRIMARY KEY (id)\n)\n\n", ())
+DEBUG    aiosqlite:core.py:67 operation functools.partial(<built-in method execute of sqlite3.Cursor object at 0x7f53d1a962c0>, "\nCREATE TABLE users (\n\tid CHAR(32) DEFAULT (gen_random_uuid()) NOT NULL, \n\tclerk_id VARCHAR(255) NOT NULL, \n\temail VARCHAR(255) NOT NULL, \n\tname VARCHAR(255) NOT NULL, \n\tis_active BOOLEAN DEFAULT 'true' NOT NULL, \n\tonboarding_completed BOOLEAN DEFAULT true NOT NULL, \n\tcreated_at DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL, \n\tupdated_at DATETIME, \n\tPRIMARY KEY (id)\n)\n\n", ()) completed
+DEBUG    aiosqlite:core.py:62 executing functools.partial(<built-in method close of sqlite3.Cursor object at 0x7f53d1a962c0>)
+DEBUG    aiosqlite:core.py:67 operation functools.partial(<built-in method close of sqlite3.Cursor object at 0x7f53d1a962c0>) completed
+DEBUG    aiosqlite:core.py:62 executing functools.partial(<built-in method cursor of sqlite3.Connection object at 0x7f53d1a3da80>)
+DEBUG    aiosqlite:core.py:67 operation functools.partial(<built-in method cursor of sqlite3.Connection object at 0x7f53d1a3da80>) completed
+DEBUG    aiosqlite:core.py:62 executing functools.partial(<built-in method execute of sqlite3.Cursor object at 0x7f53d1a966c0>, 'CREATE UNIQUE INDEX ix_users_email ON users (email)', ())
+DEBUG    aiosqlite:core.py:67 operation functools.partial(<built-in method execute of sqlite3.Cursor object at 0x7f53d1a966c0>, 'CREATE UNIQUE INDEX ix_users_email ON users (email)', ()) completed
+DEBUG    aiosqlite:core.py:62 executing functools.partial(<built-in method close of sqlite3.Cursor object at 0x7f53d1a966c0>)
+DEBUG    aiosqlite:core.py:67 operation functools.partial(<built-in method close of sqlite3.Cursor object at 0x7f53d1a966c0>) completed
+DEBUG    aiosqlite:core.py:62 executing functools.partial(<built-in method cursor of sqlite3.Connection object at 0x7f53d1a3da80>)
+DEBUG    aiosqlite:core.py:67 operation functools.partial(<built-in method cursor of sqlite3.Connection object at 0x7f53d1a3da80>) completed
+DEBUG    aiosqlite:core.py:62 executing functools.partial(<built-in method execute of sqlite3.Cursor object at 0x7f53d1a969c0>, 'CREATE UNIQUE INDEX ix_users_clerk_id ON users (clerk_id)', ())
+DEBUG    aiosqlite:core.py:67 operation functools.partial(<built-in method execute of sqlite3.Cursor object at 0x7f53d1a969c0>, 'CREATE UNIQUE INDEX ix_users_clerk_id ON users (clerk_id)', ()) completed
+DEBUG    aiosqlite:core.py:62 executing functools.partial(<built-in method close of sqlite3.Cursor object at 0x7f53d1a969c0>)
+DEBUG    aiosqlite:core.py:67 operation functools.partial(<built-in method close of sqlite3.Cursor object at 0x7f53d1a969c0>) completed
+DEBUG    aiosqlite:core.py:62 executing functools.partial(<built-in method cursor of sqlite3.Connection object at 0x7f53d1a3da80>)
+DEBUG    aiosqlite:core.py:67 operation functools.partial(<built-in method cursor of sqlite3.Connection object at 0x7f53d1a3da80>) completed
+DEBUG    aiosqlite:core.py:62 executing functools.partial(<built-in method execute of sqlite3.Cursor object at 0x7f53d1a2bac0>, '\nCREATE TABLE organizations (\n\tid CHAR(32) DEFAULT (gen_random_uuid()) NOT NULL, \n\towner_id CHAR(32) NOT NULL, \n\tname VARCHAR(255) NOT NULL, \n\tdescription TEXT, \n\twhat_it_does TEXT, \n\twebsite_url VARCHAR(2048), \n\tcognee_tenant_id VARCHAR(255), \n\tcognee_tenant_name VARCHAR(255), \n\tcognee_system_user_id VARCHAR(255), \n\tcognee_system_user_name VARCHAR(255), \n\tcognee_dataset_id VARCHAR(255), \n\tcognee_dataset_name VARCHAR(255), \n\tcreated_at DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL, \n\tPRIMARY KEY (id), \n\tFOREIGN KEY(owner_id) REFERENCES users (id) ON DELETE CASCADE\n)\n\n', ())
+DEBUG    aiosqlite:core.py:67 operation functools.partial(<built-in method execute of sqlite3.Cursor object at 0x7f53d1a2bac0>, '\nCREATE TABLE organizations (\n\tid CHAR(32) DEFAULT (gen_random_uuid()) NOT NULL, \n\towner_id CHAR(32) NOT NULL, \n\tname VARCHAR(255) NOT NULL, \n\tdescription TEXT, \n\twhat_it_does TEXT, \n\twebsite_url VARCHAR(2048), \n\tcognee_tenant_id VARCHAR(255), \n\tcognee_tenant_name VARCHAR(255), \n\tcognee_system_user_id VARCHAR(255), \n\tcognee_system_user_name VARCHAR(255), \n\tcognee_dataset_id VARCHAR(255), \n\tcognee_dataset_name VARCHAR(255), \n\tcreated_at DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL, \n\tPRIMARY KEY (id), \n\tFOREIGN KEY(owner_id) REFERENCES users (id) ON DELETE CASCADE\n)\n\n', ()) completed
+DEBUG    aiosqlite:core.py:62 executing functools.partial(<built-in method close of sqlite3.Cursor object at 0x7f53d1a2bac0>)
+DEBUG    aiosqlite:core.py:67 operation functools.partial(<built-in method close of sqlite3.Cursor object at 0x7f53d1a2bac0>) completed
+DEBUG    aiosqlite:core.py:62 executing functools.partial(<built-in method cursor of sqlite3.Connection object at 0x7f53d1a3da80>)
+DEBUG    aiosqlite:core.py:67 operation functools.partial(<built-in method cursor of sqlite3.Connection object at 0x7f53d1a3da80>) completed
+DEBUG    aiosqlite:core.py:62 executing functools.partial(<built-in method execute of sqlite3.Cursor object at 0x7f53d1a972c0>, 'CREATE INDEX ix_organizations_owner_id ON organizations (owner_id)', ())
+DEBUG    aiosqlite:core.py:67 operation functools.partial(<built-in method execute of sqlite3.Cursor object at 0x7f53d1a972c0>, 'CREATE INDEX ix_organizations_owner_id ON organizations (owner_id)', ()) completed
+DEBUG    aiosqlite:core.py:62 executing functools.partial(<built-in method close of sqlite3.Cursor object at 0x7f53d1a972c0>)
+DEBUG    aiosqlite:core.py:67 operation functools.partial(<built-in method close of sqlite3.Cursor object at 0x7f53d1a972c0>) completed
+DEBUG    aiosqlite:core.py:62 executing functools.partial(<built-in method rollback of sqlite3.Connection object at 0x7f53d1a3da80>)
+DEBUG    aiosqlite:core.py:67 operation functools.partial(<built-in method rollback of sqlite3.Connection object at 0x7f53d1a3da80>) completed
+DEBUG    aiosqlite:core.py:62 executing functools.partial(<built-in method rollback of sqlite3.Connection object at 0x7f53d1a3da80>)
+DEBUG    aiosqlite:core.py:67 operation functools.partial(<built-in method rollback of sqlite3.Connection object at 0x7f53d1a3da80>) completed
+__________ ERROR at setup of test_me_returns_user_when_authenticated ___________
+
+self = JSONB(astext_type=Text())
+visitor = <sqlalchemy.dialects.sqlite.base.SQLiteTypeCompiler object at 0x7f53d11630e0>
+kw = {'type_expression': Column('personality', JSONB(astext_type=Text()), table=<employees>)}
+
+    def _compiler_dispatch(
+        self: Visitable, visitor: Any, **kw: Any
+    ) -> str:
+        """Look for an attribute named "visit_<visit_name>" on the
+        visitor, and call it with the same kw params.
+    
+        """
+        try:
+>           meth = getter(visitor)
+                   ^^^^^^^^^^^^^^^
+E           AttributeError: 'SQLiteTypeCompiler' object has no attribute 'visit_JSONB'. Did you mean: 'visit_JSON'?
+
+.venv/lib/python3.12/site-packages/sqlalchemy/sql/visitors.py:134: AttributeError
+
+The above exception was the direct cause of the following exception:
+
+self = <sqlalchemy.dialects.sqlite.base.SQLiteDDLCompiler object at 0x7f53d117fec0>
+create = <sqlalchemy.sql.ddl.CreateTable object at 0x7f53d117ff50>, kw = {}
+
+    def visit_create_table(self, create, **kw):
+        table = create.element
+        preparer = self.preparer
+    
+        text = "\nCREATE "
+        if table._prefixes:
+            text += " ".join(table._prefixes) + " "
+    
+        text += "TABLE "
+        if create.if_not_exists:
+            text += "IF NOT EXISTS "
+    
+        text += preparer.format_table(table) + " "
+    
+        create_table_suffix = self.create_table_suffix(table)
+        if create_table_suffix:
+            text += create_table_suffix + " "
+    
+        text += "("
+    
+        separator = "\n"
+    
+        # if only one primary key, specify it along with the column
+        first_pk = False
+        for create_column in create.columns:
+            column = create_column.element
+            try:
+>               processed = self.process(
+                    create_column, first_pk=column.primary_key and not first_pk
+                )
+
+.venv/lib/python3.12/site-packages/sqlalchemy/sql/compiler.py:6842: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+.venv/lib/python3.12/site-packages/sqlalchemy/sql/compiler.py:948: in process
+    return obj._compiler_dispatch(self, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.12/site-packages/sqlalchemy/sql/visitors.py:138: in _compiler_dispatch
+    return meth(self, **kw)  # type: ignore  # noqa: E501
+           ^^^^^^^^^^^^^^^^
+.venv/lib/python3.12/site-packages/sqlalchemy/sql/compiler.py:6873: in visit_create_column
+    text = self.get_column_specification(column, first_pk=first_pk)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.12/site-packages/sqlalchemy/dialects/sqlite/base.py:1700: in get_column_specification
+    coltype = self.dialect.type_compiler_instance.process(
+.venv/lib/python3.12/site-packages/sqlalchemy/sql/compiler.py:993: in process
+    return type_._compiler_dispatch(self, **kw)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.12/site-packages/sqlalchemy/sql/visitors.py:136: in _compiler_dispatch
+    return visitor.visit_unsupported_compilation(self, err, **kw)  # type: ignore  # noqa: E501
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <sqlalchemy.dialects.sqlite.base.SQLiteTypeCompiler object at 0x7f53d11630e0>
+element = JSONB(astext_type=Text())
+err = AttributeError("'SQLiteTypeCompiler' object has no attribute 'visit_JSONB'")
+kw = {'type_expression': Column('personality', JSONB(astext_type=Text()), table=<employees>)}
+
+    def visit_unsupported_compilation(
+        self, element: Any, err: Exception, **kw: Any
+    ) -> NoReturn:
+>       raise exc.UnsupportedCompilationError(self, element) from err
+E       sqlalchemy.exc.UnsupportedCompilationError: Compiler <sqlalchemy.dialects.sqlite.base.SQLiteTypeCompiler object at 0x7f53d11630e0> can't render element of type JSONB (Background on this error at: https://sqlalche.me/e/20/l7de)
+
+.venv/lib/python3.12/site-packages/sqlalchemy/sql/compiler.py:998: UnsupportedCompilationError
+
+The above exception was the direct cause of the following exception:
+
+tmp_path = PosixPath('/tmp/pytest-of-icybear/pytest-6/test_me_returns_user_when_auth0')
+
+    @pytest.fixture()
+    def client(tmp_path) -> Generator[TestClient, None, None]:
+        database_url = f"sqlite+aiosqlite:///{tmp_path / 'auth.db'}"
+        engine = create_async_engine(database_url)
+    
+        @event.listens_for(engine.sync_engine, "connect")
+        def register_uuid_function(dbapi_connection, _connection_record) -> None:
+            dbapi_connection.create_function("gen_random_uuid", 0, lambda: uuid4().hex)
+    
+        session_factory = async_sessionmaker(
+            engine,
+            class_=AsyncSession,
+            expire_on_commit=False,
+        )
+    
+        async def prepare_database() -> None:
+            async with engine.begin() as connection:
+                await connection.run_sync(Base.metadata.create_all)
+    
+        async def override_get_db() -> AsyncGenerator[AsyncSession, None]:
+            async with session_factory() as session:
+                yield session
+    
+        test_app = FastAPI()
+        test_app.include_router(auth_router)
+        test_app.dependency_overrides[get_db] = override_get_db
+    
+>       anyio.run(prepare_database)
+
+tests/test_auth_api.py:51: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+.venv/lib/python3.12/site-packages/anyio/_core/_eventloop.py:83: in run
+    return async_backend.run(func, args, {}, backend_options)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.12/site-packages/anyio/_backends/_asyncio.py:2436: in run
+    return runner.run(wrapper())
+           ^^^^^^^^^^^^^^^^^^^^^
+/home/icybear/.local/share/uv/python/cpython-3.12.13-linux-x86_64-gnu/lib/python3.12/asyncio/runners.py:118: in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/home/icybear/.local/share/uv/python/cpython-3.12.13-linux-x86_64-gnu/lib/python3.12/asyncio/base_events.py:691: in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+.venv/lib/python3.12/site-packages/anyio/_backends/_asyncio.py:2419: in wrapper
+    return await func(*args)
+           ^^^^^^^^^^^^^^^^^
+tests/test_auth_api.py:41: in prepare_database
+    await connection.run_sync(Base.metadata.create_all)
+.venv/lib/python3.12/site-packages/sqlalchemy/ext/asyncio/engine.py:888: in run_sync
+    return await greenlet_spawn(
+.venv/lib/python3.12/site-packages/sqlalchemy/util/_concurrency_py3k.py:203: in greenlet_spawn
+    result = context.switch(value)
+             ^^^^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.12/site-packages/sqlalchemy/sql/schema.py:5930: in create_all
+    bind._run_ddl_visitor(
+.venv/lib/python3.12/site-packages/sqlalchemy/engine/base.py:2469: in _run_ddl_visitor
+    ).traverse_single(element)
+      ^^^^^^^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.12/site-packages/sqlalchemy/sql/visitors.py:661: in traverse_single
+    return meth(obj, **kw)
+           ^^^^^^^^^^^^^^^
+.venv/lib/python3.12/site-packages/sqlalchemy/sql/ddl.py:985: in visit_metadata
+    self.traverse_single(
+.venv/lib/python3.12/site-packages/sqlalchemy/sql/visitors.py:661: in traverse_single
+    return meth(obj, **kw)
+           ^^^^^^^^^^^^^^^
+.venv/lib/python3.12/site-packages/sqlalchemy/sql/ddl.py:1023: in visit_table
+    )._invoke_with(self.connection)
+      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.12/site-packages/sqlalchemy/sql/ddl.py:322: in _invoke_with
+    return bind.execute(self)
+           ^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.12/site-packages/sqlalchemy/engine/base.py:1421: in execute
+    return meth(
+.venv/lib/python3.12/site-packages/sqlalchemy/sql/ddl.py:188: in _execute_on_connection
+    return connection._execute_ddl(
+.venv/lib/python3.12/site-packages/sqlalchemy/engine/base.py:1529: in _execute_ddl
+    compiled = ddl.compile(
+.venv/lib/python3.12/site-packages/sqlalchemy/sql/elements.py:311: in compile
+    return self._compiler(dialect, **kw)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.12/site-packages/sqlalchemy/sql/ddl.py:77: in _compiler
+    return dialect.ddl_compiler(dialect, self, **kw)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.12/site-packages/sqlalchemy/sql/compiler.py:902: in __init__
+    self.string = self.process(self.statement, **compile_kwargs)
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.12/site-packages/sqlalchemy/sql/compiler.py:948: in process
+    return obj._compiler_dispatch(self, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.12/site-packages/sqlalchemy/sql/visitors.py:138: in _compiler_dispatch
+    return meth(self, **kw)  # type: ignore  # noqa: E501
+           ^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <sqlalchemy.dialects.sqlite.base.SQLiteDDLCompiler object at 0x7f53d117fec0>
+create = <sqlalchemy.sql.ddl.CreateTable object at 0x7f53d117ff50>, kw = {}
+
+    def visit_create_table(self, create, **kw):
+        table = create.element
+        preparer = self.preparer
+    
+        text = "\nCREATE "
+        if table._prefixes:
+            text += " ".join(table._prefixes) + " "
+    
+        text += "TABLE "
+        if create.if_not_exists:
+            text += "IF NOT EXISTS "
+    
+        text += preparer.format_table(table) + " "
+    
+        create_table_suffix = self.create_table_suffix(table)
+        if create_table_suffix:
+            text += create_table_suffix + " "
+    
+        text += "("
+    
+        separator = "\n"
+    
+        # if only one primary key, specify it along with the column
+        first_pk = False
+        for create_column in create.columns:
+            column = create_column.element
+            try:
+                processed = self.process(
+                    create_column, first_pk=column.primary_key and not first_pk
+                )
+                if processed is not None:
+                    text += separator
+                    separator = ", \n"
+                    text += "\t" + processed
+                if column.primary_key:
+                    first_pk = True
+            except exc.CompileError as ce:
+>               raise exc.CompileError(
+                    "(in table '%s', column '%s'): %s"
+                    % (table.description, column.name, ce.args[0])
+                ) from ce
+E               sqlalchemy.exc.CompileError: (in table 'employees', column 'personality'): Compiler <sqlalchemy.dialects.sqlite.base.SQLiteTypeCompiler object at 0x7f53d11630e0> can't render element of type JSONB
+
+.venv/lib/python3.12/site-packages/sqlalchemy/sql/compiler.py:6852: CompileError
+------------------------------ Captured log setup ------------------------------
+DEBUG    asyncio:selector_events.py:64 Using selector: EpollSelector
+DEBUG    aiosqlite:core.py:62 executing <function connect.<locals>.connector at 0x7f53d11556c0>
+DEBUG    aiosqlite:core.py:67 operation <function connect.<locals>.connector at 0x7f53d11556c0> completed
+DEBUG    aiosqlite:core.py:62 executing functools.partial(<built-in method create_function of sqlite3.Connection object at 0x7f53cb78c130>, 'regexp', 2, <function SQLiteDialect_pysqlite.on_connect.<locals>.regexp at 0x7f53d1156b60>, deterministic=True)
+DEBUG    aiosqlite:core.py:67 operation functools.partial(<built-in method create_function of sqlite3.Connection object at 0x7f53cb78c130>, 'regexp', 2, <function SQLiteDialect_pysqlite.on_connect.<locals>.regexp at 0x7f53d1156b60>, deterministic=True) completed
+DEBUG    aiosqlite:core.py:62 executing functools.partial(<built-in method create_function of sqlite3.Connection object at 0x7f53cb78c130>, 'floor', 1, <built-in function floor>, deterministic=True)
+DEBUG    aiosqlite:core.py:67 operation functools.partial(<built-in method create_function of sqlite3.Connection object at 0x7f53cb78c130>, 'floor', 1, <built-in function floor>, deterministic=True) completed
+DEBUG    aiosqlite:core.py:62 executing functools.partial(<built-in method cursor of sqlite3.Connection object at 0x7f53cb78c130>)
+DEBUG    aiosqlite:core.py:67 operation functools.partial(<built-in method cursor of sqlite3.Connection object at 0x7f53cb78c130>) completed
+DEBUG    aiosqlite:core.py:62 executing functools.partial(<built-in method execute of sqlite3.Cursor object at 0x7f53cafbcbc0>, 'PRAGMA read_uncommitted', [])
+DEBUG    aiosqlite:core.py:67 operation functools.partial(<built-in method execute of sqlite3.Cursor object at 0x7f53cafbcbc0>, 'PRAGMA read_uncommitted', []) completed
+DEBUG    aiosqlite:core.py:62 executing functools.partial(<built-in method fetchall of sqlite3.Cursor object at 0x7f53cafbcbc0>)
+DEBUG    aiosqlite:core.py:67 operation functools.partial(<built-in method fetchall of sqlite3.Cursor object at 0x7f53cafbcbc0>) completed
+DEBUG    aiosqlite:core.py:62 executing functools.partial(<built-in method close of sqlite3.Cursor object at 0x7f53cafbcbc0>)
+DEBUG    aiosqlite:core.py:67 operation functools.partial(<built-in method close of sqlite3.Cursor object at 0x7f53cafbcbc0>) completed
+DEBUG    aiosqlite:core.py:62 executing functools.partial(<built-in method rollback of sqlite3.Connection object at 0x7f53cb78c130>)
+DEBUG    aiosqlite:core.py:67 operation functools.partial(<built-in method rollback of sqlite3.Connection object at 0x7f53cb78c130>) completed
+DEBUG    aiosqlite:core.py:62 executing functools.partial(<built-in method create_function of sqlite3.Connection object at 0x7f53cb78c130>, 'gen_random_uuid', 0, <function client.<locals>.register_uuid_function.<locals>.<lambda> at 0x7f53d1154ae0>, deterministic=False)
+DEBUG    aiosqlite:core.py:67 operation functools.partial(<built-in method create_function of sqlite3.Connection object at 0x7f53cb78c130>, 'gen_random_uuid', 0, <function client.<locals>.register_uuid_function.<locals>.<lambda> at 0x7f53d1154ae0>, deterministic=False) completed
+DEBUG    aiosqlite:core.py:62 executing functools.partial(<built-in method cursor of sqlite3.Connection object at 0x7f53cb78c130>)
+DEBUG    aiosqlite:core.py:67 operation functools.partial(<built-in method cursor of sqlite3.Connection object at 0x7f53cb78c130>) completed
+DEBUG    aiosqlite:core.py:62 executing functools.partial(<built-in method execute of sqlite3.Cursor object at 0x7f53cafbd440>, 'PRAGMA main.table_info("users")', ())
+DEBUG    aiosqlite:core.py:67 operation functools.partial(<built-in method execute of sqlite3.Cursor object at 0x7f53cafbd440>, 'PRAGMA main.table_info("users")', ()) completed
+DEBUG    aiosqlite:core.py:62 executing functools.partial(<built-in method fetchall of sqlite3.Cursor object at 0x7f53cafbd440>)
+DEBUG    aiosqlite:core.py:67 operation functools.partial(<built-in method fetchall of sqlite3.Cursor object at 0x7f53cafbd440>) completed
+DEBUG    aiosqlite:core.py:62 executing functools.partial(<built-in method close of sqlite3.Cursor object at 0x7f53cafbd440>)
+DEBUG    aiosqlite:core.py:67 operation functools.partial(<built-in method close of sqlite3.Cursor object at 0x7f53cafbd440>) completed
+DEBUG    aiosqlite:core.py:62 executing functools.partial(<built-in method cursor of sqlite3.Connection object at 0x7f53cb78c130>)
+DEBUG    aiosqlite:core.py:67 operation functools.partial(<built-in method cursor of sqlite3.Connection object at 0x7f53cb78c130>) completed
+DEBUG    aiosqlite:core.py:62 executing functools.partial(<built-in method execute of sqlite3.Cursor object at 0x7f53cafbd3c0>, 'PRAGMA temp.table_info("users")', ())
+DEBUG    aiosqlite:core.py:67 operation functools.partial(<built-in method execute of sqlite3.Cursor object at 0x7f53cafbd3c0>, 'PRAGMA temp.table_info("users")', ()) completed
+DEBUG    aiosqlite:core.py:62 executing functools.partial(<built-in method fetchall of sqlite3.Cursor object at 0x7f53cafbd3c0>)
+DEBUG    aiosqlite:core.py:67 operation functools.partial(<built-in method fetchall of sqlite3.Cursor object at 0x7f53cafbd3c0>) completed
+DEBUG    aiosqlite:core.py:62 executing functools.partial(<built-in method close of sqlite3.Cursor object at 0x7f53cafbd3c0>)
+DEBUG    aiosqlite:core.py:67 operation functools.partial(<built-in method close of sqlite3.Cursor object at 0x7f53cafbd3c0>) completed
+DEBUG    aiosqlite:core.py:62 executing functools.partial(<built-in method cursor of sqlite3.Connection object at 0x7f53cb78c130>)
+DEBUG    aiosqlite:core.py:67 operation functools.partial(<built-in method cursor of sqlite3.Connection object at 0x7f53cb78c130>) completed
+DEBUG    aiosqlite:core.py:62 executing functools.partial(<built-in method execute of sqlite3.Cursor object at 0x7f53cafbd4c0>, 'PRAGMA main.table_info("channel_assignments")', ())
+DEBUG    aiosqlite:core.py:67 operation functools.partial(<built-in method execute of sqlite3.Cursor object at 0x7f53cafbd4c0>, 'PRAGMA main.table_info("channel_assignments")', ()) completed
+DEBUG    aiosqlite:core.py:62 executing functools.partial(<built-in method fetchall of sqlite3.Cursor object at 0x7f53cafbd4c0>)
+DEBUG    aiosqlite:core.py:67 operation functools.partial(<built-in method fetchall of sqlite3.Cursor object at 0x7f53cafbd4c0>) completed
+DEBUG    aiosqlite:core.py:62 executing functools.partial(<built-in method close of sqlite3.Cursor object at 0x7f53cafbd4c0>)
+DEBUG    aiosqlite:core.py:67 operation functools.partial(<built-in method close of sqlite3.Cursor object at 0x7f53cafbd4c0>) completed
+DEBUG    aiosqlite:core.py:62 executing functools.partial(<built-in method cursor of sqlite3.Connection object at 0x7f53cb78c130>)
+DEBUG    aiosqlite:core.py:67 operation functools.partial(<built-in method cursor of sqlite3.Connection object at 0x7f53cb78c130>) completed
+DEBUG    aiosqlite:core.py:62 executing functools.partial(<built-in method execute of sqlite3.Cursor object at 0x7f53cafbd340>, 'PRAGMA temp.table_info("channel_assignments")', ())
+DEBUG    aiosqlite:core.py:67 operation functools.partial(<built-in method execute of sqlite3.Cursor object at 0x7f53cafbd340>, 'PRAGMA temp.table_info("channel_assignments")', ()) completed
+DEBUG    aiosqlite:core.py:62 executing functools.partial(<built-in method fetchall of sqlite3.Cursor object at 0x7f53cafbd340>)
+DEBUG    aiosqlite:core.py:67 operation functools.partial(<built-in method fetchall of sqlite3.Cursor object at 0x7f53cafbd340>) completed
+DEBUG    aiosqlite:core.py:62 executing functools.partial(<built-in method close of sqlite3.Cursor object at 0x7f53cafbd340>)
+DEBUG    aiosqlite:core.py:67 operation functools.partial(<built-in method close of sqlite3.Cursor object at 0x7f53cafbd340>) completed
+DEBUG    aiosqlite:core.py:62 executing functools.partial(<built-in method cursor of sqlite3.Connection object at 0x7f53cb78c130>)
+DEBUG    aiosqlite:core.py:67 operation functools.partial(<built-in method cursor of sqlite3.Connection object at 0x7f53cb78c130>) completed
+DEBUG    aiosqlite:core.py:62 executing functools.partial(<built-in method execute of sqlite3.Cursor object at 0x7f53cafbd5c0>, 'PRAGMA main.table_info("documents")', ())
+DEBUG    aiosqlite:core.py:67 operation functools.partial(<built-in method execute of sqlite3.Cursor object at 0x7f53cafbd5c0>, 'PRAGMA main.table_info("documents")', ()) completed
+DEBUG    aiosqlite:core.py:62 executing functools.partial(<built-in method fetchall of sqlite3.Cursor object at 0x7f53cafbd5c0>)
+DEBUG    aiosqlite:core.py:67 operation functools.partial(<built-in method fetchall of sqlite3.Cursor object at 0x7f53cafbd5c0>) completed
+DEBUG    aiosqlite:core.py:62 executing functools.partial(<built-in method close of sqlite3.Cursor object at 0x7f53cafbd5c0>)
+DEBUG    aiosqlite:core.py:67 operation functools.partial(<built-in method close of sqlite3.Cursor object at 0x7f53cafbd5c0>) completed
+DEBUG    aiosqlite:core.py:62 executing functools.partial(<built-in method cursor of sqlite3.Connection object at 0x7f53cb78c130>)
+DEBUG    aiosqlite:core.py:67 operation functools.partial(<built-in method cursor of sqlite3.Connection object at 0x7f53cb78c130>) completed
+DEBUG    aiosqlite:core.py:62 executing functools.partial(<built-in method execute of sqlite3.Cursor object at 0x7f53cafbd1c0>, 'PRAGMA temp.table_info("documents")', ())
+DEBUG    aiosqlite:core.py:67 operation functools.partial(<built-in method execute of sqlite3.Cursor object at 0x7f53cafbd1c0>, 'PRAGMA temp.table_info("documents")', ()) completed
+DEBUG    aiosqlite:core.py:62 executing functools.partial(<built-in method fetchall of sqlite3.Cursor object at 0x7f53cafbd1c0>)
+DEBUG    aiosqlite:core.py:67 operation functools.partial(<built-in method fetchall of sqlite3.Cursor object at 0x7f53cafbd1c0>) completed
+DEBUG    aiosqlite:core.py:62 executing functools.partial(<built-in method close of sqlite3.Cursor object at 0x7f53cafbd1c0>)
+DEBUG    aiosqlite:core.py:67 operation functools.partial(<built-in method close of sqlite3.Cursor object at 0x7f53cafbd1c0>) completed
+DEBUG    aiosqlite:core.py:62 executing functools.partial(<built-in method cursor of sqlite3.Connection object at 0x7f53cb78c130>)
+DEBUG    aiosqlite:core.py:67 operation functools.partial(<built-in method cursor of sqlite3.Connection object at 0x7f53cb78c130>) completed
+DEBUG    aiosqlite:core.py:62 executing functools.partial(<built-in method execute of sqlite3.Cursor object at 0x7f53cafbd640>, 'PRAGMA main.table_info("employees")', ())
+DEBUG    aiosqlite:core.py:67 operation functools.partial(<built-in method execute of sqlite3.Cursor object at 0x7f53cafbd640>, 'PRAGMA main.table_info("employees")', ()) completed
+DEBUG    aiosqlite:core.py:62 executing functools.partial(<built-in method fetchall of sqlite3.Cursor object at 0x7f53cafbd640>)
+DEBUG    aiosqlite:core.py:67 operation functools.partial(<built-in method fetchall of sqlite3.Cursor object at 0x7f53cafbd640>) completed
+DEBUG    aiosqlite:core.py:62 executing functools.partial(<built-in method close of sqlite3.Cursor object at 0x7f53cafbd640>)
+DEBUG    aiosqlite:core.py:67 operation functools.partial(<built-in method close of sqlite3.Cursor object at 0x7f53cafbd640>) completed
+DEBUG    aiosqlite:core.py:62 executing functools.partial(<built-in method cursor of sqlite3.Connection object at 0x7f53cb78c130>)
+DEBUG    aiosqlite:core.py:67 operation functools.partial(<built-in method cursor of sqlite3.Connection object at 0x7f53cb78c130>) completed
+DEBUG    aiosqlite:core.py:62 executing functools.partial(<built-in method execute of sqlite3.Cursor object at 0x7f53cafbd6c0>, 'PRAGMA temp.table_info("employees")', ())
+DEBUG    aiosqlite:core.py:67 operation functools.partial(<built-in method execute of sqlite3.Cursor object at 0x7f53cafbd6c0>, 'PRAGMA temp.table_info("employees")', ()) completed
+DEBUG    aiosqlite:core.py:62 executing functools.partial(<built-in method fetchall of sqlite3.Cursor object at 0x7f53cafbd6c0>)
+DEBUG    aiosqlite:core.py:67 operation functools.partial(<built-in method fetchall of sqlite3.Cursor object at 0x7f53cafbd6c0>) completed
+DEBUG    aiosqlite:core.py:62 executing functools.partial(<built-in method close of sqlite3.Cursor object at 0x7f53cafbd6c0>)
+DEBUG    aiosqlite:core.py:67 operation functools.partial(<built-in method close of sqlite3.Cursor object at 0x7f53cafbd6c0>) completed
+DEBUG    aiosqlite:core.py:62 executing functools.partial(<built-in method cursor of sqlite3.Connection object at 0x7f53cb78c130>)
+DEBUG    aiosqlite:core.py:67 operation functools.partial(<built-in method cursor of sqlite3.Connection object at 0x7f53cb78c130>) completed
+DEBUG    aiosqlite:core.py:62 executing functools.partial(<built-in method execute of sqlite3.Cursor object at 0x7f53cafbd7c0>, 'PRAGMA main.table_info("organizations")', ())
+DEBUG    aiosqlite:core.py:67 operation functools.partial(<built-in method execute of sqlite3.Cursor object at 0x7f53cafbd7c0>, 'PRAGMA main.table_info("organizations")', ()) completed
+DEBUG    aiosqlite:core.py:62 executing functools.partial(<built-in method fetchall of sqlite3.Cursor object at 0x7f53cafbd7c0>)
+DEBUG    aiosqlite:core.py:67 operation functools.partial(<built-in method fetchall of sqlite3.Cursor object at 0x7f53cafbd7c0>) completed
+DEBUG    aiosqlite:core.py:62 executing functools.partial(<built-in method close of sqlite3.Cursor object at 0x7f53cafbd7c0>)
+DEBUG    aiosqlite:core.py:67 operation functools.partial(<built-in method close of sqlite3.Cursor object at 0x7f53cafbd7c0>) completed
+DEBUG    aiosqlite:core.py:62 executing functools.partial(<built-in method cursor of sqlite3.Connection object at 0x7f53cb78c130>)
+DEBUG    aiosqlite:core.py:67 operation functools.partial(<built-in method cursor of sqlite3.Connection object at 0x7f53cb78c130>) completed
+DEBUG    aiosqlite:core.py:62 executing functools.partial(<built-in method execute of sqlite3.Cursor object at 0x7f53cafbd840>, 'PRAGMA temp.table_info("organizations")', ())
+DEBUG    aiosqlite:core.py:67 operation functools.partial(<built-in method execute of sqlite3.Cursor object at 0x7f53cafbd840>, 'PRAGMA temp.table_info("organizations")', ()) completed
+DEBUG    aiosqlite:core.py:62 executing functools.partial(<built-in method fetchall of sqlite3.Cursor object at 0x7f53cafbd840>)
+DEBUG    aiosqlite:core.py:67 operation functools.partial(<built-in method fetchall of sqlite3.Cursor object at 0x7f53cafbd840>) completed
+DEBUG    aiosqlite:core.py:62 executing functools.partial(<built-in method close of sqlite3.Cursor object at 0x7f53cafbd840>)
+DEBUG    aiosqlite:core.py:67 operation functools.partial(<built-in method close of sqlite3.Cursor object at 0x7f53cafbd840>) completed
+DEBUG    aiosqlite:core.py:62 executing functools.partial(<built-in method cursor of sqlite3.Connection object at 0x7f53cb78c130>)
+DEBUG    aiosqlite:core.py:67 operation functools.partial(<built-in method cursor of sqlite3.Connection object at 0x7f53cb78c130>) completed
+DEBUG    aiosqlite:core.py:62 executing functools.partial(<built-in method execute of sqlite3.Cursor object at 0x7f53cafbd8c0>, 'PRAGMA main.table_info("agent_jobs")', ())
+DEBUG    aiosqlite:core.py:67 operation functools.partial(<built-in method execute of sqlite3.Cursor object at 0x7f53cafbd8c0>, 'PRAGMA main.table_info("agent_jobs")', ()) completed
+DEBUG    aiosqlite:core.py:62 executing functools.partial(<built-in method fetchall of sqlite3.Cursor object at 0x7f53cafbd8c0>)
+DEBUG    aiosqlite:core.py:67 operation functools.partial(<built-in method fetchall of sqlite3.Cursor object at 0x7f53cafbd8c0>) completed
+DEBUG    aiosqlite:core.py:62 executing functools.partial(<built-in method close of sqlite3.Cursor object at 0x7f53cafbd8c0>)
+DEBUG    aiosqlite:core.py:67 operation functools.partial(<built-in method close of sqlite3.Cursor object at 0x7f53cafbd8c0>) completed
+DEBUG    aiosqlite:core.py:62 executing functools.partial(<built-in method cursor of sqlite3.Connection object at 0x7f53cb78c130>)
+DEBUG    aiosqlite:core.py:67 operation functools.partial(<built-in method cursor of sqlite3.Connection object at 0x7f53cb78c130>) completed
+DEBUG    aiosqlite:core.py:62 executing functools.partial(<built-in method execute of sqlite3.Cursor object at 0x7f53cafbd940>, 'PRAGMA temp.table_info("agent_jobs")', ())
+DEBUG    aiosqlite:core.py:67 operation functools.partial(<built-in method execute of sqlite3.Cursor object at 0x7f53cafbd940>, 'PRAGMA temp.table_info("agent_jobs")', ()) completed
+DEBUG    aiosqlite:core.py:62 executing functools.partial(<built-in method fetchall of sqlite3.Cursor object at 0x7f53cafbd940>)
+DEBUG    aiosqlite:core.py:67 operation functools.partial(<built-in method fetchall of sqlite3.Cursor object at 0x7f53cafbd940>) completed
+DEBUG    aiosqlite:core.py:62 executing functools.partial(<built-in method close of sqlite3.Cursor object at 0x7f53cafbd940>)
+DEBUG    aiosqlite:core.py:67 operation functools.partial(<built-in method close of sqlite3.Cursor object at 0x7f53cafbd940>) completed
+DEBUG    aiosqlite:core.py:62 executing functools.partial(<built-in method cursor of sqlite3.Connection object at 0x7f53cb78c130>)
+DEBUG    aiosqlite:core.py:67 operation functools.partial(<built-in method cursor of sqlite3.Connection object at 0x7f53cb78c130>) completed
+DEBUG    aiosqlite:core.py:62 executing functools.partial(<built-in method execute of sqlite3.Cursor object at 0x7f53cafbd9c0>, 'PRAGMA main.table_info("mcp_connections")', ())
+DEBUG    aiosqlite:core.py:67 operation functools.partial(<built-in method execute of sqlite3.Cursor object at 0x7f53cafbd9c0>, 'PRAGMA main.table_info("mcp_connections")', ()) completed
+DEBUG    aiosqlite:core.py:62 executing functools.partial(<built-in method fetchall of sqlite3.Cursor object at 0x7f53cafbd9c0>)
+DEBUG    aiosqlite:core.py:67 operation functools.partial(<built-in method fetchall of sqlite3.Cursor object at 0x7f53cafbd9c0>) completed
+DEBUG    aiosqlite:core.py:62 executing functools.partial(<built-in method close of sqlite3.Cursor object at 0x7f53cafbd9c0>)
+DEBUG    aiosqlite:core.py:67 operation functools.partial(<built-in method close of sqlite3.Cursor object at 0x7f53cafbd9c0>) completed
+DEBUG    aiosqlite:core.py:62 executing functools.partial(<built-in method cursor of sqlite3.Connection object at 0x7f53cb78c130>)
+DEBUG    aiosqlite:core.py:67 operation functools.partial(<built-in method cursor of sqlite3.Connection object at 0x7f53cb78c130>) completed
+DEBUG    aiosqlite:core.py:62 executing functools.partial(<built-in method execute of sqlite3.Cursor object at 0x7f53cafbda40>, 'PRAGMA temp.table_info("mcp_connections")', ())
+DEBUG    aiosqlite:core.py:67 operation functools.partial(<built-in method execute of sqlite3.Cursor object at 0x7f53cafbda40>, 'PRAGMA temp.table_info("mcp_connections")', ()) completed
+DEBUG    aiosqlite:core.py:62 executing functools.partial(<built-in method fetchall of sqlite3.Cursor object at 0x7f53cafbda40>)
+DEBUG    aiosqlite:core.py:67 operation functools.partial(<built-in method fetchall of sqlite3.Cursor object at 0x7f53cafbda40>) completed
+DEBUG    aiosqlite:core.py:62 executing functools.partial(<built-in method close of sqlite3.Cursor object at 0x7f53cafbda40>)
+DEBUG    aiosqlite:core.py:67 operation functools.partial(<built-in method close of sqlite3.Cursor object at 0x7f53cafbda40>) completed
+DEBUG    aiosqlite:core.py:62 executing functools.partial(<built-in method cursor of sqlite3.Connection object at 0x7f53cb78c130>)
+DEBUG    aiosqlite:core.py:67 operation functools.partial(<built-in method cursor of sqlite3.Connection object at 0x7f53cb78c130>) completed
+DEBUG    aiosqlite:core.py:62 executing functools.partial(<built-in method execute of sqlite3.Cursor object at 0x7f53cafbcd40>, "\nCREATE TABLE users (\n\tid CHAR(32) DEFAULT (gen_random_uuid()) NOT NULL, \n\tclerk_id VARCHAR(255) NOT NULL, \n\temail VARCHAR(255) NOT NULL, \n\tname VARCHAR(255) NOT NULL, \n\tis_active BOOLEAN DEFAULT 'true' NOT NULL, \n\tonboarding_completed BOOLEAN DEFAULT true NOT NULL, \n\tcreated_at DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL, \n\tupdated_at DATETIME, \n\tPRIMARY KEY (id)\n)\n\n", ())
+DEBUG    aiosqlite:core.py:67 operation functools.partial(<built-in method execute of sqlite3.Cursor object at 0x7f53cafbcd40>, "\nCREATE TABLE users (\n\tid CHAR(32) DEFAULT (gen_random_uuid()) NOT NULL, \n\tclerk_id VARCHAR(255) NOT NULL, \n\temail VARCHAR(255) NOT NULL, \n\tname VARCHAR(255) NOT NULL, \n\tis_active BOOLEAN DEFAULT 'true' NOT NULL, \n\tonboarding_completed BOOLEAN DEFAULT true NOT NULL, \n\tcreated_at DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL, \n\tupdated_at DATETIME, \n\tPRIMARY KEY (id)\n)\n\n", ()) completed
+DEBUG    aiosqlite:core.py:62 executing functools.partial(<built-in method close of sqlite3.Cursor object at 0x7f53cafbcd40>)
+DEBUG    aiosqlite:core.py:67 operation functools.partial(<built-in method close of sqlite3.Cursor object at 0x7f53cafbcd40>) completed
+DEBUG    aiosqlite:core.py:62 executing functools.partial(<built-in method cursor of sqlite3.Connection object at 0x7f53cb78c130>)
+DEBUG    aiosqlite:core.py:67 operation functools.partial(<built-in method cursor of sqlite3.Connection object at 0x7f53cb78c130>) completed
+DEBUG    aiosqlite:core.py:62 executing functools.partial(<built-in method execute of sqlite3.Cursor object at 0x7f53cafbe040>, 'CREATE UNIQUE INDEX ix_users_email ON users (email)', ())
+DEBUG    aiosqlite:core.py:67 operation functools.partial(<built-in method execute of sqlite3.Cursor object at 0x7f53cafbe040>, 'CREATE UNIQUE INDEX ix_users_email ON users (email)', ()) completed
+DEBUG    aiosqlite:core.py:62 executing functools.partial(<built-in method close of sqlite3.Cursor object at 0x7f53cafbe040>)
+DEBUG    aiosqlite:core.py:67 operation functools.partial(<built-in method close of sqlite3.Cursor object at 0x7f53cafbe040>) completed
+DEBUG    aiosqlite:core.py:62 executing functools.partial(<built-in method cursor of sqlite3.Connection object at 0x7f53cb78c130>)
+DEBUG    aiosqlite:core.py:67 operation functools.partial(<built-in method cursor of sqlite3.Connection object at 0x7f53cb78c130>) completed
+DEBUG    aiosqlite:core.py:62 executing functools.partial(<built-in method execute of sqlite3.Cursor object at 0x7f53cafbc340>, 'CREATE UNIQUE INDEX ix_users_clerk_id ON users (clerk_id)', ())
+DEBUG    aiosqlite:core.py:67 operation functools.partial(<built-in method execute of sqlite3.Cursor object at 0x7f53cafbc340>, 'CREATE UNIQUE INDEX ix_users_clerk_id ON users (clerk_id)', ()) completed
+DEBUG    aiosqlite:core.py:62 executing functools.partial(<built-in method close of sqlite3.Cursor object at 0x7f53cafbc340>)
+DEBUG    aiosqlite:core.py:67 operation functools.partial(<built-in method close of sqlite3.Cursor object at 0x7f53cafbc340>) completed
+DEBUG    aiosqlite:core.py:62 executing functools.partial(<built-in method cursor of sqlite3.Connection object at 0x7f53cb78c130>)
+DEBUG    aiosqlite:core.py:67 operation functools.partial(<built-in method cursor of sqlite3.Connection object at 0x7f53cb78c130>) completed
+DEBUG    aiosqlite:core.py:62 executing functools.partial(<built-in method execute of sqlite3.Cursor object at 0x7f53cafbce40>, '\nCREATE TABLE organizations (\n\tid CHAR(32) DEFAULT (gen_random_uuid()) NOT NULL, \n\towner_id CHAR(32) NOT NULL, \n\tname VARCHAR(255) NOT NULL, \n\tdescription TEXT, \n\twhat_it_does TEXT, \n\twebsite_url VARCHAR(2048), \n\tcognee_tenant_id VARCHAR(255), \n\tcognee_tenant_name VARCHAR(255), \n\tcognee_system_user_id VARCHAR(255), \n\tcognee_system_user_name VARCHAR(255), \n\tcognee_dataset_id VARCHAR(255), \n\tcognee_dataset_name VARCHAR(255), \n\tcreated_at DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL, \n\tPRIMARY KEY (id), \n\tFOREIGN KEY(owner_id) REFERENCES users (id) ON DELETE CASCADE\n)\n\n', ())
+DEBUG    aiosqlite:core.py:67 operation functools.partial(<built-in method execute of sqlite3.Cursor object at 0x7f53cafbce40>, '\nCREATE TABLE organizations (\n\tid CHAR(32) DEFAULT (gen_random_uuid()) NOT NULL, \n\towner_id CHAR(32) NOT NULL, \n\tname VARCHAR(255) NOT NULL, \n\tdescription TEXT, \n\twhat_it_does TEXT, \n\twebsite_url VARCHAR(2048), \n\tcognee_tenant_id VARCHAR(255), \n\tcognee_tenant_name VARCHAR(255), \n\tcognee_system_user_id VARCHAR(255), \n\tcognee_system_user_name VARCHAR(255), \n\tcognee_dataset_id VARCHAR(255), \n\tcognee_dataset_name VARCHAR(255), \n\tcreated_at DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL, \n\tPRIMARY KEY (id), \n\tFOREIGN KEY(owner_id) REFERENCES users (id) ON DELETE CASCADE\n)\n\n', ()) completed
+DEBUG    aiosqlite:core.py:62 executing functools.partial(<built-in method close of sqlite3.Cursor object at 0x7f53cafbce40>)
+DEBUG    aiosqlite:core.py:67 operation functools.partial(<built-in method close of sqlite3.Cursor object at 0x7f53cafbce40>) completed
+DEBUG    aiosqlite:core.py:62 executing functools.partial(<built-in method cursor of sqlite3.Connection object at 0x7f53cb78c130>)
+DEBUG    aiosqlite:core.py:67 operation functools.partial(<built-in method cursor of sqlite3.Connection object at 0x7f53cb78c130>) completed
+DEBUG    aiosqlite:core.py:62 executing functools.partial(<built-in method execute of sqlite3.Cursor object at 0x7f53cafbdb40>, 'CREATE INDEX ix_organizations_owner_id ON organizations (owner_id)', ())
+DEBUG    aiosqlite:core.py:67 operation functools.partial(<built-in method execute of sqlite3.Cursor object at 0x7f53cafbdb40>, 'CREATE INDEX ix_organizations_owner_id ON organizations (owner_id)', ()) completed
+DEBUG    aiosqlite:core.py:62 executing functools.partial(<built-in method close of sqlite3.Cursor object at 0x7f53cafbdb40>)
+DEBUG    aiosqlite:core.py:67 operation functools.partial(<built-in method close of sqlite3.Cursor object at 0x7f53cafbdb40>) completed
+DEBUG    aiosqlite:core.py:62 executing functools.partial(<built-in method rollback of sqlite3.Connection object at 0x7f53cb78c130>)
+DEBUG    aiosqlite:core.py:67 operation functools.partial(<built-in method rollback of sqlite3.Connection object at 0x7f53cb78c130>) completed
+DEBUG    aiosqlite:core.py:62 executing functools.partial(<built-in method rollback of sqlite3.Connection object at 0x7f53cb78c130>)
+DEBUG    aiosqlite:core.py:67 operation functools.partial(<built-in method rollback of sqlite3.Connection object at 0x7f53cb78c130>) completed
+______________ ERROR at setup of test_me_idempotent_across_calls _______________
+
+self = JSONB(astext_type=Text())
+visitor = <sqlalchemy.dialects.sqlite.base.SQLiteTypeCompiler object at 0x7f53d11a7560>
+kw = {'type_expression': Column('personality', JSONB(astext_type=Text()), table=<employees>)}
+
+    def _compiler_dispatch(
+        self: Visitable, visitor: Any, **kw: Any
+    ) -> str:
+        """Look for an attribute named "visit_<visit_name>" on the
+        visitor, and call it with the same kw params.
+    
+        """
+        try:
+>           meth = getter(visitor)
+                   ^^^^^^^^^^^^^^^
+E           AttributeError: 'SQLiteTypeCompiler' object has no attribute 'visit_JSONB'. Did you mean: 'visit_JSON'?
+
+.venv/lib/python3.12/site-packages/sqlalchemy/sql/visitors.py:134: AttributeError
+
+The above exception was the direct cause of the following exception:
+
+self = <sqlalchemy.dialects.sqlite.base.SQLiteDDLCompiler object at 0x7f53d1a4fb30>
+create = <sqlalchemy.sql.ddl.CreateTable object at 0x7f53d1a4fce0>, kw = {}
+
+    def visit_create_table(self, create, **kw):
+        table = create.element
+        preparer = self.preparer
+    
+        text = "\nCREATE "
+        if table._prefixes:
+            text += " ".join(table._prefixes) + " "
+    
+        text += "TABLE "
+        if create.if_not_exists:
+            text += "IF NOT EXISTS "
+    
+        text += preparer.format_table(table) + " "
+    
+        create_table_suffix = self.create_table_suffix(table)
+        if create_table_suffix:
+            text += create_table_suffix + " "
+    
+        text += "("
+    
+        separator = "\n"
+    
+        # if only one primary key, specify it along with the column
+        first_pk = False
+        for create_column in create.columns:
+            column = create_column.element
+            try:
+>               processed = self.process(
+                    create_column, first_pk=column.primary_key and not first_pk
+                )
+
+.venv/lib/python3.12/site-packages/sqlalchemy/sql/compiler.py:6842: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+.venv/lib/python3.12/site-packages/sqlalchemy/sql/compiler.py:948: in process
+    return obj._compiler_dispatch(self, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.12/site-packages/sqlalchemy/sql/visitors.py:138: in _compiler_dispatch
+    return meth(self, **kw)  # type: ignore  # noqa: E501
+           ^^^^^^^^^^^^^^^^
+.venv/lib/python3.12/site-packages/sqlalchemy/sql/compiler.py:6873: in visit_create_column
+    text = self.get_column_specification(column, first_pk=first_pk)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.12/site-packages/sqlalchemy/dialects/sqlite/base.py:1700: in get_column_specification
+    coltype = self.dialect.type_compiler_instance.process(
+.venv/lib/python3.12/site-packages/sqlalchemy/sql/compiler.py:993: in process
+    return type_._compiler_dispatch(self, **kw)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.12/site-packages/sqlalchemy/sql/visitors.py:136: in _compiler_dispatch
+    return visitor.visit_unsupported_compilation(self, err, **kw)  # type: ignore  # noqa: E501
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <sqlalchemy.dialects.sqlite.base.SQLiteTypeCompiler object at 0x7f53d11a7560>
+element = JSONB(astext_type=Text())
+err = AttributeError("'SQLiteTypeCompiler' object has no attribute 'visit_JSONB'")
+kw = {'type_expression': Column('personality', JSONB(astext_type=Text()), table=<employees>)}
+
+    def visit_unsupported_compilation(
+        self, element: Any, err: Exception, **kw: Any
+    ) -> NoReturn:
+>       raise exc.UnsupportedCompilationError(self, element) from err
+E       sqlalchemy.exc.UnsupportedCompilationError: Compiler <sqlalchemy.dialects.sqlite.base.SQLiteTypeCompiler object at 0x7f53d11a7560> can't render element of type JSONB (Background on this error at: https://sqlalche.me/e/20/l7de)
+
+.venv/lib/python3.12/site-packages/sqlalchemy/sql/compiler.py:998: UnsupportedCompilationError
+
+The above exception was the direct cause of the following exception:
+
+tmp_path = PosixPath('/tmp/pytest-of-icybear/pytest-6/test_me_idempotent_across_call0')
+
+    @pytest.fixture()
+    def client(tmp_path) -> Generator[TestClient, None, None]:
+        database_url = f"sqlite+aiosqlite:///{tmp_path / 'auth.db'}"
+        engine = create_async_engine(database_url)
+    
+        @event.listens_for(engine.sync_engine, "connect")
+        def register_uuid_function(dbapi_connection, _connection_record) -> None:
+            dbapi_connection.create_function("gen_random_uuid", 0, lambda: uuid4().hex)
+    
+        session_factory = async_sessionmaker(
+            engine,
+            class_=AsyncSession,
+            expire_on_commit=False,
+        )
+    
+        async def prepare_database() -> None:
+            async with engine.begin() as connection:
+                await connection.run_sync(Base.metadata.create_all)
+    
+        async def override_get_db() -> AsyncGenerator[AsyncSession, None]:
+            async with session_factory() as session:
+                yield session
+    
+        test_app = FastAPI()
+        test_app.include_router(auth_router)
+        test_app.dependency_overrides[get_db] = override_get_db
+    
+>       anyio.run(prepare_database)
+
+tests/test_auth_api.py:51: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+.venv/lib/python3.12/site-packages/anyio/_core/_eventloop.py:83: in run
+    return async_backend.run(func, args, {}, backend_options)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.12/site-packages/anyio/_backends/_asyncio.py:2436: in run
+    return runner.run(wrapper())
+           ^^^^^^^^^^^^^^^^^^^^^
+/home/icybear/.local/share/uv/python/cpython-3.12.13-linux-x86_64-gnu/lib/python3.12/asyncio/runners.py:118: in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/home/icybear/.local/share/uv/python/cpython-3.12.13-linux-x86_64-gnu/lib/python3.12/asyncio/base_events.py:691: in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+.venv/lib/python3.12/site-packages/anyio/_backends/_asyncio.py:2419: in wrapper
+    return await func(*args)
+           ^^^^^^^^^^^^^^^^^
+tests/test_auth_api.py:41: in prepare_database
+    await connection.run_sync(Base.metadata.create_all)
+.venv/lib/python3.12/site-packages/sqlalchemy/ext/asyncio/engine.py:888: in run_sync
+    return await greenlet_spawn(
+.venv/lib/python3.12/site-packages/sqlalchemy/util/_concurrency_py3k.py:203: in greenlet_spawn
+    result = context.switch(value)
+             ^^^^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.12/site-packages/sqlalchemy/sql/schema.py:5930: in create_all
+    bind._run_ddl_visitor(
+.venv/lib/python3.12/site-packages/sqlalchemy/engine/base.py:2469: in _run_ddl_visitor
+    ).traverse_single(element)
+      ^^^^^^^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.12/site-packages/sqlalchemy/sql/visitors.py:661: in traverse_single
+    return meth(obj, **kw)
+           ^^^^^^^^^^^^^^^
+.venv/lib/python3.12/site-packages/sqlalchemy/sql/ddl.py:985: in visit_metadata
+    self.traverse_single(
+.venv/lib/python3.12/site-packages/sqlalchemy/sql/visitors.py:661: in traverse_single
+    return meth(obj, **kw)
+           ^^^^^^^^^^^^^^^
+.venv/lib/python3.12/site-packages/sqlalchemy/sql/ddl.py:1023: in visit_table
+    )._invoke_with(self.connection)
+      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.12/site-packages/sqlalchemy/sql/ddl.py:322: in _invoke_with
+    return bind.execute(self)
+           ^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.12/site-packages/sqlalchemy/engine/base.py:1421: in execute
+    return meth(
+.venv/lib/python3.12/site-packages/sqlalchemy/sql/ddl.py:188: in _execute_on_connection
+    return connection._execute_ddl(
+.venv/lib/python3.12/site-packages/sqlalchemy/engine/base.py:1529: in _execute_ddl
+    compiled = ddl.compile(
+.venv/lib/python3.12/site-packages/sqlalchemy/sql/elements.py:311: in compile
+    return self._compiler(dialect, **kw)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.12/site-packages/sqlalchemy/sql/ddl.py:77: in _compiler
+    return dialect.ddl_compiler(dialect, self, **kw)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.12/site-packages/sqlalchemy/sql/compiler.py:902: in __init__
+    self.string = self.process(self.statement, **compile_kwargs)
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.12/site-packages/sqlalchemy/sql/compiler.py:948: in process
+    return obj._compiler_dispatch(self, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.12/site-packages/sqlalchemy/sql/visitors.py:138: in _compiler_dispatch
+    return meth(self, **kw)  # type: ignore  # noqa: E501
+           ^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <sqlalchemy.dialects.sqlite.base.SQLiteDDLCompiler object at 0x7f53d1a4fb30>
+create = <sqlalchemy.sql.ddl.CreateTable object at 0x7f53d1a4fce0>, kw = {}
+
+    def visit_create_table(self, create, **kw):
+        table = create.element
+        preparer = self.preparer
+    
+        text = "\nCREATE "
+        if table._prefixes:
+            text += " ".join(table._prefixes) + " "
+    
+        text += "TABLE "
+        if create.if_not_exists:
+            text += "IF NOT EXISTS "
+    
+        text += preparer.format_table(table) + " "
+    
+        create_table_suffix = self.create_table_suffix(table)
+        if create_table_suffix:
+            text += create_table_suffix + " "
+    
+        text += "("
+    
+        separator = "\n"
+    
+        # if only one primary key, specify it along with the column
+        first_pk = False
+        for create_column in create.columns:
+            column = create_column.element
+            try:
+                processed = self.process(
+                    create_column, first_pk=column.primary_key and not first_pk
+                )
+                if processed is not None:
+                    text += separator
+                    separator = ", \n"
+                    text += "\t" + processed
+                if column.primary_key:
+                    first_pk = True
+            except exc.CompileError as ce:
+>               raise exc.CompileError(
+                    "(in table '%s', column '%s'): %s"
+                    % (table.description, column.name, ce.args[0])
+                ) from ce
+E               sqlalchemy.exc.CompileError: (in table 'employees', column 'personality'): Compiler <sqlalchemy.dialects.sqlite.base.SQLiteTypeCompiler object at 0x7f53d11a7560> can't render element of type JSONB
+
+.venv/lib/python3.12/site-packages/sqlalchemy/sql/compiler.py:6852: CompileError
+------------------------------ Captured log setup ------------------------------
+DEBUG    asyncio:selector_events.py:64 Using selector: EpollSelector
+DEBUG    aiosqlite:core.py:62 executing <function connect.<locals>.connector at 0x7f53d1a61da0>
+DEBUG    aiosqlite:core.py:67 operation <function connect.<locals>.connector at 0x7f53d1a61da0> completed
+DEBUG    aiosqlite:core.py:62 executing functools.partial(<built-in method create_function of sqlite3.Connection object at 0x7f53d1a3e6b0>, 'regexp', 2, <function SQLiteDialect_pysqlite.on_connect.<locals>.regexp at 0x7f53d1155440>, deterministic=True)
+DEBUG    aiosqlite:core.py:67 operation functools.partial(<built-in method create_function of sqlite3.Connection object at 0x7f53d1a3e6b0>, 'regexp', 2, <function SQLiteDialect_pysqlite.on_connect.<locals>.regexp at 0x7f53d1155440>, deterministic=True) completed
+DEBUG    aiosqlite:core.py:62 executing functools.partial(<built-in method create_function of sqlite3.Connection object at 0x7f53d1a3e6b0>, 'floor', 1, <built-in function floor>, deterministic=True)
+DEBUG    aiosqlite:core.py:67 operation functools.partial(<built-in method create_function of sqlite3.Connection object at 0x7f53d1a3e6b0>, 'floor', 1, <built-in function floor>, deterministic=True) completed
+DEBUG    aiosqlite:core.py:62 executing functools.partial(<built-in method cursor of sqlite3.Connection object at 0x7f53d1a3e6b0>)
+DEBUG    aiosqlite:core.py:67 operation functools.partial(<built-in method cursor of sqlite3.Connection object at 0x7f53d1a3e6b0>) completed
+DEBUG    aiosqlite:core.py:62 executing functools.partial(<built-in method execute of sqlite3.Cursor object at 0x7f53cb9d0ec0>, 'PRAGMA read_uncommitted', [])
+DEBUG    aiosqlite:core.py:67 operation functools.partial(<built-in method execute of sqlite3.Cursor object at 0x7f53cb9d0ec0>, 'PRAGMA read_uncommitted', []) completed
+DEBUG    aiosqlite:core.py:62 executing functools.partial(<built-in method fetchall of sqlite3.Cursor object at 0x7f53cb9d0ec0>)
+DEBUG    aiosqlite:core.py:67 operation functools.partial(<built-in method fetchall of sqlite3.Cursor object at 0x7f53cb9d0ec0>) completed
+DEBUG    aiosqlite:core.py:62 executing functools.partial(<built-in method close of sqlite3.Cursor object at 0x7f53cb9d0ec0>)
+DEBUG    aiosqlite:core.py:67 operation functools.partial(<built-in method close of sqlite3.Cursor object at 0x7f53cb9d0ec0>) completed
+DEBUG    aiosqlite:core.py:62 executing functools.partial(<built-in method rollback of sqlite3.Connection object at 0x7f53d1a3e6b0>)
+DEBUG    aiosqlite:core.py:67 operation functools.partial(<built-in method rollback of sqlite3.Connection object at 0x7f53d1a3e6b0>) completed
+DEBUG    aiosqlite:core.py:62 executing functools.partial(<built-in method create_function of sqlite3.Connection object at 0x7f53d1a3e6b0>, 'gen_random_uuid', 0, <function client.<locals>.register_uuid_function.<locals>.<lambda> at 0x7f53d1a62160>, deterministic=False)
+DEBUG    aiosqlite:core.py:67 operation functools.partial(<built-in method create_function of sqlite3.Connection object at 0x7f53d1a3e6b0>, 'gen_random_uuid', 0, <function client.<locals>.register_uuid_function.<locals>.<lambda> at 0x7f53d1a62160>, deterministic=False) completed
+DEBUG    aiosqlite:core.py:62 executing functools.partial(<built-in method cursor of sqlite3.Connection object at 0x7f53d1a3e6b0>)
+DEBUG    aiosqlite:core.py:67 operation functools.partial(<built-in method cursor of sqlite3.Connection object at 0x7f53d1a3e6b0>) completed
+DEBUG    aiosqlite:core.py:62 executing functools.partial(<built-in method execute of sqlite3.Cursor object at 0x7f53cb9d1140>, 'PRAGMA main.table_info("users")', ())
+DEBUG    aiosqlite:core.py:67 operation functools.partial(<built-in method execute of sqlite3.Cursor object at 0x7f53cb9d1140>, 'PRAGMA main.table_info("users")', ()) completed
+DEBUG    aiosqlite:core.py:62 executing functools.partial(<built-in method fetchall of sqlite3.Cursor object at 0x7f53cb9d1140>)
+DEBUG    aiosqlite:core.py:67 operation functools.partial(<built-in method fetchall of sqlite3.Cursor object at 0x7f53cb9d1140>) completed
+DEBUG    aiosqlite:core.py:62 executing functools.partial(<built-in method close of sqlite3.Cursor object at 0x7f53cb9d1140>)
+DEBUG    aiosqlite:core.py:67 operation functools.partial(<built-in method close of sqlite3.Cursor object at 0x7f53cb9d1140>) completed
+DEBUG    aiosqlite:core.py:62 executing functools.partial(<built-in method cursor of sqlite3.Connection object at 0x7f53d1a3e6b0>)
+DEBUG    aiosqlite:core.py:67 operation functools.partial(<built-in method cursor of sqlite3.Connection object at 0x7f53d1a3e6b0>) completed
+DEBUG    aiosqlite:core.py:62 executing functools.partial(<built-in method execute of sqlite3.Cursor object at 0x7f53cb9d1040>, 'PRAGMA temp.table_info("users")', ())
+DEBUG    aiosqlite:core.py:67 operation functools.partial(<built-in method execute of sqlite3.Cursor object at 0x7f53cb9d1040>, 'PRAGMA temp.table_info("users")', ()) completed
+DEBUG    aiosqlite:core.py:62 executing functools.partial(<built-in method fetchall of sqlite3.Cursor object at 0x7f53cb9d1040>)
+DEBUG    aiosqlite:core.py:67 operation functools.partial(<built-in method fetchall of sqlite3.Cursor object at 0x7f53cb9d1040>) completed
+DEBUG    aiosqlite:core.py:62 executing functools.partial(<built-in method close of sqlite3.Cursor object at 0x7f53cb9d1040>)
+DEBUG    aiosqlite:core.py:67 operation functools.partial(<built-in method close of sqlite3.Cursor object at 0x7f53cb9d1040>) completed
+DEBUG    aiosqlite:core.py:62 executing functools.partial(<built-in method cursor of sqlite3.Connection object at 0x7f53d1a3e6b0>)
+DEBUG    aiosqlite:core.py:67 operation functools.partial(<built-in method cursor of sqlite3.Connection object at 0x7f53d1a3e6b0>) completed
+DEBUG    aiosqlite:core.py:62 executing functools.partial(<built-in method execute of sqlite3.Cursor object at 0x7f53cb9d1440>, 'PRAGMA main.table_info("channel_assignments")', ())
+DEBUG    aiosqlite:core.py:67 operation functools.partial(<built-in method execute of sqlite3.Cursor object at 0x7f53cb9d1440>, 'PRAGMA main.table_info("channel_assignments")', ()) completed
+DEBUG    aiosqlite:core.py:62 executing functools.partial(<built-in method fetchall of sqlite3.Cursor object at 0x7f53cb9d1440>)
+DEBUG    aiosqlite:core.py:67 operation functools.partial(<built-in method fetchall of sqlite3.Cursor object at 0x7f53cb9d1440>) completed
+DEBUG    aiosqlite:core.py:62 executing functools.partial(<built-in method close of sqlite3.Cursor object at 0x7f53cb9d1440>)
+DEBUG    aiosqlite:core.py:67 operation functools.partial(<built-in method close of sqlite3.Cursor object at 0x7f53cb9d1440>) completed
+DEBUG    aiosqlite:core.py:62 executing functools.partial(<built-in method cursor of sqlite3.Connection object at 0x7f53d1a3e6b0>)
+DEBUG    aiosqlite:core.py:67 operation functools.partial(<built-in method cursor of sqlite3.Connection object at 0x7f53d1a3e6b0>) completed
+DEBUG    aiosqlite:core.py:62 executing functools.partial(<built-in method execute of sqlite3.Cursor object at 0x7f53cb9d14c0>, 'PRAGMA temp.table_info("channel_assignments")', ())
+DEBUG    aiosqlite:core.py:67 operation functools.partial(<built-in method execute of sqlite3.Cursor object at 0x7f53cb9d14c0>, 'PRAGMA temp.table_info("channel_assignments")', ()) completed
+DEBUG    aiosqlite:core.py:62 executing functools.partial(<built-in method fetchall of sqlite3.Cursor object at 0x7f53cb9d14c0>)
+DEBUG    aiosqlite:core.py:67 operation functools.partial(<built-in method fetchall of sqlite3.Cursor object at 0x7f53cb9d14c0>) completed
+DEBUG    aiosqlite:core.py:62 executing functools.partial(<built-in method close of sqlite3.Cursor object at 0x7f53cb9d14c0>)
+DEBUG    aiosqlite:core.py:67 operation functools.partial(<built-in method close of sqlite3.Cursor object at 0x7f53cb9d14c0>) completed
+DEBUG    aiosqlite:core.py:62 executing functools.partial(<built-in method cursor of sqlite3.Connection object at 0x7f53d1a3e6b0>)
+DEBUG    aiosqlite:core.py:67 operation functools.partial(<built-in method cursor of sqlite3.Connection object at 0x7f53d1a3e6b0>) completed
+DEBUG    aiosqlite:core.py:62 executing functools.partial(<built-in method execute of sqlite3.Cursor object at 0x7f53cb9d15c0>, 'PRAGMA main.table_info("documents")', ())
+DEBUG    aiosqlite:core.py:67 operation functools.partial(<built-in method execute of sqlite3.Cursor object at 0x7f53cb9d15c0>, 'PRAGMA main.table_info("documents")', ()) completed
+DEBUG    aiosqlite:core.py:62 executing functools.partial(<built-in method fetchall of sqlite3.Cursor object at 0x7f53cb9d15c0>)
+DEBUG    aiosqlite:core.py:67 operation functools.partial(<built-in method fetchall of sqlite3.Cursor object at 0x7f53cb9d15c0>) completed
+DEBUG    aiosqlite:core.py:62 executing functools.partial(<built-in method close of sqlite3.Cursor object at 0x7f53cb9d15c0>)
+DEBUG    aiosqlite:core.py:67 operation functools.partial(<built-in method close of sqlite3.Cursor object at 0x7f53cb9d15c0>) completed
+DEBUG    aiosqlite:core.py:62 executing functools.partial(<built-in method cursor of sqlite3.Connection object at 0x7f53d1a3e6b0>)
+DEBUG    aiosqlite:core.py:67 operation functools.partial(<built-in method cursor of sqlite3.Connection object at 0x7f53d1a3e6b0>) completed
+DEBUG    aiosqlite:core.py:62 executing functools.partial(<built-in method execute of sqlite3.Cursor object at 0x7f53cb9d13c0>, 'PRAGMA temp.table_info("documents")', ())
+DEBUG    aiosqlite:core.py:67 operation functools.partial(<built-in method execute of sqlite3.Cursor object at 0x7f53cb9d13c0>, 'PRAGMA temp.table_info("documents")', ()) completed
+DEBUG    aiosqlite:core.py:62 executing functools.partial(<built-in method fetchall of sqlite3.Cursor object at 0x7f53cb9d13c0>)
+DEBUG    aiosqlite:core.py:67 operation functools.partial(<built-in method fetchall of sqlite3.Cursor object at 0x7f53cb9d13c0>) completed
+DEBUG    aiosqlite:core.py:62 executing functools.partial(<built-in method close of sqlite3.Cursor object at 0x7f53cb9d13c0>)
+DEBUG    aiosqlite:core.py:67 operation functools.partial(<built-in method close of sqlite3.Cursor object at 0x7f53cb9d13c0>) completed
+DEBUG    aiosqlite:core.py:62 executing functools.partial(<built-in method cursor of sqlite3.Connection object at 0x7f53d1a3e6b0>)
+DEBUG    aiosqlite:core.py:67 operation functools.partial(<built-in method cursor of sqlite3.Connection object at 0x7f53d1a3e6b0>) completed
+DEBUG    aiosqlite:core.py:62 executing functools.partial(<built-in method execute of sqlite3.Cursor object at 0x7f53cb9d1640>, 'PRAGMA main.table_info("employees")', ())
+DEBUG    aiosqlite:core.py:67 operation functools.partial(<built-in method execute of sqlite3.Cursor object at 0x7f53cb9d1640>, 'PRAGMA main.table_info("employees")', ()) completed
+DEBUG    aiosqlite:core.py:62 executing functools.partial(<built-in method fetchall of sqlite3.Cursor object at 0x7f53cb9d1640>)
+DEBUG    aiosqlite:core.py:67 operation functools.partial(<built-in method fetchall of sqlite3.Cursor object at 0x7f53cb9d1640>) completed
+DEBUG    aiosqlite:core.py:62 executing functools.partial(<built-in method close of sqlite3.Cursor object at 0x7f53cb9d1640>)
+DEBUG    aiosqlite:core.py:67 operation functools.partial(<built-in method close of sqlite3.Cursor object at 0x7f53cb9d1640>) completed
+DEBUG    aiosqlite:core.py:62 executing functools.partial(<built-in method cursor of sqlite3.Connection object at 0x7f53d1a3e6b0>)
+DEBUG    aiosqlite:core.py:67 operation functools.partial(<built-in method cursor of sqlite3.Connection object at 0x7f53d1a3e6b0>) completed
+DEBUG    aiosqlite:core.py:62 executing functools.partial(<built-in method execute of sqlite3.Cursor object at 0x7f53cb9d16c0>, 'PRAGMA temp.table_info("employees")', ())
+DEBUG    aiosqlite:core.py:67 operation functools.partial(<built-in method execute of sqlite3.Cursor object at 0x7f53cb9d16c0>, 'PRAGMA temp.table_info("employees")', ()) completed
+DEBUG    aiosqlite:core.py:62 executing functools.partial(<built-in method fetchall of sqlite3.Cursor object at 0x7f53cb9d16c0>)
+DEBUG    aiosqlite:core.py:67 operation functools.partial(<built-in method fetchall of sqlite3.Cursor object at 0x7f53cb9d16c0>) completed
+DEBUG    aiosqlite:core.py:62 executing functools.partial(<built-in method close of sqlite3.Cursor object at 0x7f53cb9d16c0>)
+DEBUG    aiosqlite:core.py:67 operation functools.partial(<built-in method close of sqlite3.Cursor object at 0x7f53cb9d16c0>) completed
+DEBUG    aiosqlite:core.py:62 executing functools.partial(<built-in method cursor of sqlite3.Connection object at 0x7f53d1a3e6b0>)
+DEBUG    aiosqlite:core.py:67 operation functools.partial(<built-in method cursor of sqlite3.Connection object at 0x7f53d1a3e6b0>) completed
+DEBUG    aiosqlite:core.py:62 executing functools.partial(<built-in method execute of sqlite3.Cursor object at 0x7f53cb9d18c0>, 'PRAGMA main.table_info("organizations")', ())
+DEBUG    aiosqlite:core.py:67 operation functools.partial(<built-in method execute of sqlite3.Cursor object at 0x7f53cb9d18c0>, 'PRAGMA main.table_info("organizations")', ()) completed
+DEBUG    aiosqlite:core.py:62 executing functools.partial(<built-in method fetchall of sqlite3.Cursor object at 0x7f53cb9d18c0>)
+DEBUG    aiosqlite:core.py:67 operation functools.partial(<built-in method fetchall of sqlite3.Cursor object at 0x7f53cb9d18c0>) completed
+DEBUG    aiosqlite:core.py:62 executing functools.partial(<built-in method close of sqlite3.Cursor object at 0x7f53cb9d18c0>)
+DEBUG    aiosqlite:core.py:67 operation functools.partial(<built-in method close of sqlite3.Cursor object at 0x7f53cb9d18c0>) completed
+DEBUG    aiosqlite:core.py:62 executing functools.partial(<built-in method cursor of sqlite3.Connection object at 0x7f53d1a3e6b0>)
+DEBUG    aiosqlite:core.py:67 operation functools.partial(<built-in method cursor of sqlite3.Connection object at 0x7f53d1a3e6b0>) completed
+DEBUG    aiosqlite:core.py:62 executing functools.partial(<built-in method execute of sqlite3.Cursor object at 0x7f53cb9d1940>, 'PRAGMA temp.table_info("organizations")', ())
+DEBUG    aiosqlite:core.py:67 operation functools.partial(<built-in method execute of sqlite3.Cursor object at 0x7f53cb9d1940>, 'PRAGMA temp.table_info("organizations")', ()) completed
+DEBUG    aiosqlite:core.py:62 executing functools.partial(<built-in method fetchall of sqlite3.Cursor object at 0x7f53cb9d1940>)
+DEBUG    aiosqlite:core.py:67 operation functools.partial(<built-in method fetchall of sqlite3.Cursor object at 0x7f53cb9d1940>) completed
+DEBUG    aiosqlite:core.py:62 executing functools.partial(<built-in method close of sqlite3.Cursor object at 0x7f53cb9d1940>)
+DEBUG    aiosqlite:core.py:67 operation functools.partial(<built-in method close of sqlite3.Cursor object at 0x7f53cb9d1940>) completed
+DEBUG    aiosqlite:core.py:62 executing functools.partial(<built-in method cursor of sqlite3.Connection object at 0x7f53d1a3e6b0>)
+DEBUG    aiosqlite:core.py:67 operation functools.partial(<built-in method cursor of sqlite3.Connection object at 0x7f53d1a3e6b0>) completed
+DEBUG    aiosqlite:core.py:62 executing functools.partial(<built-in method execute of sqlite3.Cursor object at 0x7f53cb9d17c0>, 'PRAGMA main.table_info("agent_jobs")', ())
+DEBUG    aiosqlite:core.py:67 operation functools.partial(<built-in method execute of sqlite3.Cursor object at 0x7f53cb9d17c0>, 'PRAGMA main.table_info("agent_jobs")', ()) completed
+DEBUG    aiosqlite:core.py:62 executing functools.partial(<built-in method fetchall of sqlite3.Cursor object at 0x7f53cb9d17c0>)
+DEBUG    aiosqlite:core.py:67 operation functools.partial(<built-in method fetchall of sqlite3.Cursor object at 0x7f53cb9d17c0>) completed
+DEBUG    aiosqlite:core.py:62 executing functools.partial(<built-in method close of sqlite3.Cursor object at 0x7f53cb9d17c0>)
+DEBUG    aiosqlite:core.py:67 operation functools.partial(<built-in method close of sqlite3.Cursor object at 0x7f53cb9d17c0>) completed
+DEBUG    aiosqlite:core.py:62 executing functools.partial(<built-in method cursor of sqlite3.Connection object at 0x7f53d1a3e6b0>)
+DEBUG    aiosqlite:core.py:67 operation functools.partial(<built-in method cursor of sqlite3.Connection object at 0x7f53d1a3e6b0>) completed
+DEBUG    aiosqlite:core.py:62 executing functools.partial(<built-in method execute of sqlite3.Cursor object at 0x7f53cb9d1840>, 'PRAGMA temp.table_info("agent_jobs")', ())
+DEBUG    aiosqlite:core.py:67 operation functools.partial(<built-in method execute of sqlite3.Cursor object at 0x7f53cb9d1840>, 'PRAGMA temp.table_info("agent_jobs")', ()) completed
+DEBUG    aiosqlite:core.py:62 executing functools.partial(<built-in method fetchall of sqlite3.Cursor object at 0x7f53cb9d1840>)
+DEBUG    aiosqlite:core.py:67 operation functools.partial(<built-in method fetchall of sqlite3.Cursor object at 0x7f53cb9d1840>) completed
+DEBUG    aiosqlite:core.py:62 executing functools.partial(<built-in method close of sqlite3.Cursor object at 0x7f53cb9d1840>)
+DEBUG    aiosqlite:core.py:67 operation functools.partial(<built-in method close of sqlite3.Cursor object at 0x7f53cb9d1840>) completed
+DEBUG    aiosqlite:core.py:62 executing functools.partial(<built-in method cursor of sqlite3.Connection object at 0x7f53d1a3e6b0>)
+DEBUG    aiosqlite:core.py:67 operation functools.partial(<built-in method cursor of sqlite3.Connection object at 0x7f53d1a3e6b0>) completed
+DEBUG    aiosqlite:core.py:62 executing functools.partial(<built-in method execute of sqlite3.Cursor object at 0x7f53cb9d19c0>, 'PRAGMA main.table_info("mcp_connections")', ())
+DEBUG    aiosqlite:core.py:67 operation functools.partial(<built-in method execute of sqlite3.Cursor object at 0x7f53cb9d19c0>, 'PRAGMA main.table_info("mcp_connections")', ()) completed
+DEBUG    aiosqlite:core.py:62 executing functools.partial(<built-in method fetchall of sqlite3.Cursor object at 0x7f53cb9d19c0>)
+DEBUG    aiosqlite:core.py:67 operation functools.partial(<built-in method fetchall of sqlite3.Cursor object at 0x7f53cb9d19c0>) completed
+DEBUG    aiosqlite:core.py:62 executing functools.partial(<built-in method close of sqlite3.Cursor object at 0x7f53cb9d19c0>)
+DEBUG    aiosqlite:core.py:67 operation functools.partial(<built-in method close of sqlite3.Cursor object at 0x7f53cb9d19c0>) completed
+DEBUG    aiosqlite:core.py:62 executing functools.partial(<built-in method cursor of sqlite3.Connection object at 0x7f53d1a3e6b0>)
+DEBUG    aiosqlite:core.py:67 operation functools.partial(<built-in method cursor of sqlite3.Connection object at 0x7f53d1a3e6b0>) completed
+DEBUG    aiosqlite:core.py:62 executing functools.partial(<built-in method execute of sqlite3.Cursor object at 0x7f53cb9d1a40>, 'PRAGMA temp.table_info("mcp_connections")', ())
+DEBUG    aiosqlite:core.py:67 operation functools.partial(<built-in method execute of sqlite3.Cursor object at 0x7f53cb9d1a40>, 'PRAGMA temp.table_info("mcp_connections")', ()) completed
+DEBUG    aiosqlite:core.py:62 executing functools.partial(<built-in method fetchall of sqlite3.Cursor object at 0x7f53cb9d1a40>)
+DEBUG    aiosqlite:core.py:67 operation functools.partial(<built-in method fetchall of sqlite3.Cursor object at 0x7f53cb9d1a40>) completed
+DEBUG    aiosqlite:core.py:62 executing functools.partial(<built-in method close of sqlite3.Cursor object at 0x7f53cb9d1a40>)
+DEBUG    aiosqlite:core.py:67 operation functools.partial(<built-in method close of sqlite3.Cursor object at 0x7f53cb9d1a40>) completed
+DEBUG    aiosqlite:core.py:62 executing functools.partial(<built-in method cursor of sqlite3.Connection object at 0x7f53d1a3e6b0>)
+DEBUG    aiosqlite:core.py:67 operation functools.partial(<built-in method cursor of sqlite3.Connection object at 0x7f53d1a3e6b0>) completed
+DEBUG    aiosqlite:core.py:62 executing functools.partial(<built-in method execute of sqlite3.Cursor object at 0x7f53cb9d0d40>, "\nCREATE TABLE users (\n\tid CHAR(32) DEFAULT (gen_random_uuid()) NOT NULL, \n\tclerk_id VARCHAR(255) NOT NULL, \n\temail VARCHAR(255) NOT NULL, \n\tname VARCHAR(255) NOT NULL, \n\tis_active BOOLEAN DEFAULT 'true' NOT NULL, \n\tonboarding_completed BOOLEAN DEFAULT true NOT NULL, \n\tcreated_at DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL, \n\tupdated_at DATETIME, \n\tPRIMARY KEY (id)\n)\n\n", ())
+DEBUG    aiosqlite:core.py:67 operation functools.partial(<built-in method execute of sqlite3.Cursor object at 0x7f53cb9d0d40>, "\nCREATE TABLE users (\n\tid CHAR(32) DEFAULT (gen_random_uuid()) NOT NULL, \n\tclerk_id VARCHAR(255) NOT NULL, \n\temail VARCHAR(255) NOT NULL, \n\tname VARCHAR(255) NOT NULL, \n\tis_active BOOLEAN DEFAULT 'true' NOT NULL, \n\tonboarding_completed BOOLEAN DEFAULT true NOT NULL, \n\tcreated_at DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL, \n\tupdated_at DATETIME, \n\tPRIMARY KEY (id)\n)\n\n", ()) completed
+DEBUG    aiosqlite:core.py:62 executing functools.partial(<built-in method close of sqlite3.Cursor object at 0x7f53cb9d0d40>)
+DEBUG    aiosqlite:core.py:67 operation functools.partial(<built-in method close of sqlite3.Cursor object at 0x7f53cb9d0d40>) completed
+DEBUG    aiosqlite:core.py:62 executing functools.partial(<built-in method cursor of sqlite3.Connection object at 0x7f53d1a3e6b0>)
+DEBUG    aiosqlite:core.py:67 operation functools.partial(<built-in method cursor of sqlite3.Connection object at 0x7f53d1a3e6b0>) completed
+DEBUG    aiosqlite:core.py:62 executing functools.partial(<built-in method execute of sqlite3.Cursor object at 0x7f53cb9d1dc0>, 'CREATE UNIQUE INDEX ix_users_email ON users (email)', ())
+DEBUG    aiosqlite:core.py:67 operation functools.partial(<built-in method execute of sqlite3.Cursor object at 0x7f53cb9d1dc0>, 'CREATE UNIQUE INDEX ix_users_email ON users (email)', ()) completed
+DEBUG    aiosqlite:core.py:62 executing functools.partial(<built-in method close of sqlite3.Cursor object at 0x7f53cb9d1dc0>)
+DEBUG    aiosqlite:core.py:67 operation functools.partial(<built-in method close of sqlite3.Cursor object at 0x7f53cb9d1dc0>) completed
+DEBUG    aiosqlite:core.py:62 executing functools.partial(<built-in method cursor of sqlite3.Connection object at 0x7f53d1a3e6b0>)
+DEBUG    aiosqlite:core.py:67 operation functools.partial(<built-in method cursor of sqlite3.Connection object at 0x7f53d1a3e6b0>) completed
+DEBUG    aiosqlite:core.py:62 executing functools.partial(<built-in method execute of sqlite3.Cursor object at 0x7f53cb9d03c0>, 'CREATE UNIQUE INDEX ix_users_clerk_id ON users (clerk_id)', ())
+DEBUG    aiosqlite:core.py:67 operation functools.partial(<built-in method execute of sqlite3.Cursor object at 0x7f53cb9d03c0>, 'CREATE UNIQUE INDEX ix_users_clerk_id ON users (clerk_id)', ()) completed
+DEBUG    aiosqlite:core.py:62 executing functools.partial(<built-in method close of sqlite3.Cursor object at 0x7f53cb9d03c0>)
+DEBUG    aiosqlite:core.py:67 operation functools.partial(<built-in method close of sqlite3.Cursor object at 0x7f53cb9d03c0>) completed
+DEBUG    aiosqlite:core.py:62 executing functools.partial(<built-in method cursor of sqlite3.Connection object at 0x7f53d1a3e6b0>)
+DEBUG    aiosqlite:core.py:67 operation functools.partial(<built-in method cursor of sqlite3.Connection object at 0x7f53d1a3e6b0>) completed
+DEBUG    aiosqlite:core.py:62 executing functools.partial(<built-in method execute of sqlite3.Cursor object at 0x7f53cb9d0dc0>, '\nCREATE TABLE organizations (\n\tid CHAR(32) DEFAULT (gen_random_uuid()) NOT NULL, \n\towner_id CHAR(32) NOT NULL, \n\tname VARCHAR(255) NOT NULL, \n\tdescription TEXT, \n\twhat_it_does TEXT, \n\twebsite_url VARCHAR(2048), \n\tcognee_tenant_id VARCHAR(255), \n\tcognee_tenant_name VARCHAR(255), \n\tcognee_system_user_id VARCHAR(255), \n\tcognee_system_user_name VARCHAR(255), \n\tcognee_dataset_id VARCHAR(255), \n\tcognee_dataset_name VARCHAR(255), \n\tcreated_at DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL, \n\tPRIMARY KEY (id), \n\tFOREIGN KEY(owner_id) REFERENCES users (id) ON DELETE CASCADE\n)\n\n', ())
+DEBUG    aiosqlite:core.py:67 operation functools.partial(<built-in method execute of sqlite3.Cursor object at 0x7f53cb9d0dc0>, '\nCREATE TABLE organizations (\n\tid CHAR(32) DEFAULT (gen_random_uuid()) NOT NULL, \n\towner_id CHAR(32) NOT NULL, \n\tname VARCHAR(255) NOT NULL, \n\tdescription TEXT, \n\twhat_it_does TEXT, \n\twebsite_url VARCHAR(2048), \n\tcognee_tenant_id VARCHAR(255), \n\tcognee_tenant_name VARCHAR(255), \n\tcognee_system_user_id VARCHAR(255), \n\tcognee_system_user_name VARCHAR(255), \n\tcognee_dataset_id VARCHAR(255), \n\tcognee_dataset_name VARCHAR(255), \n\tcreated_at DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL, \n\tPRIMARY KEY (id), \n\tFOREIGN KEY(owner_id) REFERENCES users (id) ON DELETE CASCADE\n)\n\n', ()) completed
+DEBUG    aiosqlite:core.py:62 executing functools.partial(<built-in method close of sqlite3.Cursor object at 0x7f53cb9d0dc0>)
+DEBUG    aiosqlite:core.py:67 operation functools.partial(<built-in method close of sqlite3.Cursor object at 0x7f53cb9d0dc0>) completed
+DEBUG    aiosqlite:core.py:62 executing functools.partial(<built-in method cursor of sqlite3.Connection object at 0x7f53d1a3e6b0>)
+DEBUG    aiosqlite:core.py:67 operation functools.partial(<built-in method cursor of sqlite3.Connection object at 0x7f53d1a3e6b0>) completed
+DEBUG    aiosqlite:core.py:62 executing functools.partial(<built-in method execute of sqlite3.Cursor object at 0x7f53cb9d1b40>, 'CREATE INDEX ix_organizations_owner_id ON organizations (owner_id)', ())
+DEBUG    aiosqlite:core.py:67 operation functools.partial(<built-in method execute of sqlite3.Cursor object at 0x7f53cb9d1b40>, 'CREATE INDEX ix_organizations_owner_id ON organizations (owner_id)', ()) completed
+DEBUG    aiosqlite:core.py:62 executing functools.partial(<built-in method close of sqlite3.Cursor object at 0x7f53cb9d1b40>)
+DEBUG    aiosqlite:core.py:67 operation functools.partial(<built-in method close of sqlite3.Cursor object at 0x7f53cb9d1b40>) completed
+DEBUG    aiosqlite:core.py:62 executing functools.partial(<built-in method rollback of sqlite3.Connection object at 0x7f53d1a3e6b0>)
+DEBUG    aiosqlite:core.py:67 operation functools.partial(<built-in method rollback of sqlite3.Connection object at 0x7f53d1a3e6b0>) completed
+DEBUG    aiosqlite:core.py:62 executing functools.partial(<built-in method rollback of sqlite3.Connection object at 0x7f53d1a3e6b0>)
+DEBUG    aiosqlite:core.py:67 operation functools.partial(<built-in method rollback of sqlite3.Connection object at 0x7f53d1a3e6b0>) completed
+=============================== warnings summary ===============================
+.venv/lib/python3.12/site-packages/fastapi/testclient.py:1
+  /mnt/work/PROJECTS/openhuman/apps/api/.venv/lib/python3.12/site-packages/fastapi/testclient.py:1: StarletteDeprecationWarning: Using `httpx` with `starlette.testclient` is deprecated; install `httpx2` instead.
+    from starlette.testclient import TestClient as TestClient  # noqa
+
+.venv/lib/python3.12/site-packages/cognee/infrastructure/databases/graph/config.py:45
+  /mnt/work/PROJECTS/openhuman/apps/api/.venv/lib/python3.12/site-packages/cognee/infrastructure/databases/graph/config.py:45: PydanticDeprecatedSince20: Using extra keyword arguments on `Field` is deprecated and will be removed. Use `json_schema_extra` instead. (Extra keys: 'env'). Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.13/migration/
+    graph_database_provider: str = Field("ladybug", env="GRAPH_DATABASE_PROVIDER")
+
+.venv/lib/python3.12/site-packages/cognee/infrastructure/databases/graph/config.py:63
+  /mnt/work/PROJECTS/openhuman/apps/api/.venv/lib/python3.12/site-packages/cognee/infrastructure/databases/graph/config.py:63: PydanticDeprecatedSince20: Using extra keyword arguments on `Field` is deprecated and will be removed. Use `json_schema_extra` instead. (Extra keys: 'env'). Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.13/migration/
+    kuzu_num_threads: int = Field(0, env="KUZU_NUM_THREADS")
+
+.venv/lib/python3.12/site-packages/cognee/infrastructure/databases/graph/config.py:64
+  /mnt/work/PROJECTS/openhuman/apps/api/.venv/lib/python3.12/site-packages/cognee/infrastructure/databases/graph/config.py:64: PydanticDeprecatedSince20: Using extra keyword arguments on `Field` is deprecated and will be removed. Use `json_schema_extra` instead. (Extra keys: 'env'). Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.13/migration/
+    kuzu_buffer_pool_size: int = Field(DEFAULT_KUZU_BUFFER_POOL_SIZE, env="KUZU_BUFFER_POOL_SIZE")
+
+.venv/lib/python3.12/site-packages/cognee/infrastructure/databases/graph/config.py:65
+  /mnt/work/PROJECTS/openhuman/apps/api/.venv/lib/python3.12/site-packages/cognee/infrastructure/databases/graph/config.py:65: PydanticDeprecatedSince20: Using extra keyword arguments on `Field` is deprecated and will be removed. Use `json_schema_extra` instead. (Extra keys: 'env'). Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.13/migration/
+    kuzu_max_db_size: int = Field(DEFAULT_KUZU_MAX_DB_SIZE, env="KUZU_MAX_DB_SIZE")
+
+.venv/lib/python3.12/site-packages/pydantic/_internal/_generate_schema.py:325
+.venv/lib/python3.12/site-packages/pydantic/_internal/_generate_schema.py:325
+.venv/lib/python3.12/site-packages/pydantic/_internal/_generate_schema.py:325
+.venv/lib/python3.12/site-packages/pydantic/_internal/_generate_schema.py:325
+.venv/lib/python3.12/site-packages/pydantic/_internal/_generate_schema.py:325
+.venv/lib/python3.12/site-packages/pydantic/_internal/_generate_schema.py:325
+  /mnt/work/PROJECTS/openhuman/apps/api/.venv/lib/python3.12/site-packages/pydantic/_internal/_generate_schema.py:325: PydanticDeprecatedSince20: `json_encoders` is deprecated. See https://docs.pydantic.dev/2.13/concepts/serialization/#custom-serializers for alternatives. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.13/migration/
+    warnings.warn(
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+ERROR tests/test_auth_api.py::test_me_rejects_missing_token - sqlalchemy.exc....
+ERROR tests/test_auth_api.py::test_me_returns_user_when_authenticated - sqlal...
+ERROR tests/test_auth_api.py::test_me_idempotent_across_calls - sqlalchemy.ex...
+======================== 11 warnings, 3 errors in 7.14s ========================

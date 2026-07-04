@@ -19,6 +19,7 @@ from app.agent.tools.mcp.connectors.github import GITHUB_CONNECTOR  # noqa: E402
 from app.agent.tools.mcp.connectors.notion import NOTION_CONNECTOR  # noqa: E402
 from app.agent.tools.mcp.connectors.vercel import VERCEL_CONNECTOR  # noqa: E402
 from app.agent.tools.mcp.connectors.gmail import GMAIL_CONNECTOR  # noqa: E402
+from app.agent.tools.mcp.connectors.gamma import GAMMA_CONNECTOR  # noqa: E402
 from app.agent.tools.mcp.connectors.web_search import WEB_SEARCH_CONNECTOR  # noqa: E402
 
 REGISTRY: dict[str, ConnectorSpec] = {
@@ -27,4 +28,5 @@ REGISTRY: dict[str, ConnectorSpec] = {
     "notion": NOTION_CONNECTOR,
     "vercel": VERCEL_CONNECTOR,
     "gmail": GMAIL_CONNECTOR,
+    "gamma": GAMMA_CONNECTOR,
 }
