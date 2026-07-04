@@ -32,9 +32,9 @@ from app.activity.context import (
     activity_org_id,
     activity_platform,
 )
+from app.activity.service import record_activity
 from app.agent.jobs.queue import cancel_active_jobs_for_thread, is_cancel_intent
 from app.agent.router import get_graph_for_employee
-from app.activity.service import record_activity
 from app.channel_assignments.models import ChannelAssignment
 from app.core.config import settings
 from app.core.database import async_session_factory
@@ -46,9 +46,7 @@ from app.storage import get_storage_backend
 
 logger = logging.getLogger(__name__)
 
-_SAFE_ERROR_MESSAGE = (
-    "I ran into a problem processing your request. Please try again later."
-)
+_SAFE_ERROR_MESSAGE = "I ran into a problem processing your request. Please try again later."
 
 _MAX_SLACK_FILE_SIZE = 10 * 1024 * 1024  # 10 MB
 
@@ -148,7 +146,8 @@ class BaseSlackBot:
                 logger.warning(
                     "Slack API error checking thread participation in channel %s, "
                     "thread %s: %s (error code: %s)",
-                    channel, thread_ts,
+                    channel,
+                    thread_ts,
                     e.response.get("error", "unknown"),
                     e.response.status_code,
                 )
@@ -181,10 +180,7 @@ class BaseSlackBot:
             speaker = event.get("user", "unknown")
             ch = event.get("channel", "unknown")
             ts = event.get("ts", "")
-            ingest_text = (
-                f"Slack message from <@{speaker}> "
-                f"in <#{ch}> at {ts}:\n{text}"
-            )
+            ingest_text = f"Slack message from <@{speaker}> in <#{ch}> at {ts}:\n{text}"
             await remember(
                 ingest_text,
                 org.cognee_dataset_name,
@@ -239,7 +235,8 @@ class BaseSlackBot:
                     if not file_url.startswith("https://files.slack.com/"):
                         logger.warning(
                             "Rejected non-Slack file URL for employee %s: %s",
-                            employee_id, file_url,
+                            employee_id,
+                            file_url,
                         )
                         continue
 
@@ -247,7 +244,8 @@ class BaseSlackBot:
                     if file_size > _MAX_SLACK_FILE_SIZE:
                         logger.debug(
                             "Slack file %s (%d bytes) exceeds size limit — skipping",
-                            file_info.get("name"), file_size,
+                            file_info.get("name"),
+                            file_size,
                         )
                         continue
 
@@ -346,8 +344,7 @@ class BaseSlackBot:
         else:
             await say(
                 text=(
-                    "Nothing to cancel — there are no active "
-                    "background tasks in this conversation."
+                    "Nothing to cancel — there are no active background tasks in this conversation."
                 ),
                 channel=channel,
                 thread_ts=thread_ts,
@@ -359,14 +356,36 @@ class BaseSlackBot:
     # File upload helper
     # ------------------------------------------------------------------
 
+    @staticmethod
+    def _reconnect_hint(employee_id: UUID | str | None) -> str:
+        """Build a link back to the employee's dashboard so the user can
+        re-run the Slack OAuth flow and pick up newly required scopes
+        (e.g. ``files:write``) that an older connection may be missing."""
+        if not employee_id:
+            return "Please reconnect Slack from the employee's dashboard and try again."
+        url = f"{settings.frontend_url.rstrip('/')}/dashboard/{employee_id}"
+        return (
+            "This usually means Slack was connected before file uploads were "
+            "supported. Reconnect Slack for this employee here, then try again: "
+            f"{url}"
+        )
+
+    # Slack error codes that indicate the bot token lacks a required scope
+    # (as opposed to a transient or file-specific problem).
+    _SCOPE_ERROR_CODES = {"missing_scope", "not_allowed_token_type", "invalid_scope"}
+
     async def _send_files(
         self,
         channel: str,
         files: list[dict],
         thread_ts: str | None = None,
-    ) -> list[str]:
-        """Upload agent-generated files (charts, PDFs, etc.) to the Slack channel."""
-        failed_uploads: list[str] = []
+    ) -> list[tuple[str, str]]:
+        """Upload agent-generated files (charts, PDFs, etc.) to the Slack channel.
+
+        Returns a list of ``(filename, error_code)`` for any files that
+        failed to upload, so callers can tailor the failure message.
+        """
+        failed_uploads: list[tuple[str, str]] = []
         for f in files:
             filename = f.get("filename", "unknown")
             try:
@@ -378,16 +397,19 @@ class BaseSlackBot:
                     thread_ts=thread_ts,
                 )
             except SlackApiError as e:
-                failed_uploads.append(filename)
+                error_code = (
+                    e.response.get("error") if getattr(e, "response", None) else "unknown_error"
+                )
+                failed_uploads.append((filename, error_code))
                 logger.exception(
                     "Slack rejected file upload %s (channel=%s thread_ts=%s error=%s)",
                     filename,
                     channel,
                     thread_ts,
-                    e.response.get("error") if getattr(e, "response", None) else str(e),
+                    error_code,
                 )
             except Exception:
-                failed_uploads.append(filename)
+                failed_uploads.append((filename, "unknown_error"))
                 logger.exception(
                     "Failed to upload file %s (channel=%s thread_ts=%s)",
                     filename,
@@ -395,6 +417,30 @@ class BaseSlackBot:
                     thread_ts,
                 )
         return failed_uploads
+
+    @classmethod
+    def _file_upload_failure_message(
+        cls,
+        failed_uploads: list[tuple[str, str]],
+        employee_id: UUID | str | None,
+    ) -> str:
+        """Compose a user-facing message for failed file uploads.
+
+        Only suggests reconnecting Slack when the failure is actually caused
+        by a missing OAuth scope; other errors get a more accurate message.
+        """
+        filenames = ", ".join(name for name, _ in failed_uploads)
+        codes = {code for _, code in failed_uploads}
+        if codes & cls._SCOPE_ERROR_CODES:
+            return (
+                f"I created the file, but Slack blocked the attachment upload for: {filenames}. "
+                + cls._reconnect_hint(employee_id)
+            )
+        reasons = ", ".join(sorted(codes))
+        return (
+            f"I created the file, but Slack rejected the attachment upload for: {filenames} "
+            f"(reason: {reasons}). Please try again, or contact support if this keeps happening."
+        )
 
     # ------------------------------------------------------------------
     # Phase 6 — interactive escalation button handlers
@@ -464,11 +510,13 @@ class BaseSlackBot:
                 files = result.get("files", [])
         except GraphInterrupt:
             logger.info(
-                "Graph re-paused during escalation resume (thread=%s)", thread_key,
+                "Graph re-paused during escalation resume (thread=%s)",
+                thread_key,
             )
         except Exception:
             logger.exception(
-                "Failed to resume graph for escalation (thread=%s)", thread_key,
+                "Failed to resume graph for escalation (thread=%s)",
+                thread_key,
             )
             response_text = "Something went wrong processing the escalation decision."
 
@@ -529,25 +577,26 @@ class BaseSlackBot:
 
         if files and channel_id:
             failed_uploads = await self._send_files(
-                channel=channel_id, files=files, thread_ts=thread_ts,
+                channel=channel_id,
+                files=files,
+                thread_ts=thread_ts,
             )
             if failed_uploads:
                 try:
                     await client.chat_postMessage(
                         channel=channel_id,
                         thread_ts=thread_ts,
-                        text=(
-                            "I created the file, but Slack blocked the attachment upload for: "
-                            + ", ".join(failed_uploads)
-                            + ". Please reconnect the Slack bot and try again."
-                        ),
+                        text=self._file_upload_failure_message(failed_uploads, employee_id),
                     )
                 except Exception:
                     logger.exception("Failed to post file upload failure notice")
 
         logger.info(
             "%s escalation resolved: approved=%s by=%s thread=%s",
-            self._bot_label, approved, decision["by"], thread_key,
+            self._bot_label,
+            approved,
+            decision["by"],
+            thread_key,
         )
 
 
@@ -573,6 +622,7 @@ class EmployeeSlackBot(BaseSlackBot):
 
     def _build_app(self) -> None:
         import os
+
         slack_client_id = os.environ.pop("SLACK_CLIENT_ID", None)
         slack_client_secret = os.environ.pop("SLACK_CLIENT_SECRET", None)
         try:
@@ -605,7 +655,8 @@ class EmployeeSlackBot(BaseSlackBot):
         if not is_dm and not await self._is_channel_allowed(channel):
             logger.debug(
                 "Channel %s is not assigned to employee %s — ignoring",
-                channel, self.employee_id,
+                channel,
+                self.employee_id,
             )
             return
 
@@ -615,7 +666,8 @@ class EmployeeSlackBot(BaseSlackBot):
             except Exception:
                 logger.debug(
                     "Failed to auto-join channel %s (private/lacks channels:join)",
-                    channel, exc_info=True,
+                    channel,
+                    exc_info=True,
                 )
 
         employee_name = "OpenHuman Agent"
@@ -625,9 +677,7 @@ class EmployeeSlackBot(BaseSlackBot):
             async with async_session_factory() as session:
                 emp = await session.get(Employee, self.employee_id)
                 if emp:
-                    employee_name = (
-                        f"{emp.name} ({emp.role})" if emp.role else emp.name
-                    )
+                    employee_name = f"{emp.name} ({emp.role})" if emp.role else emp.name
                     org = await session.scalar(
                         select(Organization).where(Organization.id == emp.org_id)
                     )
@@ -636,7 +686,13 @@ class EmployeeSlackBot(BaseSlackBot):
 
         # -- Cancel fast path (before potentially slow ingest/file ops) --
         if await self._cancel_and_respond(
-            text, self.employee_id, employee_name, channel, thread_ts, org, say,
+            text,
+            self.employee_id,
+            employee_name,
+            channel,
+            thread_ts,
+            org,
+            say,
         ):
             return
 
@@ -644,7 +700,11 @@ class EmployeeSlackBot(BaseSlackBot):
         await self._auto_ingest_message(text, event, org, self.employee_id, employee_name)
         files = event.get("files", [])
         await self._process_file_attachments(
-            files, org, emp, self.employee_id, self.bot_token,
+            files,
+            org,
+            emp,
+            self.employee_id,
+            self.bot_token,
         )
 
         # Thread recording context for per-tool activity
@@ -656,7 +716,9 @@ class EmployeeSlackBot(BaseSlackBot):
         activity_channel_id.set(channel)
 
         result = await self._run_agent(
-            text, channel_id=channel, thread_ts=thread_ts,
+            text,
+            channel_id=channel,
+            thread_ts=thread_ts,
         )
 
         if result is None:
@@ -664,7 +726,9 @@ class EmployeeSlackBot(BaseSlackBot):
                 try:
                     async with async_session_factory() as s:
                         await record_activity(
-                            s, org.id, "human_escalation",
+                            s,
+                            org.id,
+                            "human_escalation",
                             f"Escalation awaiting approval from: {text[:100]}",
                             employee_id=self.employee_id,
                             employee_name=employee_name,
@@ -681,23 +745,29 @@ class EmployeeSlackBot(BaseSlackBot):
                     pass
             return
 
-        response_text = result.get("response", "") or "I processed your request but had no response."
+        response_text = (
+            result.get("response", "") or "I processed your request but had no response."
+        )
         files = result.get("files", [])
 
         if org:
             try:
                 async with async_session_factory() as s:
                     await record_activity(
-                        s, org.id, "agent_conversation",
+                        s,
+                        org.id,
+                        "agent_conversation",
                         f"Responded to: {text[:100]}",
                         employee_id=self.employee_id,
                         employee_name=employee_name,
                         platform="slack",
                         status="succeeded",
-                        description=json.dumps({
-                            "response": response_text[:500],
-                            "channel": channel,
-                        }),
+                        description=json.dumps(
+                            {
+                                "response": response_text[:500],
+                                "channel": channel,
+                            }
+                        ),
                         metadata={
                             "channel": channel,
                             "thread_ts": thread_ts,
@@ -717,15 +787,13 @@ class EmployeeSlackBot(BaseSlackBot):
 
         if files:
             failed_uploads = await self._send_files(
-                channel=channel, files=files, thread_ts=thread_ts,
+                channel=channel,
+                files=files,
+                thread_ts=thread_ts,
             )
             if failed_uploads:
                 await say(
-                    text=(
-                        "I created the file, but Slack blocked the attachment upload for: "
-                        + ", ".join(failed_uploads)
-                        + ". Please reconnect this Slack bot and try again."
-                    ),
+                    text=self._file_upload_failure_message(failed_uploads, self.employee_id),
                     channel=channel,
                     thread_ts=thread_ts,
                     username=employee_name,
@@ -739,10 +807,12 @@ class EmployeeSlackBot(BaseSlackBot):
         """Return ``True`` if this employee should respond in *channel_id*."""
         async with async_session_factory() as session:
             any_assignments = await session.scalar(
-                select(ChannelAssignment).where(
+                select(ChannelAssignment)
+                .where(
                     ChannelAssignment.platform == "slack",
                     ChannelAssignment.employee_id == self.employee_id,
-                ).limit(1)
+                )
+                .limit(1)
             )
             if any_assignments is None:
                 return True
@@ -760,7 +830,8 @@ class EmployeeSlackBot(BaseSlackBot):
     # ------------------------------------------------------------------
 
     async def _run_agent(
-        self, content: str,
+        self,
+        content: str,
         channel_id: str = "",
         thread_ts: str = "",
     ) -> dict | None:
@@ -778,7 +849,8 @@ class EmployeeSlackBot(BaseSlackBot):
         try:
             async with async_session_factory() as session:
                 graph, all_tools = await get_graph_for_employee(
-                    session, self.employee_id,
+                    session,
+                    self.employee_id,
                 )
                 config = {
                     "configurable": {
@@ -796,12 +868,14 @@ class EmployeeSlackBot(BaseSlackBot):
         except GraphInterrupt:
             logger.info(
                 "Graph paused for interactive approval (employee=%s, thread=%s)",
-                self.employee_id, thread_key,
+                self.employee_id,
+                thread_key,
             )
             return None
         except Exception:
             logger.exception(
-                "Agent graph failed for employee %s on Slack", self.employee_id,
+                "Agent graph failed for employee %s on Slack",
+                self.employee_id,
             )
             return {"response": _SAFE_ERROR_MESSAGE, "files": []}
 
@@ -844,13 +918,20 @@ class WorkspaceSlackBot(BaseSlackBot):
         if employee_id is None:
             logger.debug(
                 "No employee assigned for channel=%s (token=...%s) — ignoring",
-                channel, self.bot_token[-8:],
+                channel,
+                self.bot_token[-8:],
             )
             return
 
         # -- Cancel fast path (before potentially slow ingest/file ops) --
         if await self._cancel_and_respond(
-            text, employee_id, "OpenHuman Agent", channel, thread_ts, None, say,
+            text,
+            employee_id,
+            "OpenHuman Agent",
+            channel,
+            thread_ts,
+            None,
+            say,
         ):
             return
 
@@ -860,20 +941,26 @@ class WorkspaceSlackBot(BaseSlackBot):
         async with async_session_factory() as session:
             emp = await session.get(Employee, employee_id)
             if emp:
-                employee_name = (
-                    f"{emp.name} ({emp.role})" if emp.role else emp.name
-                )
+                employee_name = f"{emp.name} ({emp.role})" if emp.role else emp.name
                 org = await session.scalar(
                     select(Organization).where(Organization.id == emp.org_id)
                 )
                 await self._auto_ingest_message(
-                    text, event, org, employee_id, employee_name,
+                    text,
+                    event,
+                    org,
+                    employee_id,
+                    employee_name,
                 )
 
         # File processing
         files = event.get("files", [])
         await self._process_file_attachments(
-            files, org, emp, employee_id, self.bot_token,
+            files,
+            org,
+            emp,
+            employee_id,
+            self.bot_token,
         )
 
         # Thread recording context for per-tool activity
@@ -885,12 +972,17 @@ class WorkspaceSlackBot(BaseSlackBot):
         activity_channel_id.set(channel)
 
         result = await self._run_agent(
-            employee_id, text, channel_id=channel, thread_ts=thread_ts,
+            employee_id,
+            text,
+            channel_id=channel,
+            thread_ts=thread_ts,
         )
         if result is None:
             return
 
-        response_text = result.get("response", "") or "I processed your request but had no response."
+        response_text = (
+            result.get("response", "") or "I processed your request but had no response."
+        )
         files = result.get("files", [])
 
         await say(
@@ -902,15 +994,13 @@ class WorkspaceSlackBot(BaseSlackBot):
 
         if files:
             failed_uploads = await self._send_files(
-                channel=channel, files=files, thread_ts=thread_ts,
+                channel=channel,
+                files=files,
+                thread_ts=thread_ts,
             )
             if failed_uploads:
                 await say(
-                    text=(
-                        "I created the file, but Slack blocked the attachment upload for: "
-                        + ", ".join(failed_uploads)
-                        + ". Please reconnect this Slack bot and try again."
-                    ),
+                    text=self._file_upload_failure_message(failed_uploads, employee_id),
                     channel=channel,
                     thread_ts=thread_ts,
                     username=employee_name,
@@ -936,10 +1026,12 @@ class WorkspaceSlackBot(BaseSlackBot):
                     return ca.employee_id
 
                 any_assignments = await session.scalar(
-                    select(ChannelAssignment).where(
+                    select(ChannelAssignment)
+                    .where(
                         ChannelAssignment.platform == "slack",
                         ChannelAssignment.employee_id.in_(self._employee_id_set),
-                    ).limit(1)
+                    )
+                    .limit(1)
                 )
                 if any_assignments is not None:
                     return None
@@ -952,10 +1044,12 @@ class WorkspaceSlackBot(BaseSlackBot):
     async def _find_unrestricted_employee(self, session) -> UUID | None:
         """Return first candidate with no Slack channel assignments."""
         result = await session.execute(
-            select(ChannelAssignment.employee_id).where(
+            select(ChannelAssignment.employee_id)
+            .where(
                 ChannelAssignment.platform == "slack",
                 ChannelAssignment.employee_id.in_(self._employee_id_set),
-            ).distinct()
+            )
+            .distinct()
         )
         assigned_ids = {row[0] for row in result.all()}
 
@@ -969,7 +1063,9 @@ class WorkspaceSlackBot(BaseSlackBot):
     # ------------------------------------------------------------------
 
     async def _run_agent(
-        self, employee_id: UUID, content: str,
+        self,
+        employee_id: UUID,
+        content: str,
         channel_id: str = "",
         thread_ts: str = "",
     ) -> dict | None:
@@ -987,7 +1083,8 @@ class WorkspaceSlackBot(BaseSlackBot):
         try:
             async with async_session_factory() as session:
                 graph, all_tools = await get_graph_for_employee(
-                    session, employee_id,
+                    session,
+                    employee_id,
                 )
                 config = {
                     "configurable": {
@@ -1005,11 +1102,13 @@ class WorkspaceSlackBot(BaseSlackBot):
         except GraphInterrupt:
             logger.info(
                 "Graph paused for interactive approval (employee=%s, thread=%s)",
-                employee_id, thread_key,
+                employee_id,
+                thread_key,
             )
             return None
         except Exception:
             logger.exception(
-                "Agent graph failed for employee %s on Slack", employee_id,
+                "Agent graph failed for employee %s on Slack",
+                employee_id,
             )
             return {"response": _SAFE_ERROR_MESSAGE, "files": []}
