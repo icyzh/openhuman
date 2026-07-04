@@ -114,10 +114,11 @@ async def list_employee_mcp_connections(
     db: AsyncSession = Depends(get_db),
     _current_user: User = Depends(get_current_user),
 ) -> McpConnectionList:
-    """List MCP connections available to *emp_id* (theirs + org-wide)."""
+    """List active MCP connections available to *emp_id* (theirs + org-wide)."""
     result = await db.execute(
         select(McpConnection).where(
             McpConnection.org_id == org_id,
+            McpConnection.status == "connected",
             (
                 (McpConnection.employee_id == emp_id)
                 | (McpConnection.employee_id.is_(None))
