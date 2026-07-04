@@ -259,6 +259,44 @@ class TestCalculate:
 
 
 # =============================================================================
+# Document generation tests
+# =============================================================================
+
+
+class TestCreateDocument:
+    """Document generation should stay resilient on malformed content."""
+
+    def test_create_document_pdf_handles_long_unbroken_text(self):
+        from app.agent.tools.executor import create_document
+
+        long_token = "A" * 5000
+        result = create_document.invoke({
+            "content": long_token,
+            "filename": "document.pdf",
+        })
+
+        assert result.startswith("__OPENHUMAN_FILE__")
+        assert '"filename": "document.pdf"' in result
+
+    def test_create_document_falls_back_to_text_on_generation_error(self, monkeypatch):
+        from app.agent.tools import executor
+
+        def _boom(_content: str) -> bytes:
+            raise RuntimeError("pdf exploded")
+
+        monkeypatch.setattr(executor, "_generate_pdf", _boom)
+
+        result = executor.create_document.invoke({
+            "content": "hello world",
+            "filename": "document.pdf",
+        })
+
+        assert result.startswith("__OPENHUMAN_FILE__")
+        assert '"filename": "document.txt"' in result
+        assert '"content_type": "text/plain"' in result
+
+
+# =============================================================================
 # get_datetime tests
 # =============================================================================
 

@@ -6,6 +6,7 @@ import operator
 import os
 import re
 import socket
+import textwrap
 from datetime import UTC, datetime
 from urllib.parse import urlparse
 from uuid import UUID
@@ -336,6 +337,28 @@ def _find_dejavu_font(style: str = "") -> str:
 
 def _generate_pdf(content: str) -> bytes:
     from fpdf import FPDF
+
+    def _write_wrapped_line(pdf: FPDF, text: str, line_height: int = 6, indent: int = 0) -> None:
+        clean = text.replace("\t", "    ").strip()
+        if not clean:
+            pdf.ln(4)
+            return
+
+        available_width = max(pdf.w - pdf.l_margin - pdf.r_margin - indent, 20)
+        chunks = textwrap.wrap(
+            clean,
+            width=90,
+            break_long_words=True,
+            break_on_hyphens=False,
+            replace_whitespace=False,
+            drop_whitespace=False,
+        ) or [clean]
+
+        for chunk in chunks:
+            if indent:
+                pdf.set_x(pdf.l_margin + indent)
+            pdf.multi_cell(available_width, line_height, chunk)
+
     pdf = FPDF()
     pdf.add_page()
     pdf.set_auto_page_break(auto=True, margin=20)
@@ -351,20 +374,18 @@ def _generate_pdf(content: str) -> bytes:
             continue
         if line.startswith("##"):
             pdf.set_font("DejaVu", "B", 14)
-            pdf.multi_cell(0, 8, line.lstrip("#").strip())
+            _write_wrapped_line(pdf, line.lstrip("#").strip(), line_height=8)
             pdf.set_font("DejaVu", size=11)
         elif line.startswith("#"):
             pdf.set_font("DejaVu", "B", 16)
-            pdf.multi_cell(0, 10, line.lstrip("#").strip())
+            _write_wrapped_line(pdf, line.lstrip("#").strip(), line_height=10)
             pdf.set_font("DejaVu", size=11)
         elif any(line.startswith(p) for p in ("- ", "* ", "•")):
-            pdf.cell(5)
-            pdf.multi_cell(0, 6, line.lstrip("- *•").strip())
+            _write_wrapped_line(pdf, f"• {line.lstrip('- *•').strip()}", indent=5)
         elif line[0].isdigit() and ". " in line[:4]:
-            pdf.cell(5)
-            pdf.multi_cell(0, 6, line)
+            _write_wrapped_line(pdf, line, indent=5)
         else:
-            pdf.multi_cell(0, 6, line)
+            _write_wrapped_line(pdf, line)
     return pdf.output()
 
 
@@ -464,19 +485,31 @@ def create_document(content: str, filename: str = "document.txt") -> str:
 
     ext = os.path.splitext(filename)[1].lower()
 
-    if ext == ".pdf":
-        raw = _generate_pdf(content)
-        data_b64 = base64.b64encode(raw).decode("ascii")
-        ct = "application/pdf"
-    elif ext == ".pptx":
-        raw = _generate_pptx(content)
-        data_b64 = base64.b64encode(raw).decode("ascii")
-        ct = "application/vnd.openxmlformats-officedocument.presentationml.presentation"
-    else:
+    try:
+        if ext == ".pdf":
+            raw = _generate_pdf(content)
+            data_b64 = base64.b64encode(raw).decode("ascii")
+            ct = "application/pdf"
+        elif ext == ".pptx":
+            raw = _generate_pptx(content)
+            data_b64 = base64.b64encode(raw).decode("ascii")
+            ct = "application/vnd.openxmlformats-officedocument.presentationml.presentation"
+        else:
+            data_b64 = base64.b64encode(content.encode("utf-8")).decode("ascii")
+            from mimetypes import guess_type
+            ct, _ = guess_type(filename) if "." in filename else ("text/plain", None)
+            ct = ct or "text/plain"
+    except Exception:
+        logger.exception("Document generation failed for %s", filename)
+        fallback_name = re.sub(r"\.[^.]+$", "", filename) + ".txt"
         data_b64 = base64.b64encode(content.encode("utf-8")).decode("ascii")
-        from mimetypes import guess_type
-        ct, _ = guess_type(filename) if "." in filename else ("text/plain", None)
-        ct = ct or "text/plain"
+        ct = "text/plain"
+        return _file_marker(
+            fallback_name,
+            ct,
+            data_b64,
+            title=f"{fallback_name} (fallback after document generation error)",
+        )
 
     return _file_marker(filename, ct, data_b64, title=filename)
 
