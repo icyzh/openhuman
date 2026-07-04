@@ -37,6 +37,7 @@ import {
   useDocumentsDeleteDocumentRoute,
   useMcpListMcpConnectors,
   useMcpListEmployeeMcpConnections,
+  useMcpCreateMcpConnection,
   useMcpDeleteMcpConnection,
   getMcpListEmployeeMcpConnectionsQueryKey,
 } from "@repo/api-client";
@@ -156,11 +157,14 @@ export default function EmployeeDetailPage() {
   // Dialog visibility states
   const [showDiscordDialog, setShowDiscordDialog] = useState(false);
   const [showClickupDialog, setShowClickupDialog] = useState(false);
+  const [showMcpTokenDialog, setShowMcpTokenDialog] = useState(false);
 
   // Input states for dialogs
   const [discordToken, setDiscordToken] = useState("");
   const [discordClientId, setDiscordClientId] = useState("");
   const [clickupToken, setClickupToken] = useState("");
+  const [mcpTokenValue, setMcpTokenValue] = useState("");
+  const [mcpTokenSlug, setMcpTokenSlug] = useState("");
 
   // Local connection states loaded from localStorage
   const [localDiscordConnected, setLocalDiscordConnected] = useState(false);
@@ -386,6 +390,46 @@ export default function EmployeeDetailPage() {
   } = useMcpListEmployeeMcpConnections(orgId ?? "", empId, { query: { enabled: !!(orgId && empId) } });
 
   const deleteMcpConnectionMutation = useMcpDeleteMcpConnection();
+  const createMcpConnectionMutation = useMcpCreateMcpConnection();
+
+  const handleConnectMcpToken = useCallback(async () => {
+    if (!orgId || !empId || !mcpTokenSlug) return;
+    if (!mcpTokenValue.trim()) {
+      toast.error("Please enter an access token");
+      return;
+    }
+    try {
+      await createMcpConnectionMutation.mutateAsync({
+        orgId,
+        empId,
+        slug: mcpTokenSlug,
+        data: { credential: mcpTokenValue.trim(), org_wide: false },
+      });
+      setShowMcpTokenDialog(false);
+      setMcpTokenValue("");
+      setMcpTokenSlug("");
+      toast.success(`${mcpTokenSlug === "notion" ? "Notion" : mcpTokenSlug} connected successfully!`);
+      refetchMcpConnections();
+    } catch (err: any) {
+      toast.error(err?.response?.data?.detail || `Failed to connect ${mcpTokenSlug}`);
+    }
+  }, [orgId, empId, mcpTokenSlug, mcpTokenValue, createMcpConnectionMutation, refetchMcpConnections]);
+
+  const handleConnectNoAuth = useCallback(async (slug: string) => {
+    if (!orgId || !empId) return;
+    try {
+      await createMcpConnectionMutation.mutateAsync({
+        orgId,
+        empId,
+        slug,
+        data: { credential: "", org_wide: false },
+      });
+      toast.success(`${slug === "vega" ? "Vega" : slug} connected successfully!`);
+      refetchMcpConnections();
+    } catch (err: any) {
+      toast.error(err?.response?.data?.detail || `Failed to connect ${slug}`);
+    }
+  }, [orgId, empId, createMcpConnectionMutation, refetchMcpConnections]);
 
   const handleDisconnectMcp = useCallback(
     async (slug: string) => {
@@ -1326,10 +1370,25 @@ export default function EmployeeDetailPage() {
               name: "Brave Web Search",
               description: "Query search engines for web index answers.",
             },
+            {
+              slug: "vega",
+              name: "Vega Charts",
+              description: "Free interactive charts via Vega-Lite — no API key required.",
+            },
+            {
+              slug: "pitchdeck",
+              name: "Pitch Deck AI",
+              description: "Free AI pitch deck generator — investor-ready slides and fundraising metrics.",
+            },
           ].map((item) => {
             const isConnected = mcpConnectionsData?.connections?.some(
               (c) => c.connector_slug === item.slug && c.status === "connected"
             );
+
+            const connInfo = connectors?.find((c) => c.slug === item.slug);
+            const authTypes = connInfo?.auth_types ?? [connInfo?.auth_type ?? ""];
+            const supportsPaste = authTypes.some((t) => t === "pat_bearer" || t === "api_key_header");
+            const isNoneAuth = connInfo?.auth_type === "none";
 
             return (
               <div
@@ -1366,6 +1425,25 @@ export default function EmployeeDetailPage() {
                       disabled={deleteMcpConnectionMutation.isPending}
                     >
                       Disconnect
+                    </Button>
+                  ) : supportsPaste ? (
+                    <Button
+                      onClick={() => {
+                        setMcpTokenSlug(item.slug);
+                        setMcpTokenValue("");
+                        setShowMcpTokenDialog(true);
+                      }}
+                      className="inline-flex h-6 items-center justify-center rounded bg-primary px-2.5 text-[10px] font-bold text-primary-foreground hover:bg-primary/90 shrink-0"
+                    >
+                      Paste Token
+                    </Button>
+                  ) : isNoneAuth ? (
+                    <Button
+                      onClick={() => handleConnectNoAuth(item.slug)}
+                      disabled={createMcpConnectionMutation.isPending}
+                      className="inline-flex h-6 items-center justify-center rounded bg-primary px-2.5 text-[10px] font-bold text-primary-foreground hover:bg-primary/90 shrink-0"
+                    >
+                      Connect
                     </Button>
                   ) : (
                     <Button
@@ -1486,6 +1564,45 @@ export default function EmployeeDetailPage() {
             </Button>
             <Button onClick={handleConnectClickup}>
               Confirm Connection
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* MCP Token Paste Dialog */}
+      <Dialog open={showMcpTokenDialog} onOpenChange={setShowMcpTokenDialog}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Connect {mcpTokenSlug === "notion" ? "Notion" : mcpTokenSlug === "vercel" ? "Vercel" : mcpTokenSlug}</DialogTitle>
+            <DialogDescription>
+              Paste your access token to allow {employee?.name} to use this integration.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex flex-col gap-4 py-4">
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="mcp-token">Access Token</Label>
+              <Input
+                id="mcp-token"
+                type="password"
+                placeholder={
+                  mcpTokenSlug === "notion"
+                    ? "ntn_..." : mcpTokenSlug === "vercel"
+                      ? "xxxxxxxxxxxx" : "Enter token…"
+                }
+                value={mcpTokenValue}
+                onChange={(e) => setMcpTokenValue(e.target.value)}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setShowMcpTokenDialog(false)}>
+              Cancel
+            </Button>
+            <Button
+              onClick={handleConnectMcpToken}
+              disabled={createMcpConnectionMutation.isPending}
+            >
+              {createMcpConnectionMutation.isPending ? "Connecting…" : "Confirm Connection"}
             </Button>
           </DialogFooter>
         </DialogContent>

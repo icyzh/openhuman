@@ -12,6 +12,7 @@ OAuth-based MCP connector shares the same plumbing:
 
 from __future__ import annotations
 
+import base64
 import logging
 from typing import TYPE_CHECKING
 from urllib.parse import quote_plus, urlencode
@@ -169,16 +170,23 @@ async def exchange_code(
     payload = {
         "grant_type": "authorization_code",
         "code": code,
-        "client_id": creds["client_id"],
-        "client_secret": creds["client_secret"],
         "redirect_uri": settings.mcp_oauth_redirect_uri,
     }
+
+    headers: dict[str, str] = {"Accept": "application/json"}
+
+    if spec.token_auth_method == "basic":
+        raw = f"{creds['client_id']}:{creds['client_secret']}"
+        headers["Authorization"] = f"Basic {base64.b64encode(raw.encode()).decode()}"
+    else:
+        payload["client_id"] = creds["client_id"]
+        payload["client_secret"] = creds["client_secret"]
 
     async with httpx.AsyncClient() as client:
         resp = await client.post(
             spec.token_url,
             data=payload,
-            headers={"Accept": "application/json"},
+            headers=headers,
             timeout=30,
         )
         resp.raise_for_status()
@@ -221,17 +229,25 @@ async def refresh_access_token(
 
     refresh_token = decrypt_token(connection.oauth_refresh_token_enc)
 
+    refresh_payload: dict[str, str] = {
+        "grant_type": "refresh_token",
+        "refresh_token": refresh_token,
+    }
+    refresh_headers: dict[str, str] = {"Accept": "application/json"}
+
+    if spec.token_auth_method == "basic":
+        raw = f"{creds['client_id']}:{creds['client_secret']}"
+        refresh_headers["Authorization"] = f"Basic {base64.b64encode(raw.encode()).decode()}"
+    else:
+        refresh_payload["client_id"] = creds["client_id"]
+        refresh_payload["client_secret"] = creds["client_secret"]
+
     try:
         async with httpx.AsyncClient() as client:
             resp = await client.post(
                 spec.token_url,
-                data={
-                    "grant_type": "refresh_token",
-                    "refresh_token": refresh_token,
-                    "client_id": creds["client_id"],
-                    "client_secret": creds["client_secret"],
-                },
-                headers={"Accept": "application/json"},
+                data=refresh_payload,
+                headers=refresh_headers,
                 timeout=30,
             )
             resp.raise_for_status()

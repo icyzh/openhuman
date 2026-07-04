@@ -14,12 +14,14 @@ NOTION_CONNECTOR = ConnectorSpec(
     base_url="https://mcp.notion.com/mcp",
     transport="streamable_http",
     auth_type="oauth2",
+    alternative_auth_types=["pat_bearer"],
     authorize_url="https://api.notion.com/v1/oauth/authorize",
     token_url="https://api.notion.com/v1/oauth/token",
     default_scopes=[],
     docs_url="https://developers.notion.com/docs/authorization",
     default_tool_allow=None,  # allow all tools
     default_tool_deny=[],
+    token_auth_method="basic",
     supports_token_refresh=False,
     requires_manual_approval=False,
 )

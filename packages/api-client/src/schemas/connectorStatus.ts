@@ -14,6 +14,7 @@ export interface ConnectorStatus {
   name: string;
   description: string;
   auth_type: string;
+  auth_types?: string[];
   docs_url?: string;
   is_connected?: boolean;
   connection_count?: number;

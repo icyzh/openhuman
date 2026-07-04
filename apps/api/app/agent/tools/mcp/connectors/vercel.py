@@ -14,6 +14,7 @@ VERCEL_CONNECTOR = ConnectorSpec(
     base_url="https://mcp.vercel.com",
     transport="streamable_http",
     auth_type="oauth2",
+    alternative_auth_types=["pat_bearer"],
     authorize_url="https://vercel.com/oauth/authorize",
     token_url="https://api.vercel.com/v2/oauth/access_token",
     default_scopes=[],

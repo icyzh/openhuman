@@ -15,6 +15,7 @@ class ConnectorStatus(BaseModel):
     name: str
     description: str
     auth_type: str
+    auth_types: list[str] = []
     docs_url: str = ""
     is_connected: bool = False
     connection_count: int = 0

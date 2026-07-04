@@ -1,11 +1,21 @@
+import os
 from pathlib import Path
 
+from dotenv import load_dotenv
 from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 # Resolve .env relative to the project root (apps/api/) regardless of CWD
 _PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 _ENV_FILE = _PROJECT_ROOT / ".env"
+
+# Ensure .env is loaded into os.environ before pydantic-settings reads it.
+# This covers Docker and other environments where the .env file may not be
+# resolvable at class-definition time.
+if _ENV_FILE.exists():
+    load_dotenv(_ENV_FILE, override=False)
+else:
+    load_dotenv(".env", override=False)
 
 
 class Settings(BaseSettings):
@@ -147,27 +157,36 @@ class Settings(BaseSettings):
     @property
     def mcp_oauth_credentials(self) -> dict[str, dict[str, str]]:
         """Return ``{slug: {client_id, client_secret}}`` for every OAuth connector
-        whose credentials are configured in the environment."""
+        whose credentials are configured in the environment.
+
+        Falls back to ``os.getenv`` for each variable so that values injected
+        via ``load_dotenv`` (or set directly in the shell / Docker Compose) are
+        picked up even if ``pydantic-settings`` did not set the field.
+        """
         creds: dict[str, dict[str, str]] = {}
-        if self.gmail_client_id:
+
+        def _val(field: str, env: str) -> str:
+            return field or os.getenv(env, "")
+
+        if gid := _val(self.gmail_client_id, "GMAIL_CLIENT_ID"):
             creds["gmail"] = {
-                "client_id": self.gmail_client_id,
-                "client_secret": self.gmail_client_secret,
+                "client_id": gid,
+                "client_secret": _val(self.gmail_client_secret, "GMAIL_CLIENT_SECRET"),
             }
-        if self.notion_client_id:
+        if nid := _val(self.notion_client_id, "NOTION_CLIENT_ID"):
             creds["notion"] = {
-                "client_id": self.notion_client_id,
-                "client_secret": self.notion_client_secret,
+                "client_id": nid,
+                "client_secret": _val(self.notion_client_secret, "NOTION_CLIENT_SECRET"),
             }
-        if self.vercel_client_id:
+        if vid := _val(self.vercel_client_id, "VERCEL_CLIENT_ID"):
             creds["vercel"] = {
-                "client_id": self.vercel_client_id,
-                "client_secret": self.vercel_client_secret,
+                "client_id": vid,
+                "client_secret": _val(self.vercel_client_secret, "VERCEL_CLIENT_SECRET"),
             }
-        if self.github_client_id:
+        if ghid := _val(self.github_client_id, "GITHUB_CLIENT_ID"):
             creds["github"] = {
-                "client_id": self.github_client_id,
-                "client_secret": self.github_client_secret,
+                "client_id": ghid,
+                "client_secret": _val(self.github_client_secret, "GITHUB_CLIENT_SECRET"),
             }
         return creds
 

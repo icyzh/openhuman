@@ -82,12 +82,14 @@ async def list_mcp_connectors(
 
     output: list[ConnectorStatus] = []
     for slug, spec in REGISTRY.items():
+        auth_types = [spec.auth_type] + [a for a in spec.alternative_auth_types if a != spec.auth_type]
         output.append(
             ConnectorStatus(
                 slug=slug,
                 name=spec.name,
                 description=spec.description,
                 auth_type=spec.auth_type,
+                auth_types=auth_types,
                 docs_url=spec.docs_url,
                 is_connected=slug in connected_slugs,
                 connection_count=counts.get(slug, 0),
@@ -167,16 +169,21 @@ async def create_mcp_connection(
             detail=f"Unknown connector slug: {slug}",
         )
 
-    # Only api_key_header and pat_bearer use the simple credential-paste flow.
-    # OAuth2 connectors will use the Phase 2 install/callback flow.
-    if spec.auth_type not in ("api_key_header", "pat_bearer", "none"):
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=(
-                f"Connector '{slug}' uses auth_type={spec.auth_type}. "
-                "Use the OAuth install flow for oauth2 connectors."
-            ),
-        )
+    supported_for_paste = {"api_key_header", "pat_bearer", "none"}
+    if spec.auth_type not in supported_for_paste:
+        # Check whether the connector lists an alternative auth type that
+        # supports credential paste (PAT / API key).
+        if not any(
+            alt in supported_for_paste for alt in spec.alternative_auth_types
+        ):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=(
+                    f"Connector '{slug}' uses auth_type={spec.auth_type} "
+                    "and does not list an alternative paste-friendly auth type. "
+                    "Use the OAuth install flow for oauth2 connectors."
+                ),
+            )
 
     # Encrypt the credential
     try:

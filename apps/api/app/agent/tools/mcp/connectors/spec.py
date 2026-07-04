@@ -24,7 +24,12 @@ class ConnectorSpec(BaseModel):
         description="Transport protocol — almost always streamable_http",
     )
     auth_type: AuthType = Field(
-        default="none", description="How to authenticate to this server"
+        default="none", description="Primary authentication method for this server"
+    )
+    alternative_auth_types: list[AuthType] = Field(
+        default_factory=list,
+        description="Additional authentication methods users can choose from "
+        "(e.g., ``['pat_bearer']`` for connectors that primarily use OAuth2)",
     )
 
     # Auth metadata (used by the OAuth router for oauth2 connectors)
@@ -62,6 +67,13 @@ class ConnectorSpec(BaseModel):
     rate_limit_per_minute: int = Field(
         default=60,
         description="Max MCP tool calls per minute to this server (0 = unlimited)",
+    )
+
+    # Token auth method for OAuth token exchange
+    token_auth_method: Literal["form", "basic"] = Field(
+        default="form",
+        description="How to send client credentials to the token endpoint: "
+        "'form' = POST body fields (default), 'basic' = HTTP Basic Auth header",
     )
 
     # Feature flags
