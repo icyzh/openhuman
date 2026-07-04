@@ -15,6 +15,8 @@ from uuid import UUID, uuid4
 
 import pytest
 
+import app.agent.tools.mcp.models  # noqa: F401
+
 # Ensure all model modules are imported before SQLAlchemy mapper configuration
 # is triggered by the gateway refresh loop (same pattern as app/main.py).
 import app.auth.models  # noqa: F401
@@ -22,7 +24,6 @@ import app.channel_assignments.models  # noqa: F401
 import app.documents.models  # noqa: F401
 import app.employees.models  # noqa: F401
 import app.organizations.models  # noqa: F401
-import app.agent.tools.mcp.models  # noqa: F401
 
 # =============================================================================
 # Helpers
@@ -142,22 +143,14 @@ class TestRefreshBots:
         emp = _make_emp()
 
         with (
-            patch(
-                "app.gateway.manager.async_session_factory"
-            ) as mock_session_factory,
+            patch("app.gateway.manager.async_session_factory") as mock_session_factory,
             patch(
                 "app.gateway.manager.get_active_employees_with_tokens",
                 new_callable=AsyncMock,
             ) as mock_get_active,
-            patch(
-                "app.gateway.manager.decrypt_discord_token", return_value="dtoken"
-            ),
-            patch(
-                "app.gateway.manager.decrypt_slack_token", return_value="stoken"
-            ),
-            patch(
-                "app.gateway.manager.settings"
-            ) as mock_settings,
+            patch("app.gateway.manager.decrypt_discord_token", return_value="dtoken"),
+            patch("app.gateway.manager.decrypt_slack_token", return_value="stoken"),
+            patch("app.gateway.manager.settings") as mock_settings,
         ):
             mock_settings.slack_app_token = "xapp-token"
             mock_settings.slack_identity_mode = "shared"
@@ -182,19 +175,13 @@ class TestRefreshBots:
         emp = _make_emp(status="inactive")
 
         with (
-            patch(
-                "app.gateway.manager.async_session_factory"
-            ) as mock_session_factory,
+            patch("app.gateway.manager.async_session_factory") as mock_session_factory,
             patch(
                 "app.gateway.manager.get_active_employees_with_tokens",
                 new_callable=AsyncMock,
             ) as mock_get_active,
-            patch(
-                "app.gateway.manager.decrypt_discord_token", return_value="dtoken"
-            ),
-            patch(
-                "app.gateway.manager.decrypt_slack_token", return_value="stoken"
-            ),
+            patch("app.gateway.manager.decrypt_discord_token", return_value="dtoken"),
+            patch("app.gateway.manager.decrypt_slack_token", return_value="stoken"),
             patch("app.gateway.manager.settings") as mock_settings,
         ):
             mock_settings.slack_app_token = "xapp-token"
@@ -227,9 +214,7 @@ class TestRefreshBots:
         emp = _make_emp()
 
         with (
-            patch(
-                "app.gateway.manager.async_session_factory"
-            ) as mock_session_factory,
+            patch("app.gateway.manager.async_session_factory") as mock_session_factory,
             patch(
                 "app.gateway.manager.get_active_employees_with_tokens",
                 new_callable=AsyncMock,
@@ -275,19 +260,13 @@ class TestRefreshBots:
         emp = _make_emp()
 
         with (
-            patch(
-                "app.gateway.manager.async_session_factory"
-            ) as mock_session_factory,
+            patch("app.gateway.manager.async_session_factory") as mock_session_factory,
             patch(
                 "app.gateway.manager.get_active_employees_with_tokens",
                 new_callable=AsyncMock,
             ) as mock_get_active,
-            patch(
-                "app.gateway.manager.decrypt_discord_token", return_value="dtoken"
-            ),
-            patch(
-                "app.gateway.manager.decrypt_slack_token", return_value="stoken"
-            ),
+            patch("app.gateway.manager.decrypt_discord_token", return_value="dtoken"),
+            patch("app.gateway.manager.decrypt_slack_token", return_value="stoken"),
             patch("app.gateway.manager.settings") as mock_settings,
         ):
             mock_settings.slack_app_token = ""  # No app token
@@ -313,19 +292,13 @@ class TestRefreshBots:
         emp = _make_emp(discord_token=None, slack_token=None)
 
         with (
-            patch(
-                "app.gateway.manager.async_session_factory"
-            ) as mock_session_factory,
+            patch("app.gateway.manager.async_session_factory") as mock_session_factory,
             patch(
                 "app.gateway.manager.get_active_employees_with_tokens",
                 new_callable=AsyncMock,
             ) as mock_get_active,
-            patch(
-                "app.gateway.manager.decrypt_discord_token", return_value=None
-            ),
-            patch(
-                "app.gateway.manager.decrypt_slack_token", return_value=None
-            ),
+            patch("app.gateway.manager.decrypt_discord_token", return_value=None),
+            patch("app.gateway.manager.decrypt_slack_token", return_value=None),
             patch("app.gateway.manager.settings") as mock_settings,
         ):
             mock_settings.slack_app_token = "xapp-token"
@@ -366,6 +339,7 @@ class TestDiscordBotFilters:
         mock_msg.channel = MagicMock(spec=[])
         # isinstance check for DMChannel
         import discord
+
         mock_msg.channel.__class__ = discord.DMChannel  # type: ignore[assignment]
         mock_msg.content = "hello"
         mock_msg.mentions = []
@@ -425,9 +399,7 @@ class TestDiscordBotFilters:
 
         # Simulate the content stripping logic directly
         content = "<@!12345> <@12345> hello there"
-        content = content.replace(f"<@!{mock_user.id}>", "").replace(
-            f"<@{mock_user.id}>", ""
-        )
+        content = content.replace(f"<@!{mock_user.id}>", "").replace(f"<@{mock_user.id}>", "")
         content = content.strip()
         assert content == "hello there"
 
@@ -443,9 +415,7 @@ class TestDiscordBotFilters:
         mock_assignment = MagicMock(spec=ChannelAssignment)
         mock_assignment.channel_id = "123456"
 
-        with patch(
-            "app.gateway.discord_bot.async_session_factory"
-        ) as mock_factory:
+        with patch("app.gateway.discord_bot.async_session_factory") as mock_factory:
             mock_session = MagicMock()
             mock_result = MagicMock()
             mock_result.scalars.return_value.all.return_value = [mock_assignment]
@@ -463,9 +433,7 @@ class TestDiscordBotFilters:
         emp_id = uuid4()
         bot = EmployeeDiscordBot(employee_id=emp_id)
 
-        with patch(
-            "app.gateway.discord_bot.async_session_factory"
-        ) as mock_factory:
+        with patch("app.gateway.discord_bot.async_session_factory") as mock_factory:
             mock_session = MagicMock()
             mock_result = MagicMock()
             mock_result.scalars.return_value.all.return_value = []
@@ -502,6 +470,7 @@ class TestSlackBotFilters:
     @pytest.mark.anyio
     async def test_app_mention_triggers_processing(self):
         bot = self._make_bot()
+        bot.bot_user_id = "U123"  # simulates a bot that has finished connecting
         bot._run_agent = AsyncMock(return_value={"response": "Hi!", "files": []})  # type: ignore[method-assign]
         bot._is_channel_allowed = AsyncMock(return_value=True)  # type: ignore[method-assign]
 
@@ -510,6 +479,37 @@ class TestSlackBotFilters:
 
         await bot.handle_mention(event, say)
         bot._run_agent.assert_awaited_once()
+
+    @pytest.mark.anyio
+    async def test_app_mention_ignored_when_bot_user_id_unknown(self):
+        """If the bot's own identity hasn't resolved yet, it must NOT respond
+        (fail closed) — otherwise it could answer on behalf of another
+        employee's bot mentioned in the same message."""
+        bot = self._make_bot()
+        bot.bot_user_id = None
+        bot._run_agent = AsyncMock(return_value={"response": "Hi!", "files": []})  # type: ignore[method-assign]
+        bot._is_channel_allowed = AsyncMock(return_value=True)  # type: ignore[method-assign]
+
+        event = {"text": "<@U123> hello bot", "channel": "C001", "ts": "100"}
+        say = AsyncMock()
+
+        await bot.handle_mention(event, say)
+        bot._run_agent.assert_not_awaited()
+
+    @pytest.mark.anyio
+    async def test_app_mention_for_different_bot_ignored(self):
+        """A mention of a different employee's bot user id must not trigger
+        this bot's processing."""
+        bot = self._make_bot()
+        bot.bot_user_id = "U123"
+        bot._run_agent = AsyncMock(return_value={"response": "Hi!", "files": []})  # type: ignore[method-assign]
+        bot._is_channel_allowed = AsyncMock(return_value=True)  # type: ignore[method-assign]
+
+        event = {"text": "<@U999> hello bot", "channel": "C001", "ts": "100"}
+        say = AsyncMock()
+
+        await bot.handle_mention(event, say)
+        bot._run_agent.assert_not_awaited()
 
     @pytest.mark.anyio
     async def test_dm_triggers_processing(self):
@@ -569,10 +569,11 @@ class TestSlackBotFilters:
     async def test_replies_in_thread(self):
         """Slack responses should include thread_ts."""
         bot = self._make_bot()
+        bot.bot_user_id = "U123"  # simulates a bot that has finished connecting
         bot._run_agent = AsyncMock(return_value={"response": "Hello!", "files": []})  # type: ignore[method-assign]
         bot._is_channel_allowed = AsyncMock(return_value=True)  # type: ignore[method-assign]
 
-        event = {"text": "hi", "channel": "C001", "ts": "100.5"}
+        event = {"text": "<@U123> hi", "channel": "C001", "ts": "100.5"}
         say = AsyncMock()
 
         await bot._process_slack_message(event, say)
@@ -591,9 +592,7 @@ class TestSlackBotFilters:
         mock_assignment = MagicMock(spec=ChannelAssignment)
         mock_assignment.channel_id = "C001"
 
-        with patch(
-            "app.gateway.slack_bot.async_session_factory"
-        ) as mock_factory:
+        with patch("app.gateway.slack_bot.async_session_factory") as mock_factory:
             mock_session = MagicMock()
 
             # For _is_channel_allowed("C001"):
@@ -608,10 +607,12 @@ class TestSlackBotFilters:
             assigned_result.scalars.return_value.first.return_value = mock_assignment
             not_assigned_result = MagicMock()
             not_assigned_result.scalars.return_value.first.return_value = None
-            mock_session.execute = AsyncMock(side_effect=[
-                assigned_result,      # "C001" found
-                not_assigned_result,  # "C999" not found
-            ])
+            mock_session.execute = AsyncMock(
+                side_effect=[
+                    assigned_result,  # "C001" found
+                    not_assigned_result,  # "C999" not found
+                ]
+            )
 
             mock_factory.return_value.__aenter__.return_value = mock_session
 
@@ -694,6 +695,7 @@ class TestErrorSanitization:
     def test_settings_gateway_disabled_by_default(self):
         """gateway_enabled must default to False for dev safety."""
         import os
+
         from app.core.config import Settings
 
         # Create a fresh settings instance (ignores .env)

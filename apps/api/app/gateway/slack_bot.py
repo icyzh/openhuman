@@ -79,14 +79,33 @@ class BaseSlackBot:
     # ------------------------------------------------------------------
 
     async def connect(self) -> None:
-        """Open the Socket Mode WebSocket connection."""
-        await self._handler.connect_async()
+        """Resolve this bot's identity, then open the Socket Mode WebSocket connection.
+
+        ``bot_user_id`` MUST be known before events start flowing — the
+        mention-filtering guards in ``handle_mention`` /
+        ``_process_slack_message`` only work when it's set, and they fail
+        *open* (process the message) when it's ``None``. Resolving identity
+        before connecting avoids a startup race where an early event could be
+        mis-attributed to the wrong employee's bot.
+        """
         try:
             auth_res = await self.app.client.auth_test()
             self.bot_user_id = auth_res.get("user_id")
         except Exception:
-            logger.exception("Failed to fetch bot user_id on connection")
+            logger.exception("Failed to fetch bot user_id before connecting")
             self.bot_user_id = None
+
+        await self._handler.connect_async()
+
+        if self.bot_user_id is None:
+            # Retry once in the background so we don't permanently disable
+            # mention filtering for the lifetime of this connection.
+            try:
+                auth_res = await self.app.client.auth_test()
+                self.bot_user_id = auth_res.get("user_id")
+            except Exception:
+                logger.exception("Retry to fetch bot user_id also failed")
+
         logger.info(
             "%s connected (bot_user_id=%s)",
             self._bot_label,
@@ -107,10 +126,16 @@ class BaseSlackBot:
 
     async def handle_mention(self, event: dict, say) -> None:
         """Respond to @mentions in public channels."""
-        if self.bot_user_id:
-            text = event.get("text", "")
-            if f"<@{self.bot_user_id}>" not in text:
-                return
+        if not self.bot_user_id:
+            logger.warning(
+                "%s: bot_user_id unknown, ignoring app_mention to avoid "
+                "responding on behalf of the wrong employee",
+                self._bot_label,
+            )
+            return
+        text = event.get("text", "")
+        if f"<@{self.bot_user_id}>" not in text:
+            return
         await self._process_slack_message(event, say)
 
     async def handle_message(self, event: dict, say) -> None:
@@ -125,8 +150,16 @@ class BaseSlackBot:
             return
 
         if thread_ts and thread_ts != ts and channel:
+            if not self.bot_user_id:
+                logger.warning(
+                    "%s: bot_user_id unknown, ignoring thread reply to avoid "
+                    "responding on behalf of the wrong employee",
+                    self._bot_label,
+                )
+                return
+
             text = event.get("text", "")
-            if self.bot_user_id and f"<@{self.bot_user_id}>" in text:
+            if f"<@{self.bot_user_id}>" in text:
                 return
 
             try:
@@ -136,10 +169,10 @@ class BaseSlackBot:
                     limit=50,
                 )
                 messages = replies.get("messages", [])
-                bot_participated = any(
-                    msg.get("user") == self.bot_user_id or msg.get("bot_id") is not None
-                    for msg in messages
-                )
+                # Only this bot's OWN prior messages count as "participating" —
+                # checking for any bot_id would make every employee bot think
+                # it's part of a thread as soon as any other employee replied.
+                bot_participated = any(msg.get("user") == self.bot_user_id for msg in messages)
                 if bot_participated:
                     await self._process_slack_message(event, say)
             except SlackApiError as e:
@@ -642,7 +675,14 @@ class EmployeeSlackBot(BaseSlackBot):
         if "bot_id" in event:
             return
 
-        if self.bot_user_id and event.get("channel_type") != "im":
+        if event.get("channel_type") != "im":
+            if not self.bot_user_id:
+                logger.warning(
+                    "%s: bot_user_id unknown, ignoring channel message to "
+                    "avoid responding on behalf of the wrong employee",
+                    self._bot_label,
+                )
+                return
             text = event.get("text", "")
             if f"<@{self.bot_user_id}>" not in text:
                 return
