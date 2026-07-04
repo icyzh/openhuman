@@ -1497,3 +1497,7 @@ User 4a0fff7d-8625-41d4-8406-79ea98b6027c has registered.
 2026-07-04T13:47:44.960759 [ERROR   ] PermissionDeniedError: Request owner does not have necessary permission: [read] for all datasets requested. (Status code: 403) [cognee.shared.logging_utils]
 2026-07-04T13:48:16.814427 [ERROR   ] PermissionDeniedError: Request owner does not have necessary permission: [read] for all datasets requested. (Status code: 403) [cognee.shared.logging_utils]
 2026-07-04T13:48:24.002729 [ERROR   ] PermissionDeniedError: Request owner does not have necessary permission: [read] for all datasets requested. (Status code: 403) [cognee.shared.logging_utils]
+2026-07-04T13:49:19.786780 [ERROR   ] PermissionDeniedError: Request owner does not have necessary permission: [read] for all datasets requested. (Status code: 403) [cognee.shared.logging_utils]
+2026-07-04T13:49:19.791113 [ERROR   ] PermissionDeniedError: Request owner does not have necessary permission: [read] for all datasets requested. (Status code: 403) [cognee.shared.logging_utils]
+2026-07-04T13:49:26.777470 [ERROR   ] PermissionDeniedError: Request owner does not have necessary permission: [read] for all datasets requested. (Status code: 403) [cognee.shared.logging_utils]
+2026-07-04T13:49:26.778812 [ERROR   ] PermissionDeniedError: Request owner does not have necessary permission: [read] for all datasets requested. (Status code: 403) [cognee.shared.logging_utils]
