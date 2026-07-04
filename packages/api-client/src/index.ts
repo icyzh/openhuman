@@ -167,6 +167,42 @@ export type {
   DocumentsGetOrgDocumentsStatsQueryError,
 } from "./api/documents/documents";
 
+// MCP
+export {
+  useMcpListMcpConnectors,
+  useMcpListEmployeeMcpConnections,
+  useMcpCreateMcpConnection,
+  useMcpDeleteMcpConnection,
+  useMcpMcpOauthInstall,
+  useMcpMcpOauthCallback,
+  getMcpListMcpConnectorsQueryKey,
+  getMcpListEmployeeMcpConnectionsQueryKey,
+  getMcpMcpOauthInstallQueryKey,
+  getMcpMcpOauthCallbackQueryKey,
+  mcpListMcpConnectors,
+  mcpListEmployeeMcpConnections,
+  mcpCreateMcpConnection,
+  mcpDeleteMcpConnection,
+  mcpMcpOauthInstall,
+  mcpMcpOauthCallback,
+} from "./api/mcp/mcp";
+
+export type {
+  McpListMcpConnectorsQueryResult,
+  McpListMcpConnectorsQueryError,
+  McpListEmployeeMcpConnectionsQueryResult,
+  McpListEmployeeMcpConnectionsQueryError,
+  McpCreateMcpConnectionMutationResult,
+  McpCreateMcpConnectionMutationBody,
+  McpCreateMcpConnectionMutationError,
+  McpDeleteMcpConnectionMutationResult,
+  McpDeleteMcpConnectionMutationError,
+  McpMcpOauthInstallQueryResult,
+  McpMcpOauthInstallQueryError,
+  McpMcpOauthCallbackQueryResult,
+  McpMcpOauthCallbackQueryError,
+} from "./api/mcp/mcp";
+
 // Schemas
 export type {
   HealthResponse,
@@ -188,4 +224,11 @@ export type {
   DocumentsGetOrgDocumentsStatsParams,
   DocumentsListOrgDocumentsParams,
   DocumentsStatsResponse,
+  ConnectorStatus,
+  McpConnectionRead,
+  McpConnectionCreate,
+  McpConnectionList,
+  McpMcpOauthCallbackParams,
+  McpMcpOauthInstallParams,
 } from "./schemas";
+

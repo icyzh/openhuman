@@ -47,6 +47,7 @@ HR_TEMPLATE = EmployeeTemplate(
         "check_background_task", "cancel_background_task",
         "escalate_to_human", "escalate_to_human_interactive",
     ],
+    allowed_mcp_servers=["gmail"],
     suggested_mcp_servers=["bamboohr", "rippling"],
     guardrail_config={"block_pii": True, "require_citations": False},
     suggested_duties=[
@@ -78,7 +79,7 @@ SALES_TEMPLATE = EmployeeTemplate(
         "check_background_task", "cancel_background_task",
         "escalate_to_human", "escalate_to_human_interactive",
     ],
-    allowed_mcp_servers=["web_search"],
+    allowed_mcp_servers=["web_search", "gmail"],
     suggested_mcp_servers=["hubspot", "salesforce", "github"],
     guardrail_config={"block_pii": False, "require_citations": False},
     suggested_duties=[
@@ -108,7 +109,7 @@ SUPPORT_TEMPLATE = EmployeeTemplate(
         "check_background_task", "cancel_background_task",
         "escalate_to_human", "escalate_to_human_interactive",
     ],
-    allowed_mcp_servers=["web_search"],
+    allowed_mcp_servers=["web_search", "gmail"],
     suggested_mcp_servers=["github", "zendesk", "intercom", "gmail"],
     guardrail_config={"block_pii": True, "require_citations": False},
     suggested_duties=[
@@ -139,7 +140,7 @@ GENERAL_TEMPLATE = EmployeeTemplate(
         "calculate", "fetch_url", "get_datetime",
         "check_background_task", "cancel_background_task",
     ],
-    allowed_mcp_servers=["web_search"],
+    allowed_mcp_servers=["web_search", "gmail"],
     suggested_mcp_servers=["github", "gmail"],
     guardrail_config={"block_pii": False, "require_citations": False},
     suggested_duties=[
@@ -170,7 +171,7 @@ LEGAL_COMPLIANCE_TEMPLATE = EmployeeTemplate(
         "check_background_task", "cancel_background_task",
         "escalate_to_human", "escalate_to_human_interactive",
     ],
-    allowed_mcp_servers=["web_search"],
+    allowed_mcp_servers=["web_search", "gmail"],
     suggested_mcp_servers=["docusign", "github", "gmail"],
     guardrail_config={"block_pii": True, "require_citations": True},
     suggested_duties=[

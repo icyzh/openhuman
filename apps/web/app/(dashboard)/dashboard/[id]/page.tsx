@@ -8,6 +8,7 @@ import {
   DownloadIcon,
   ExternalLinkIcon,
   FileTextIcon,
+  MailIcon,
   PlusIcon,
   Trash2Icon,
   UploadIcon,
@@ -27,6 +28,10 @@ import {
   getDocumentsListOrgDocumentsQueryKey,
   useDocumentsUploadDocument,
   useDocumentsDeleteDocumentRoute,
+  useMcpListMcpConnectors,
+  useMcpListEmployeeMcpConnections,
+  useMcpDeleteMcpConnection,
+  getMcpListEmployeeMcpConnectionsQueryKey,
 } from "@repo/api-client";
 import type { UpdateEmployeeRequest } from "@repo/api-client";
 import { useOrgStore } from "@/stores/org";
@@ -201,6 +206,30 @@ export default function EmployeeDetailPage() {
     }
   }, [searchParams]);
 
+  useEffect(() => {
+    const mcpOauth = searchParams.get("mcp_oauth");
+    const connector = searchParams.get("connector");
+    if (mcpOauth === "connected") {
+      toast.success(`${connector === "gmail" ? "Gmail" : connector || "MCP"} connected successfully!`);
+      if (orgId && empId) {
+        queryClient.invalidateQueries({
+          queryKey: getMcpListEmployeeMcpConnectionsQueryKey(orgId, empId),
+        });
+      }
+    } else if (mcpOauth === "error") {
+      const reason = searchParams.get("reason") || "unknown error";
+      toast.error(`Connection failed: ${reason}`);
+    }
+    if (mcpOauth) {
+      const next = new URL(window.location.href);
+      next.searchParams.delete("mcp_oauth");
+      next.searchParams.delete("connector");
+      next.searchParams.delete("reason");
+      next.searchParams.delete("employee_id");
+      window.history.replaceState({}, "", next.toString());
+    }
+  }, [searchParams, orgId, empId, queryClient]);
+
   const [editingField, setEditingField] = useState<EditableField | null>(null);
   const [draftValue, setDraftValue] = useState("");
   const [dutyInput, setDutyInput] = useState("");
@@ -231,6 +260,39 @@ export default function EmployeeDetailPage() {
   } = useDocumentsListOrgDocuments(
     { organization_id: orgId!, employee_id: empId },
     { query: { enabled: !!(orgId && empId) } },
+  );
+
+  const {
+    data: connectors,
+    isLoading: connectorsLoading,
+  } = useMcpListMcpConnectors(orgId ?? "", { query: { enabled: !!orgId } });
+
+  const {
+    data: mcpConnectionsData,
+    isLoading: mcpConnectionsLoading,
+    refetch: refetchMcpConnections,
+  } = useMcpListEmployeeMcpConnections(orgId ?? "", empId, { query: { enabled: !!(orgId && empId) } });
+
+  const deleteMcpConnectionMutation = useMcpDeleteMcpConnection();
+
+  const handleDisconnectMcp = useCallback(
+    async (slug: string) => {
+      if (!orgId || !empId) return;
+      try {
+        await deleteMcpConnectionMutation.mutateAsync({
+          orgId,
+          empId,
+          slug,
+        });
+        toast.success(`${slug === "gmail" ? "Gmail" : slug} disconnected successfully!`);
+        queryClient.invalidateQueries({
+          queryKey: getMcpListEmployeeMcpConnectionsQueryKey(orgId, empId),
+        });
+      } catch {
+        toast.error(`Failed to disconnect ${slug}.`);
+      }
+    },
+    [orgId, empId, deleteMcpConnectionMutation, queryClient]
   );
 
   const invalidateDocs = useCallback(() => {
@@ -725,6 +787,63 @@ export default function EmployeeDetailPage() {
                 >
                   <PlusIcon />
                 </Button>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* MCP Integrations Card */}
+          <Card>
+            <CardHeader>
+              <h3 className="text-base font-semibold text-foreground">
+                MCP Integrations
+              </h3>
+            </CardHeader>
+            <CardContent className="flex flex-col gap-4">
+              <div className="flex items-center justify-between rounded-lg border border-border bg-muted/30 px-4 py-3">
+                <div className="flex items-center gap-3">
+                  <div className="flex size-10 items-center justify-center rounded-lg border border-border bg-background">
+                    <MailIcon className="size-5 text-primary" />
+                  </div>
+                  <div className="flex flex-col gap-0.5">
+                    <span className="text-sm font-medium text-foreground">
+                      Gmail / Google Workspace
+                    </span>
+                    {mcpConnectionsData?.connections?.some(
+                      (c) => c.connector_slug === "gmail" && c.status === "connected"
+                    ) ? (
+                      <span className="text-xs text-green-600 dark:text-green-400 font-medium">
+                        Connected
+                      </span>
+                    ) : (
+                      <span className="text-xs text-muted-foreground">
+                        Let {employee.name} send, draft, and read emails.
+                      </span>
+                    )}
+                  </div>
+                </div>
+                {mcpConnectionsData?.connections?.some(
+                  (c) => c.connector_slug === "gmail" && c.status === "connected"
+                ) ? (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="text-destructive hover:bg-destructive/10 hover:text-destructive shrink-0"
+                    onClick={() => handleDisconnectMcp("gmail")}
+                    disabled={deleteMcpConnectionMutation.isPending}
+                  >
+                    Disconnect
+                  </Button>
+                ) : (
+                  <a
+                    href={`${API_URL}/api/organizations/${orgId}/employees/${empId}/mcp-connections/gmail/install?redirect_to=${encodeURIComponent(
+                      window.location.origin + window.location.pathname
+                    )}`}
+                    className="inline-flex shrink-0 items-center gap-1.5 rounded-md bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground hover:bg-primary/90"
+                  >
+                    <ExternalLinkIcon className="size-3.5" />
+                    Connect
+                  </a>
+                )}
               </div>
             </CardContent>
           </Card>

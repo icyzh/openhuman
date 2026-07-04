@@ -816,21 +816,24 @@ class TestEmployeeMcpAllowlist:
     """MCP server allowlist on EmployeeTemplate gates MCP tool binding."""
 
     def test_default_templates_have_empty_mcp_allowlist(self):
-        """HR template keeps no MCP servers; others allow free web_search in Phase 1."""
+        """HR template allows gmail; others allow free web_search and gmail."""
         from app.employees.templates import TEMPLATES
 
         for slug, template in TEMPLATES.items():
             assert isinstance(template.allowed_mcp_servers, list), (
                 f"Template '{slug}' allowed_mcp_servers must be a list"
             )
-        # HR template remains the most restricted — no MCP servers
-        assert TEMPLATES["hr_specialist"].allowed_mcp_servers == [], (
-            "HR template should have empty allowed_mcp_servers"
+        # HR template allows gmail
+        assert TEMPLATES["hr_specialist"].allowed_mcp_servers == ["gmail"], (
+            "HR template should allow gmail"
         )
-        # Phase 1: general, sales, and support get the free web_search MCP
+        # Phase 1: general, sales, and support get the free web_search MCP and gmail
         for slug in ("general", "sales_rep", "support_agent"):
             assert "web_search" in TEMPLATES[slug].allowed_mcp_servers, (
-                f"Template '{slug}' should allow web_search in Phase 1"
+                f"Template '{slug}' should allow web_search"
+            )
+            assert "gmail" in TEMPLATES[slug].allowed_mcp_servers, (
+                f"Template '{slug}' should allow gmail"
             )
 
     def test_can_set_wildcard_mcp_allowlist(self):
