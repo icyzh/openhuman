@@ -10,6 +10,7 @@ import {
   HardDrive,
   LayoutDashboard,
   LogOut,
+  Puzzle,
   Settings,
 } from "lucide-react";
 
@@ -31,6 +32,7 @@ const NAV_ITEMS = [
   { label: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
   { label: "Activity", href: "/activity", icon: Activity },
   { label: "Storage", href: "/storage", icon: HardDrive },
+  { label: "MCP Marketplace", href: "/mcp-marketplace", icon: Puzzle },
   { label: "Organization", href: "/organization", icon: Building2 },
   { label: "Documentation", href: "/docs", icon: BookOpen },
   { label: "Settings", href: "/settings", icon: Settings },
