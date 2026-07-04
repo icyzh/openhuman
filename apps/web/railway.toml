@@ -1,16 +1,9 @@
 [build]
 builder = "DOCKERFILE"
-dockerfilePath = "Dockerfile"
+dockerfilePath = "apps/web/Dockerfile"
 watchPatterns = [
-  "app/**",
-  "components/**",
-  "lib/**",
-  "hooks/**",
-  "stores/**",
-  "public/**",
-  "package.json",
-  "Dockerfile",
-  "railway.toml",
+  "apps/web/**",
+  "packages/**",
 ]
 
 [deploy]
