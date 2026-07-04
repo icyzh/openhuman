@@ -1386,10 +1386,18 @@ export default function EmployeeDetailPage() {
               name: "Pitch Deck Generator",
               description: "Generate styled .pptx pitch decks instantly — free, no API key, no signup.",
             },
+            {
+              slug: "slack",
+              name: "Slack",
+              description: "Install the Slack app so this agent can respond to @mentions and DMs.",
+            },
           ].map((item) => {
-            const isConnected = mcpConnectionsData?.connections?.some(
-              (c) => c.connector_slug === item.slug && c.status === "connected"
-            );
+            const isSlack = item.slug === "slack";
+            const isConnected = isSlack
+              ? Boolean(employee.hasSlack)
+              : mcpConnectionsData?.connections?.some(
+                  (c) => c.connector_slug === item.slug && c.status === "connected"
+                );
 
             const connInfo = connectors?.find((c) => c.slug === item.slug);
             const authTypes = connInfo?.auth_types ?? [connInfo?.auth_type ?? ""];
@@ -1422,7 +1430,20 @@ export default function EmployeeDetailPage() {
                     {isConnected ? "Connected" : "Disconnected"}
                   </span>
 
-                  {isConnected ? (
+                  {isSlack ? (
+                    isConnected ? (
+                      <span className="inline-flex h-6 items-center justify-center rounded bg-green-100 px-2.5 text-[10px] font-bold text-green-700 dark:bg-green-900/30 dark:text-green-400 shrink-0">
+                        {employee.slackTeamName ?? "Connected"}
+                      </span>
+                    ) : orgId ? (
+                      <a
+                        href={slackInstallUrl(employee.id, orgId)}
+                        className="inline-flex h-6 items-center justify-center rounded bg-primary px-2.5 text-[10px] font-bold text-primary-foreground hover:bg-primary/90 shrink-0"
+                      >
+                        Connect
+                      </a>
+                    ) : null
+                  ) : isConnected ? (
                     <Button
                       variant="outline"
                       size="sm"
