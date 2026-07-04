@@ -2,10 +2,10 @@
 
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 AuthType = Literal["none", "api_key_header", "pat_bearer", "oauth2"]
-TransportType = Literal["streamable_http", "sse"]
+TransportType = Literal["streamable_http", "sse", "stdio"]
 
 
 class ConnectorSpec(BaseModel):
@@ -18,10 +18,21 @@ class ConnectorSpec(BaseModel):
     slug: str = Field(description="Unique key used in REGISTRY and DB lookups")
     name: str = Field(description="Human-readable display name")
     description: str = Field(description="One-sentence summary of what this connector provides")
-    base_url: str = Field(description="MCP server endpoint (Streamable HTTP or SSE)")
+    base_url: str | None = Field(
+        default=None,
+        description="MCP server endpoint for HTTP/SSE transports",
+    )
     transport: TransportType = Field(
         default="streamable_http",
-        description="Transport protocol — almost always streamable_http",
+        description="Transport protocol used to communicate with the MCP server",
+    )
+    command: str | None = Field(
+        default=None,
+        description="Executable to launch when using stdio transport",
+    )
+    args: list[str] = Field(
+        default_factory=list,
+        description="Arguments passed to the stdio MCP command",
     )
     auth_type: AuthType = Field(
         default="none", description="Primary authentication method for this server"
@@ -84,3 +95,12 @@ class ConnectorSpec(BaseModel):
         default=False,
         description="True if the vendor must approve custom integrations before use",
     )
+
+    @model_validator(mode="after")
+    def validate_transport_fields(self) -> "ConnectorSpec":
+        if self.transport == "stdio":
+            if not self.command:
+                raise ValueError("stdio connectors require a command")
+        elif not self.base_url:
+            raise ValueError("HTTP/SSE connectors require a base_url")
+        return self

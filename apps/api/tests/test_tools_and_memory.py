@@ -483,6 +483,52 @@ class TestMcpClientManager:
         from app.agent.tools.mcp.connectors.spec import ConnectorSpec
 
         spec = ConnectorSpec(
+            slug="github",
+            name="GitHub",
+            description="GitHub MCP",
+            base_url="https://api.githubcopilot.com/mcp/",
+            transport="streamable_http",
+            auth_type="pat_bearer",
+        )
+
+        mgr = MCPClientManager()
+        config = mgr._build_server_config(  # type: ignore[attr-defined]
+            ResolvedConnection(slug="github", connector=spec, credentials="ghp_test")
+        )
+
+        assert config["transport"] == "http"
+        assert config["url"] == "https://api.githubcopilot.com/mcp/"
+        assert config["headers"]["Authorization"] == "Bearer ghp_test"
+
+    def test_build_server_config_supports_stdio_connectors(self):
+        from app.agent.tools.mcp.client import MCPClientManager, ResolvedConnection
+        from app.agent.tools.mcp.connectors.spec import ConnectorSpec
+
+        spec = ConnectorSpec(
+            slug="pitchdeck",
+            name="PPTX Generator",
+            description="Pitch deck MCP",
+            transport="stdio",
+            command="pptx-generator-mcp",
+            auth_type="none",
+        )
+
+        mgr = MCPClientManager()
+        config = mgr._build_server_config(  # type: ignore[attr-defined]
+            ResolvedConnection(slug="pitchdeck", connector=spec, credentials=None)
+        )
+
+        assert config["transport"] == "stdio"
+        assert config["command"] == "pptx-generator-mcp"
+        assert config["args"] == []
+
+    @pytest.mark.anyio
+    async def test_connect_skips_unresolvable_host_before_adapter_startup(self):
+        from app.agent.tools.mcp.client import MCPClientManager, ResolvedConnection
+        from app.agent.tools.mcp.connectors.spec import ConnectorSpec
+        from unittest.mock import patch
+
+        spec = ConnectorSpec(
             slug="pitchdeck",
             name="Pitchdeck",
             description="Pitch deck MCP",
@@ -492,12 +538,30 @@ class TestMcpClientManager:
         )
 
         mgr = MCPClientManager()
-        config = mgr._build_server_config(  # type: ignore[attr-defined]
-            ResolvedConnection(slug="pitchdeck", connector=spec, credentials=None)
+        with patch.object(mgr, "_is_server_reachable", return_value=False):
+            tools = await mgr.connect([
+                ResolvedConnection(slug="pitchdeck", connector=spec, credentials=None),
+            ])
+
+        assert tools == []
+
+    def test_stdio_reachability_requires_command(self):
+        from app.agent.tools.mcp.client import MCPClientManager, ResolvedConnection
+        from app.agent.tools.mcp.connectors.spec import ConnectorSpec
+
+        spec = ConnectorSpec(
+            slug="pitchdeck",
+            name="PPTX Generator",
+            description="Pitch deck MCP",
+            transport="stdio",
+            command="pptx-generator-mcp",
+            auth_type="none",
         )
 
-        assert config["transport"] == "http"
-        assert config["url"] == "https://pitchdeck-mcp.fly.dev/mcp"
+        mgr = MCPClientManager()
+        assert mgr._is_server_reachable(  # type: ignore[attr-defined]
+            ResolvedConnection(slug="pitchdeck", connector=spec, credentials=None)
+        )
 
     @pytest.mark.anyio
     async def test_disconnect_does_not_raise(self):
@@ -785,6 +849,20 @@ class TestConnectorRegistry:
         assert spec.transport == "streamable_http"
         assert spec.auth_type == "none"
         assert spec.default_scopes == []
+
+    def test_stdio_connector_spec_validation(self):
+        from app.agent.tools.mcp.connectors.registry import ConnectorSpec
+
+        spec = ConnectorSpec(
+            slug="pitchdeck",
+            name="PPTX Generator",
+            description="A local stdio MCP",
+            transport="stdio",
+            command="pptx-generator-mcp",
+            auth_type="none",
+        )
+        assert spec.transport == "stdio"
+        assert spec.command == "pptx-generator-mcp"
 
     def test_connector_spec_auth_types(self):
         from app.agent.tools.mcp.connectors.registry import ConnectorSpec

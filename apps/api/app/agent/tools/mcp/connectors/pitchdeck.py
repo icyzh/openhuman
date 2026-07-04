@@ -1,20 +1,16 @@
-"""AI Pitch Deck MCP connector — free, no authentication required.
-
-AI-powered pitch deck generation. Create investor-ready decks, generate
-individual slides, get structure recommendations, and fundraising metrics.
-No API key required.
-"""
+"""Pitch deck generation MCP connector backed by ``pptx-generator-mcp``."""
 
 from app.agent.tools.mcp.connectors.spec import ConnectorSpec
 
 PITCHDECK_CONNECTOR = ConnectorSpec(
     slug="pitchdeck",
-    name="Pitch Deck AI",
-    description="Free AI pitch deck generator — create investor-ready slides, get structure and metric recommendations",
-    base_url="https://pitchdeck-mcp.fly.dev/mcp",
-    transport="streamable_http",
+    name="PPTX Generator",
+    description="Generate PowerPoint pitch decks from structured markdown prompts",
+    transport="stdio",
+    command="pptx-generator-mcp",
+    args=[],
     auth_type="none",
-    docs_url="https://github.com/crawde/ai-pitch-deck-mcp",
+    docs_url="https://github.com/dmytro-ustynov/pptx-generator-mcp",
     default_tool_allow=None,
     default_tool_deny=[],
 )

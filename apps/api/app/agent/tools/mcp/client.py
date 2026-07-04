@@ -12,9 +12,12 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import shutil
+import socket
 import time
 from dataclasses import dataclass
 from typing import Any
+from urllib.parse import urlparse
 
 from langchain_core.tools import BaseTool
 from langchain_mcp_adapters.client import MultiServerMCPClient
@@ -299,6 +302,19 @@ class MCPClientManager:
                 continue
 
             try:
+                if not self._is_server_reachable(conn):
+                    target = (
+                        conn.connector.command
+                        if conn.connector.transport == "stdio"
+                        else conn.connector.base_url
+                    )
+                    logger.warning(
+                        "Skipping MCP connector '%s' because its runtime target is unavailable: %s",
+                        conn.slug,
+                        target,
+                    )
+                    cb.record_failure()
+                    continue
                 server_configs[conn.slug] = self._build_server_config(conn)
             except Exception:
                 logger.exception(
@@ -480,10 +496,49 @@ class MCPClientManager:
     # Helpers
     # ------------------------------------------------------------------
 
+    def _is_server_reachable(self, conn: ResolvedConnection) -> bool:
+        """Best-effort hostname resolution check before adapter startup.
+
+        This avoids noisy adapter-level exception groups when a community-hosted
+        MCP endpoint has disappeared or its DNS entry no longer resolves.
+        """
+        if conn.connector.transport == "stdio":
+            command = conn.connector.command
+            if not command:
+                return False
+            return shutil.which(command) is not None
+
+        if conn.connector.transport not in {"streamable_http", "sse"}:
+            return True
+
+        if not conn.connector.base_url:
+            return False
+
+        host = urlparse(conn.connector.base_url).hostname
+        if not host:
+            return False
+
+        try:
+            socket.getaddrinfo(host, None)
+        except OSError:
+            return False
+        return True
+
     def _build_server_config(self, conn: ResolvedConnection) -> dict[str, Any]:
         """Translate a ``ConnectorSpec`` + credentials into the dict that
         ``MultiServerMCPClient`` expects for one server."""
         spec = conn.connector
+
+        if spec.transport == "stdio":
+            if not spec.command:
+                raise ValueError(f"Connector '{spec.slug}' is missing a stdio command")
+
+            return {
+                "transport": "stdio",
+                "command": spec.command,
+                "args": spec.args,
+                "timeout": spec.request_timeout_seconds,
+            }
 
         # langchain-mcp-adapters 0.3.x expects HTTP-based MCP servers to use
         # the transport key "http", even when our internal connector registry
