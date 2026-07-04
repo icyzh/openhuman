@@ -1,6 +1,7 @@
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi.responses import HTMLResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.models import User
@@ -19,12 +20,14 @@ from app.employees.service import (
     create_employee,
     delete_employee,
     get_employee,
+    get_employee_model,
     list_employees,
     store_discord_token,
     store_slack_token,
     update_employee,
     update_status,
 )
+from app.memory.service import render_graph_visualization_html
 
 router = APIRouter(
     prefix="/api/organizations/{org_id}/employees",
@@ -74,6 +77,36 @@ async def get_employee_route(
     if result is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Employee not found")
     return result
+
+
+@router.get("/{emp_id}/knowledge-graph", response_class=HTMLResponse)
+async def get_employee_knowledge_graph(
+    org_id: UUID,
+    emp_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> HTMLResponse:
+    employee = await get_employee_model(db, org_id, emp_id, current_user.id)
+    if employee is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Employee not found",
+        )
+    if not employee.cognee_dataset_id:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Knowledge graph dataset not found for employee",
+        )
+
+    try:
+        html = await render_graph_visualization_html(employee.cognee_dataset_id)
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to render knowledge graph: {exc}",
+        ) from exc
+
+    return HTMLResponse(content=html)
 
 
 @router.patch("/{emp_id}", response_model=EmployeeResponse)
@@ -159,5 +192,4 @@ async def set_status(
     if result is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Employee not found")
     return result
-
 

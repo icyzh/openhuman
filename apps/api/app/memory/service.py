@@ -14,8 +14,10 @@ Cognee internal modules (v1 does not expose tenant/user/permission management):
 from __future__ import annotations
 
 import logging
+import os
 import re
 import secrets
+import tempfile
 from uuid import UUID
 
 import cognee
@@ -231,4 +233,27 @@ async def forget_dataset(dataset_name: str) -> dict:
         raise
     return {"status": "ok"}
 
+
+async def render_graph_visualization_html(dataset_id: str) -> str:
+    """Render a dataset-scoped Cognee knowledge graph to HTML and return it."""
+    from cognee.api.v1.visualize.visualize import visualize_graph
+
+    with tempfile.NamedTemporaryFile(
+        suffix=".html", delete=False, prefix="employee-graph-"
+    ) as tmp:
+        destination = tmp.name
+
+    try:
+        try:
+            await visualize_graph(destination, dataset=UUID(dataset_id))
+        except TypeError:
+            await visualize_graph(destination, dataset_id=UUID(dataset_id))
+
+        with open(destination, encoding="utf-8") as handle:
+            return handle.read()
+    finally:
+        try:
+            os.remove(destination)
+        except FileNotFoundError:
+            pass
 

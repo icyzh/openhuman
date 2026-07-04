@@ -8,6 +8,7 @@ import {
   DownloadIcon,
   ExternalLinkIcon,
   FileTextIcon,
+  GitGraphIcon,
   MailIcon,
   PlusIcon,
   Trash2Icon,
@@ -251,6 +252,9 @@ export default function EmployeeDetailPage() {
   const [deletingDocId, setDeletingDocId] = useState<string | null>(null);
   const [deleteDocDialogOpen, setDeleteDocDialogOpen] = useState(false);
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
+  const [graphHtml, setGraphHtml] = useState<string | null>(null);
+  const [graphLoading, setGraphLoading] = useState(false);
+  const [graphError, setGraphError] = useState<string | null>(null);
 
   const {
     data: documents,
@@ -370,6 +374,60 @@ export default function EmployeeDetailPage() {
       setLocalSpecialization(employee.specialization);
     }
   }, [employee?.id]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadKnowledgeGraph() {
+      if (!orgId || !empId) return;
+
+      setGraphLoading(true);
+      setGraphError(null);
+
+      try {
+        const token = await getToken();
+        if (!token) {
+          throw new Error("Session expired. Please sign in again.");
+        }
+
+        const response = await fetch(
+          `${API_URL}/api/organizations/${encodeURIComponent(orgId)}/employees/${encodeURIComponent(empId)}/knowledge-graph`,
+          {
+            headers: { Authorization: `Bearer ${token}` },
+          },
+        );
+
+        if (!response.ok) {
+          if (response.status === 404) {
+            throw new Error("No knowledge graph is available for this agent yet.");
+          }
+          throw new Error("Failed to load knowledge graph.");
+        }
+
+        const html = await response.text();
+        if (!cancelled) {
+          setGraphHtml(html);
+        }
+      } catch (err) {
+        if (!cancelled) {
+          setGraphHtml(null);
+          setGraphError(
+            err instanceof Error ? err.message : "Failed to load knowledge graph.",
+          );
+        }
+      } finally {
+        if (!cancelled) {
+          setGraphLoading(false);
+        }
+      }
+    }
+
+    void loadKnowledgeGraph();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [empId, getToken, orgId]);
 
   const startEdit = useCallback((field: EditableField, value: string) => {
     setDraftValue(value);
@@ -962,6 +1020,40 @@ export default function EmployeeDetailPage() {
             >
               Upload files
             </Button>
+          </div>
+        )}
+      </div>
+
+      <div className="flex flex-col gap-4">
+        <div className="flex items-center gap-2">
+          <GitGraphIcon className="size-5 text-muted-foreground" />
+          <h3 className="text-base font-semibold text-foreground">
+            Knowledge Graph
+          </h3>
+        </div>
+
+        {graphLoading ? (
+          <div className="flex justify-center rounded-lg border border-dashed border-border py-12">
+            <Spinner />
+          </div>
+        ) : graphError ? (
+          <div className="flex flex-col items-center justify-center rounded-lg border border-dashed border-border py-12 text-center">
+            <p className="text-sm text-muted-foreground">{graphError}</p>
+          </div>
+        ) : graphHtml ? (
+          <div className="overflow-hidden rounded-xl border border-border bg-background">
+            <iframe
+              title={`${employee.name} knowledge graph`}
+              srcDoc={graphHtml}
+              sandbox="allow-scripts allow-same-origin"
+              className="h-[720px] w-full bg-background"
+            />
+          </div>
+        ) : (
+          <div className="flex flex-col items-center justify-center rounded-lg border border-dashed border-border py-12 text-center">
+            <p className="text-sm text-muted-foreground">
+              No knowledge graph is available for this agent yet.
+            </p>
           </div>
         )}
       </div>

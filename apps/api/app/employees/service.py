@@ -225,6 +225,18 @@ async def get_employee(
     return _to_response(emp)
 
 
+async def get_employee_model(
+    db: AsyncSession, org_id: UUID, emp_id: UUID, user_id: UUID
+) -> Employee | None:
+    """Fetch the raw employee model after verifying org ownership."""
+    org = await _get_org(db, org_id, user_id)
+    if org is None:
+        return None
+    return await db.scalar(
+        select(Employee).where(Employee.id == emp_id, Employee.org_id == org_id)
+    )
+
+
 async def list_employees(
     db: AsyncSession, org_id: UUID, user_id: UUID
 ) -> list[EmployeeResponse] | None:
@@ -423,5 +435,4 @@ def decrypt_slack_token(emp: Employee) -> str | None:
     if emp.slack_token_enc is None:
         return None
     return decrypt_token(emp.slack_token_enc)
-
 
