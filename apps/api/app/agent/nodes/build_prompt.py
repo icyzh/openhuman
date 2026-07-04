@@ -31,6 +31,28 @@ COMMUNICATION_STYLE_BLOCK = (
 )
 
 
+def _summarize_connected_tools(tool_names: list[str]) -> str:
+    """Create a short prompt block describing currently connected tools."""
+    builtin_tools = sorted(name for name in tool_names if not name.startswith("mcp__"))
+    mcp_servers = sorted({
+        parts[1]
+        for name in tool_names
+        if name.startswith("mcp__") and len((parts := name.split("__", 2))) >= 3
+    })
+
+    lines = [
+        "\n\nTool execution rules:",
+        "- If the user asks for a file, attachment, export, PDF, PPTX, TXT, or document, you must use create_document when that tool is available. Never claim you cannot create or upload files when create_document is available.",
+        "- If the user asks for a pitch deck, slides, or presentation and Pitchdeck MCP is available, use it to generate the content, then use create_document to deliver the result as a file.",
+        "- Do not say you are only a language model or that the user must manually create the file when the needed tools are available.",
+    ]
+    if builtin_tools:
+        lines.append("- Built-in tools available right now: " + ", ".join(builtin_tools) + ".")
+    if mcp_servers:
+        lines.append("- Connected MCP servers available right now: " + ", ".join(mcp_servers) + ".")
+    return "\n".join(lines)
+
+
 async def build_prompt_node(state: AgentState, config: RunnableConfig) -> dict:
     """Load employee and organization metadata, assemble system prompt, and
     prepend a single SystemMessage.
@@ -42,6 +64,7 @@ async def build_prompt_node(state: AgentState, config: RunnableConfig) -> dict:
     configurable = config.get("configurable", {})
     db: AsyncSession | None = configurable.get("db")
     employee_id_str = configurable.get("employee_id")
+    all_tools = configurable.get("all_tools", []) or []
 
     if not db or not employee_id_str:
         # Fallback to generic assistant when no DB connection is available
@@ -107,6 +130,7 @@ async def build_prompt_node(state: AgentState, config: RunnableConfig) -> dict:
     # Shared response-style instructions, appended last so they apply
     # regardless of specialization/personality/duties above.
     system_prompt += COMMUNICATION_STYLE_BLOCK
+    system_prompt += _summarize_connected_tools([t.name for t in all_tools if hasattr(t, "name")])
 
     # Return ONLY the new SystemMessage — MessagesState's add_messages reducer
     # prepends/appends it correctly. Returning the full message list would

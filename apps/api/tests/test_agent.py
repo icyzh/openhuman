@@ -258,6 +258,21 @@ class TestRouting:
         result = route_after_llm(state)  # type: ignore[arg-type]
         assert result == "tools"
 
+
+class TestPromptToolHints:
+    def test_connected_tools_prompt_forces_file_creation_behavior(self):
+        from app.agent.nodes.build_prompt import _summarize_connected_tools
+
+        prompt_block = _summarize_connected_tools([
+            "create_document",
+            "mcp__pitchdeck__generate_pitch_deck",
+            "mcp__gmail__send_email",
+        ])
+
+        assert "create_document" in prompt_block
+        assert "pitchdeck" in prompt_block
+        assert "Never claim you cannot create or upload files" in prompt_block
+
     def test_route_after_llm_tool_call_at_limit(self):
         """At round 5 with tool_calls → must route to output_guardrail."""
         from app.agent.build import route_after_llm
