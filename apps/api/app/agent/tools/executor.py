@@ -317,22 +317,151 @@ def _file_marker(filename: str, content_type: str, data_b64: str, title: str = "
     return f"{_FILE_MARKER_PREFIX}{payload}"
 
 
+def _generate_pdf(content: str) -> bytes:
+    from fpdf import FPDF
+    pdf = FPDF()
+    pdf.add_page()
+    pdf.set_auto_page_break(auto=True, margin=20)
+    pdf.add_font("DejaVu", "", "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", uni=True)
+    pdf.add_font("DejaVu", "B", "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", uni=True)
+    pdf.set_font("DejaVu", size=11)
+    for line in content.split("\n"):
+        line = line.strip()
+        if not line:
+            pdf.ln(4)
+            continue
+        if line.startswith("---"):
+            continue
+        if line.startswith("##"):
+            pdf.set_font("DejaVu", "B", 14)
+            pdf.multi_cell(0, 8, line.lstrip("#").strip())
+            pdf.set_font("DejaVu", size=11)
+        elif line.startswith("#"):
+            pdf.set_font("DejaVu", "B", 16)
+            pdf.multi_cell(0, 10, line.lstrip("#").strip())
+            pdf.set_font("DejaVu", size=11)
+        elif any(line.startswith(p) for p in ("- ", "* ", "•")):
+            pdf.cell(5)
+            pdf.multi_cell(0, 6, line.lstrip("- *•").strip())
+        elif line[0].isdigit() and ". " in line[:4]:
+            pdf.cell(5)
+            pdf.multi_cell(0, 6, line)
+        else:
+            pdf.multi_cell(0, 6, line)
+    return pdf.output()
+
+
+def _generate_pptx(content: str) -> bytes:
+    from pptx import Presentation
+    from pptx.util import Inches, Pt
+    from pptx.dml.color import RGBColor
+    prs = Presentation()
+    prs.slide_width = Inches(13.333)
+    prs.slide_height = Inches(7.5)
+    bg_color = RGBColor(0x1A, 0x1A, 0x2E)
+    text_color = RGBColor(0xF0, 0xF0, 0xFF)
+    accent = RGBColor(0x6C, 0x63, 0xFF)
+
+    lines = content.strip().split("\n")
+    slide_content: list[str] = []
+    title = ""
+
+    def _flush_slide():
+        nonlocal title
+        if not slide_content and not title:
+            return
+        slide_layout = prs.slide_layouts[6]
+        slide = prs.slides.add_slide(slide_layout)
+        bg = slide.background
+        fill = bg.fill
+        fill.solid()
+        fill.fore_color.rgb = bg_color
+        if title:
+            txBox = slide.shapes.add_textbox(Inches(0.8), Inches(0.5), Inches(11.7), Inches(1))
+            tf = txBox.text_frame
+            tf.word_wrap = True
+            p = tf.paragraphs[0]
+            p.text = title
+            p.font.size = Pt(32)
+            p.font.color.rgb = accent
+            p.font.bold = True
+        y_start = Inches(1.6) if title else Inches(0.5)
+        txBox = slide.shapes.add_textbox(Inches(0.8), y_start, Inches(11.7), Inches(5.5))
+        tf = txBox.text_frame
+        tf.word_wrap = True
+        for i, line in enumerate(slide_content):
+            if i == 0:
+                p = tf.paragraphs[0]
+            else:
+                p = tf.add_paragraph()
+            p.text = line
+            p.font.size = Pt(18)
+            p.font.color.rgb = text_color
+            p.space_after = Pt(6)
+        slide_content.clear()
+        title = ""
+
+    for line in lines:
+        line = line.strip()
+        if not line or line.startswith("---"):
+            _flush_slide()
+            continue
+        if line.startswith("##") or line.startswith("###"):
+            _flush_slide()
+            title = line.lstrip("#").strip()
+        elif line.startswith("#"):
+            _flush_slide()
+            title = line.lstrip("#").strip()
+        elif any(line.startswith(p) for p in ("- ", "* ", "•")):
+            slide_content.append(line.lstrip("- *•").strip())
+        elif line[0].isdigit() and ". " in line[:4]:
+            slide_content.append(line)
+        else:
+            slide_content.append(line)
+    _flush_slide()
+    from io import BytesIO
+    buf = BytesIO()
+    prs.save(buf)
+    return buf.getvalue()
+
+
 @tool
 def create_document(content: str, filename: str = "document.txt") -> str:
-    """Create a downloadable text document from content.
+    """Create a downloadable document from content.
 
-    Use this after fetching or generating content that the user may want
-    to save as a file (e.g. a report, pitch deck outline, summary).
+    Generates a proper file (PDF, PPTX, or plain text) from the given
+    content. Use this after fetching or generating content that the user
+    may want to save — e.g. reports, pitch deck outlines, summaries.
+
     The file will be uploaded to the conversation as an attachment.
+    For pitch decks / presentations use a ``.pptx`` extension.
+    For formal reports use ``.pdf``.
+    For quick notes use ``.txt`` or ``.md``.
 
     Args:
-        content: The full text content to include in the document.
-        filename: Desired filename (e.g. "report.txt", "notes.md").
+        content: The full text content.
+        filename: Desired filename with extension
+                  (e.g. "report.pdf", "deck.pptx", "notes.md").
     """
-    from mimetypes import guess_type
-    data_b64 = base64.b64encode(content.encode("utf-8")).decode("ascii")
-    ct, _ = guess_type(filename) if "." in filename else ("text/plain", None)
-    return _file_marker(filename, ct or "text/plain", data_b64, title=filename)
+    import os
+
+    ext = os.path.splitext(filename)[1].lower()
+
+    if ext == ".pdf":
+        raw = _generate_pdf(content)
+        data_b64 = base64.b64encode(raw).decode("ascii")
+        ct = "application/pdf"
+    elif ext == ".pptx":
+        raw = _generate_pptx(content)
+        data_b64 = base64.b64encode(raw).decode("ascii")
+        ct = "application/vnd.openxmlformats-officedocument.presentationml.presentation"
+    else:
+        data_b64 = base64.b64encode(content.encode("utf-8")).decode("ascii")
+        from mimetypes import guess_type
+        ct, _ = guess_type(filename) if "." in filename else ("text/plain", None)
+        ct = ct or "text/plain"
+
+    return _file_marker(filename, ct, data_b64, title=filename)
 
 
 from app.agent.tools.cancel_background_task import cancel_background_task  # noqa: E402

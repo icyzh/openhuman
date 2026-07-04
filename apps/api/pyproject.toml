@@ -27,6 +27,8 @@ dependencies = [
     "python-dotenv>=1.0.0",
     "pgvector>=0.4.2",
     "ddgs>=9.14.4",
+    "fpdf2>=2.8.0",
+    "python-pptx>=1.0.0",
 ]
 
 [project.optional-dependencies]
