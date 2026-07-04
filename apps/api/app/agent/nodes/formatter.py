@@ -9,16 +9,41 @@ from app.agent.state import AgentState
 _FILE_MARKER_PREFIX = "__OPENHUMAN_FILE__"
 
 
-def _extract_file_markers(text: str) -> list[dict] | None:
-    """If *text* starts with the file marker prefix, parse and return
-    the file attachment dict. Otherwise return None."""
-    if not text.startswith(_FILE_MARKER_PREFIX):
-        return None
-    try:
-        payload = text[len(_FILE_MARKER_PREFIX):]
-        return [json.loads(payload)]
-    except (json.JSONDecodeError, KeyError):
-        return None
+def _iter_content_texts(content: object) -> list[str]:
+    """Normalize a ``ToolMessage.content`` value into a flat list of text
+    strings.
+
+    Built-in tools (e.g. ``create_document``) return a plain string.
+    MCP tool results (via ``langchain-mcp-adapters``) come back as a list
+    of content blocks, e.g. ``[{"type": "text", "text": "..."}]`` — those
+    need to be unwrapped before marker detection can work.
+    """
+    if isinstance(content, str):
+        return [content]
+    if isinstance(content, list):
+        texts: list[str] = []
+        for block in content:
+            if isinstance(block, str):
+                texts.append(block)
+            elif isinstance(block, dict) and isinstance(block.get("text"), str):
+                texts.append(block["text"])
+        return texts
+    return []
+
+
+def _extract_file_markers(content: object) -> list[dict] | None:
+    """If any text block within *content* starts with the file marker
+    prefix, parse and return the file attachment dicts. Otherwise None."""
+    markers: list[dict] = []
+    for text in _iter_content_texts(content):
+        if not text.startswith(_FILE_MARKER_PREFIX):
+            continue
+        try:
+            payload = text[len(_FILE_MARKER_PREFIX):]
+            markers.append(json.loads(payload))
+        except (json.JSONDecodeError, KeyError):
+            continue
+    return markers or None
 
 
 # Stock AI-assistant phrasings the model tends to default to at the start/end
@@ -124,11 +149,13 @@ async def formatter_node(state: AgentState) -> dict:
                 + "... [Truncated due to Slack character limits]"
             )
 
-    # Scan tool messages for file markers from the create_document tool
+    # Scan tool messages for file markers — from the built-in create_document
+    # tool (plain string content) as well as MCP tools like the Pitch Deck
+    # generator (content comes back as a list of text blocks).
     file_attachments = list(state.get("files", []) or [])
     for msg in messages:
         if isinstance(msg, ToolMessage) and msg.content:
-            markers = _extract_file_markers(str(msg.content))
+            markers = _extract_file_markers(msg.content)
             if markers:
                 file_attachments.extend(markers)
 
