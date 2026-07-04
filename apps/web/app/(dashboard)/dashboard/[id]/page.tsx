@@ -229,6 +229,22 @@ export default function EmployeeDetailPage() {
     toast.success("ClickUp workspace disconnected.");
   }, [empId]);
 
+  const handleConnectMcpOAuth = useCallback(async (slug: string) => {
+    try {
+      const token = await getToken();
+      if (!token) {
+        toast.error("Failed to retrieve auth token. Please sign in again.");
+        return;
+      }
+      const url = `${API_URL}/api/organizations/${orgId}/employees/${empId}/mcp-connections/${slug}/install?token=${encodeURIComponent(token)}&redirect_to=${encodeURIComponent(
+        window.location.origin + window.location.pathname
+      )}`;
+      window.location.href = url;
+    } catch (err) {
+      toast.error("Connection failed");
+    }
+  }, [orgId, empId, getToken]);
+
   const {
     data: apiEmployee,
     isLoading,
@@ -1048,15 +1064,13 @@ export default function EmployeeDetailPage() {
                     Disconnect
                   </Button>
                 ) : (
-                  <a
-                    href={`${API_URL}/api/organizations/${orgId}/employees/${empId}/mcp-connections/gmail/install?redirect_to=${encodeURIComponent(
-                      window.location.origin + window.location.pathname
-                    )}`}
+                  <Button
+                    onClick={() => handleConnectMcpOAuth("gmail")}
                     className="inline-flex shrink-0 items-center gap-1.5 rounded-md bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground hover:bg-primary/90"
                   >
                     <ExternalLinkIcon className="size-3.5" />
                     Connect
-                  </a>
+                  </Button>
                 )}
               </div>
 
@@ -1096,15 +1110,13 @@ export default function EmployeeDetailPage() {
                     Disconnect
                   </Button>
                 ) : (
-                  <a
-                    href={`${API_URL}/api/organizations/${orgId}/employees/${empId}/mcp-connections/gamma/install?redirect_to=${encodeURIComponent(
-                      window.location.origin + window.location.pathname
-                    )}`}
+                  <Button
+                    onClick={() => handleConnectMcpOAuth("gamma")}
                     className="inline-flex shrink-0 items-center gap-1.5 rounded-md bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground hover:bg-primary/90"
                   >
                     <ExternalLinkIcon className="size-3.5" />
                     Connect
-                  </a>
+                  </Button>
                 )}
               </div>
             </CardContent>
@@ -1356,14 +1368,12 @@ export default function EmployeeDetailPage() {
                       Disconnect
                     </Button>
                   ) : (
-                    <a
-                      href={`${API_URL}/api/organizations/${orgId}/employees/${empId}/mcp-connections/${item.slug}/install?redirect_to=${encodeURIComponent(
-                        window.location.origin + window.location.pathname
-                      )}`}
+                    <Button
+                      onClick={() => handleConnectMcpOAuth(item.slug)}
                       className="inline-flex h-6 items-center justify-center rounded bg-primary px-2.5 text-[10px] font-bold text-primary-foreground hover:bg-primary/90 shrink-0"
                     >
                       Connect
-                    </a>
+                    </Button>
                   )}
                 </div>
               </div>

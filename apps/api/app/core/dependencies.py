@@ -35,9 +35,18 @@ async def get_current_user(
     the Clerk user profile.
     """
     if credentials is None:
-        raise _unauthorized("Missing bearer token")
-
-    token = credentials.credentials
+        # Support passing bearer token in query parameter for browser redirects
+        token = request.query_params.get("token")
+        if not token:
+            raise _unauthorized("Missing bearer token")
+        
+        # Inject the token into request headers so clerk_backend_api can validate it
+        raw_headers = list(request.scope.get("headers", []))
+        raw_headers = [h for h in raw_headers if h[0].lower() != b"authorization"]
+        raw_headers.append((b"authorization", f"Bearer {token}".encode("utf-8")))
+        request.scope["headers"] = raw_headers
+    else:
+        token = credentials.credentials
 
     auth_options: dict = {"secret_key": settings.clerk_secret_key}
     if settings.clerk_jwt_key:
