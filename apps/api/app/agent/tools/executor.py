@@ -1,4 +1,5 @@
 import ast
+import base64
 import ipaddress
 import logging
 import operator
@@ -296,6 +297,44 @@ async def ingest_memory(content: str, config: RunnableConfig = None) -> str:
         return f"Error storing memory: {e}"
 
 
+# ---------------------------------------------------------------------------
+# File generation — marker-based: tool returns a marker string and the
+# formatter node picks it up and populates state["files"].
+# ---------------------------------------------------------------------------
+
+_FILE_MARKER_PREFIX = "__OPENHUMAN_FILE__"
+
+
+def _file_marker(filename: str, content_type: str, data_b64: str, title: str = "") -> str:
+    """Build a marker string the formatter will intercept as a file upload."""
+    import json
+    payload = json.dumps({
+        "filename": filename,
+        "content_type": content_type,
+        "data": data_b64,
+        "title": title or filename,
+    })
+    return f"{_FILE_MARKER_PREFIX}{payload}"
+
+
+@tool
+def create_document(content: str, filename: str = "document.txt") -> str:
+    """Create a downloadable text document from content.
+
+    Use this after fetching or generating content that the user may want
+    to save as a file (e.g. a report, pitch deck outline, summary).
+    The file will be uploaded to the conversation as an attachment.
+
+    Args:
+        content: The full text content to include in the document.
+        filename: Desired filename (e.g. "report.txt", "notes.md").
+    """
+    from mimetypes import guess_type
+    data_b64 = base64.b64encode(content.encode("utf-8")).decode("ascii")
+    ct, _ = guess_type(filename) if "." in filename else ("text/plain", None)
+    return _file_marker(filename, ct or "text/plain", data_b64, title=filename)
+
+
 from app.agent.tools.cancel_background_task import cancel_background_task  # noqa: E402
 from app.agent.tools.check_background_task import check_background_task  # noqa: E402
 from app.agent.tools.escalation import escalate_to_human  # noqa: E402
@@ -309,6 +348,7 @@ BUILT_IN_TOOLS = [
     fetch_url,
     search_memory,
     ingest_memory,
+    create_document,
     check_background_task,
     cancel_background_task,
     escalate_to_human,

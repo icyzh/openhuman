@@ -1,8 +1,25 @@
+import json
 import re
 
-from langchain_core.messages import AIMessage
+from langchain_core.messages import AIMessage, ToolMessage
 
 from app.agent.state import AgentState
+
+# Marker prefix for built-in file-generation tool (executor.py)
+_FILE_MARKER_PREFIX = "__OPENHUMAN_FILE__"
+
+
+def _extract_file_markers(text: str) -> list[dict] | None:
+    """If *text* starts with the file marker prefix, parse and return
+    the file attachment dict. Otherwise return None."""
+    if not text.startswith(_FILE_MARKER_PREFIX):
+        return None
+    try:
+        payload = text[len(_FILE_MARKER_PREFIX):]
+        return [json.loads(payload)]
+    except (json.JSONDecodeError, KeyError):
+        return None
+
 
 # Stock AI-assistant phrasings the model tends to default to at the start/end
 # of a response when nothing tells it otherwise. Matched case-insensitively;
@@ -107,7 +124,15 @@ async def formatter_node(state: AgentState) -> dict:
                 + "... [Truncated due to Slack character limits]"
             )
 
+    # Scan tool messages for file markers from the create_document tool
+    file_attachments = list(state.get("files", []) or [])
+    for msg in messages:
+        if isinstance(msg, ToolMessage) and msg.content:
+            markers = _extract_file_markers(str(msg.content))
+            if markers:
+                file_attachments.extend(markers)
+
     result = {"response": response_text}
-    if state.get("files"):
-        result["files"] = state["files"]
+    if file_attachments:
+        result["files"] = file_attachments
     return result
