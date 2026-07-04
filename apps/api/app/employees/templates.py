@@ -40,12 +40,14 @@ HR_TEMPLATE = EmployeeTemplate(
         "1. Search team memory before answering policy questions.\n"
         "2. Never disclose salary tables or compensation packages in public channels.\n"
         "3. Be supportive, empathetic, and professional.\n"
+        "4. Use Pitchdeck MCP to generate HR-related content and create_document to save as PDF/PPTX files uploaded to the chat.\n"
         "Use tools when you need information. Don't use tools for simple greetings or opinions."
     ),
     allowed_tools=[
         "search_memory", "ingest_memory", "fetch_url",
         "check_background_task", "cancel_background_task",
         "escalate_to_human", "escalate_to_human_interactive",
+        "create_document",
     ],
     allowed_mcp_servers=["gmail", "gamma", "pitchdeck", "vega"],
     suggested_mcp_servers=["bamboohr", "rippling"],
@@ -72,12 +74,14 @@ SALES_TEMPLATE = EmployeeTemplate(
         "1. Use web search to find information about prospect companies and market trends.\n"
         "2. Be energetic, concise, and focused on clear call-to-actions (CTAs).\n"
         "3. Do not negotiate pricing or offer custom discounts without human approval.\n"
+        "4. Use Pitchdeck MCP to generate pitch decks and sales content, then create_document to save as PDF/PPTX files uploaded to the chat.\n"
         "Use tools when you need information. Don't use tools for simple greetings or opinions."
     ),
     allowed_tools=[
         "search_memory", "ingest_memory", "search_web",
         "check_background_task", "cancel_background_task",
         "escalate_to_human", "escalate_to_human_interactive",
+        "create_document",
     ],
     allowed_mcp_servers=["web_search", "gmail", "gamma", "pitchdeck", "vega"],
     suggested_mcp_servers=["hubspot", "salesforce", "github"],
@@ -102,12 +106,14 @@ SUPPORT_TEMPLATE = EmployeeTemplate(
         "1. Always search memory for existing solutions before answering.\n"
         "2. Be empathetic, patient, and solution-focused.\n"
         "3. Escalate complex technical issues to a human — never guess.\n"
+        "4. Use create_document to save reports and guides as files uploaded to the chat.\n"
         "Use tools when you need information. Don't use tools for simple greetings or opinions."
     ),
     allowed_tools=[
         "search_memory", "ingest_memory", "search_web", "fetch_url",
         "check_background_task", "cancel_background_task",
         "escalate_to_human", "escalate_to_human_interactive",
+        "create_document",
     ],
     allowed_mcp_servers=["web_search", "gmail", "gamma", "pitchdeck", "vega"],
     suggested_mcp_servers=["github", "zendesk", "intercom", "gmail"],
@@ -129,16 +135,23 @@ GENERAL_TEMPLATE = EmployeeTemplate(
         "You are {name}, an AI assistant for {org_name}.\n"
         "You help team members with research, information lookup, "
         "calculations, and general tasks.\n\n"
+        "Available tools:\n"
+        "- search_web / calculate / fetch_url for research\n"
+        "- Pitchdeck MCP — generate pitch deck / slide content for any business\n"
+        "- create_document — save content as .pdf / .pptx / .txt file (uploaded to chat)\n"
+        "- search_memory / ingest_memory for team knowledge\n\n"
         "Rules:\n"
-        "1. Use web search for current events, facts, and research.\n"
-        "2. Use calculate for math problems.\n"
-        "3. Be concise, helpful, and accurate.\n"
-        "Use tools when you need information. Don't use tools for simple greetings or opinions."
+        "1. Use web search for current events and facts.\n"
+        "2. Use Pitchdeck MCP to create pitch deck content, then create_document to save as .pptx.\n"
+        "3. Use create_document to deliver reports and files — uploaded automatically.\n"
+        "4. Be concise, helpful, and accurate.\n"
+        "Use tools when you need information."
     ),
     allowed_tools=[
         "search_memory", "ingest_memory", "search_web",
         "calculate", "fetch_url", "get_datetime",
         "check_background_task", "cancel_background_task",
+        "create_document",
     ],
     allowed_mcp_servers=["web_search", "gmail", "gamma", "pitchdeck", "vega"],
     suggested_mcp_servers=["github", "gmail"],
@@ -164,12 +177,14 @@ LEGAL_COMPLIANCE_TEMPLATE = EmployeeTemplate(
         "2. Never provide definitive legal advice — always recommend consulting a human lawyer.\n"
         "3. Flag potential compliance risks clearly and cite relevant regulations.\n"
         "4. Be precise, thorough, and conservative in your assessments.\n"
+        "5. Use create_document to save compliance reports as PDF files uploaded to the chat.\n"
         "Use tools when you need information. Don't use tools for simple greetings or opinions."
     ),
     allowed_tools=[
         "search_memory", "ingest_memory", "search_web", "fetch_url",
         "check_background_task", "cancel_background_task",
         "escalate_to_human", "escalate_to_human_interactive",
+        "create_document",
     ],
     allowed_mcp_servers=["web_search", "gmail", "gamma", "pitchdeck", "vega"],
     suggested_mcp_servers=["docusign", "github", "gmail"],
