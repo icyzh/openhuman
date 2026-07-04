@@ -57,18 +57,21 @@ async def formatter_node(state: AgentState) -> dict:
     """
     # If a guardrail blocked the message the response is already set in state
     if state.get("input_blocked") or not state.get("output_guardrail_passed", True):
-        return {"response": state.get("response")}
+        result = {"response": state.get("response")}
+        if state.get("files"):
+            result["files"] = state["files"]
+        return result
 
     messages = state.get("messages", [])
     if not messages:
-        return {"response": ""}
+        return {"response": "", "files": state.get("files", [])}
 
     # Find the last assistant message
     ai_msg = next(
         (m for m in reversed(messages) if isinstance(m, AIMessage)), None
     )
     if not ai_msg:
-        return {"response": ""}
+        return {"response": "", "files": state.get("files", [])}
 
     response_text = str(ai_msg.content) if ai_msg.content else ""
 
@@ -104,4 +107,7 @@ async def formatter_node(state: AgentState) -> dict:
                 + "... [Truncated due to Slack character limits]"
             )
 
-    return {"response": response_text}
+    result = {"response": response_text}
+    if state.get("files"):
+        result["files"] = state["files"]
+    return result

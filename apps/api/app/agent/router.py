@@ -387,6 +387,7 @@ async def run_agent(
 
         return AgentResponse(
             response=response_text,
+            files=result_state.get("files", []),
             tool_calls_count=tool_rounds,
             error=error,
         )

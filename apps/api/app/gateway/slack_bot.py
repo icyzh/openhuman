@@ -11,6 +11,7 @@ path in ``manager.py`` is used instead.
 
 from __future__ import annotations
 
+import base64
 import json
 import logging
 from uuid import UUID
@@ -406,13 +407,11 @@ class EmployeeSlackBot:
         activity_channel_id.set(channel)
 
         # Run the agent
-        response_text = await self._run_agent(
+        result = await self._run_agent(
             text, channel_id=channel, thread_ts=thread_ts,
         )
-        # Phase 6: None means the graph paused for interactive approval —
-        # the tool already posted a "waiting" message to the thread.
-        if response_text is None:
-            # Record escalation awaiting approval
+        # Phase 6: None means the graph paused for interactive approval.
+        if result is None:
             if org:
                 try:
                     async with async_session_factory() as s:
@@ -435,8 +434,9 @@ class EmployeeSlackBot:
                 except Exception:
                     pass
             return
-        if not response_text:
-            response_text = "I processed your request but had no response."
+
+        response_text = result.get("response", "") or "I processed your request but had no response."
+        files = result.get("files", [])
 
         # Record activity (best-effort)
         if org:
@@ -472,6 +472,12 @@ class EmployeeSlackBot:
             thread_ts=thread_ts,
             username=employee_name,
         )
+
+        # Upload any file attachments to the same thread
+        if files:
+            await self._send_files(
+                channel=channel, files=files, thread_ts=thread_ts,
+            )
 
     # ------------------------------------------------------------------
     # Channel allowlist
@@ -512,18 +518,12 @@ class EmployeeSlackBot:
         self, content: str,
         channel_id: str = "",
         thread_ts: str = "",
-    ) -> str | None:
+    ) -> dict | None:
         """Run the LangGraph agent as this employee.
 
-        Returns the agent's response text, or ``None`` when the graph paused
-        for interactive approval (Phase 6 — the escalation tool already posted
-        the "waiting" message to the user's thread, so the caller should
-        **not** post an additional reply).
-
-        Never leaks raw exception details — returns a safe fallback on failure.
+        Returns the full result dict (``response``, ``files``, …), or
+        ``None`` when the graph paused for interactive approval (Phase 6).
         """
-        # Build a stable thread_key for per-conversation job serialization
-        # and checkpointer routing (Phase 2-4).
         root_ts = thread_ts or "direct"
         thread_key = f"slack:{self.employee_id}:{channel_id}:{root_ts}"
 
@@ -551,12 +551,8 @@ class EmployeeSlackBot:
                     }
                 }
                 result = await graph.ainvoke(initial_state, config=config)
-                return result.get("response", "")
+                return result
         except GraphInterrupt:
-            # Phase 6 — graph paused waiting for human approval via
-            # interactive escalation button.  The tool already posted
-            # a "waiting for approval" message to the user's thread,
-            # so return None so the caller skips posting a duplicate.
             logger.info(
                 "Graph paused for interactive approval (employee=%s, thread=%s)",
                 self.employee_id, thread_key,
@@ -566,7 +562,30 @@ class EmployeeSlackBot:
             logger.exception(
                 "Agent graph failed for employee %s on Slack", self.employee_id,
             )
-            return _SAFE_ERROR_MESSAGE
+            return {"response": _SAFE_ERROR_MESSAGE, "files": []}
+
+    # ------------------------------------------------------------------
+    # File upload helper
+    # ------------------------------------------------------------------
+
+    async def _send_files(
+        self,
+        channel: str,
+        files: list[dict],
+        thread_ts: str | None = None,
+    ) -> None:
+        """Upload agent-generated files (charts, PDFs, etc.) to the Slack channel."""
+        for f in files:
+            try:
+                await self.app.client.files_upload_v2(
+                    channel=channel,
+                    file=base64.b64decode(f["data"]),
+                    filename=f["filename"],
+                    title=f.get("title", f["filename"]),
+                    thread_ts=thread_ts,
+                )
+            except Exception:
+                logger.exception("Failed to upload file %s", f.get("filename", "unknown"))
 
     # ------------------------------------------------------------------
     # Phase 6 — interactive escalation button handlers
@@ -635,17 +654,18 @@ class EmployeeSlackBot:
                     config=config,
                 )
                 response_text = result.get("response", "")
+                files = result.get("files", [])
         except GraphInterrupt:
-            # The graph paused *again* — another interrupt() call downstream.
-            # That's fine; we already posted the user-facing message.
             logger.info(
                 "Graph re-paused during escalation resume (thread=%s)", thread_key,
             )
+            files = []
         except Exception:
             logger.exception(
                 "Failed to resume graph for escalation (thread=%s)", thread_key,
             )
             response_text = "Something went wrong processing the escalation decision."
+            files = []
 
         # -- Record escalation decision (best-effort) -------------------------
         try:
@@ -704,6 +724,12 @@ class EmployeeSlackBot:
                 )
             except Exception:
                 logger.exception("Failed to post escalation response to user thread")
+
+        # Upload any file attachments to the same thread
+        if files and channel_id:
+            await self._send_files(
+                channel=channel_id, files=files, thread_ts=thread_ts,
+            )
 
         logger.info(
             "Escalation resolved: approved=%s by=%s thread=%s",
@@ -1014,14 +1040,14 @@ class WorkspaceSlackBot:
         activity_platform.set("slack")
         activity_channel_id.set(channel)
 
-        response_text = await self._run_agent(
+        result = await self._run_agent(
             employee_id, text, channel_id=channel, thread_ts=thread_ts,
         )
-        # Phase 6: None means the graph paused for interactive approval.
-        if response_text is None:
+        if result is None:
             return
-        if not response_text:
-            response_text = "I processed your request but had no response."
+
+        response_text = result.get("response", "") or "I processed your request but had no response."
+        files = result.get("files", [])
 
         await say(
             text=response_text,
@@ -1029,6 +1055,11 @@ class WorkspaceSlackBot:
             thread_ts=thread_ts,
             username=employee_name,
         )
+
+        if files:
+            await self._send_files(
+                channel=channel, files=files, thread_ts=thread_ts,
+            )
 
     # ------------------------------------------------------------------
     # Channel → Employee routing
@@ -1088,10 +1119,10 @@ class WorkspaceSlackBot:
         self, employee_id: UUID, content: str,
         channel_id: str = "",
         thread_ts: str = "",
-    ) -> str | None:
+    ) -> dict | None:
         """Run the LangGraph agent as *employee_id*.
 
-        Returns the agent's response text, or ``None`` when the graph paused
+        Returns the full result dict, or ``None`` when the graph paused
         for interactive approval (Phase 6).
         """
         root_ts = thread_ts or "direct"
@@ -1121,9 +1152,8 @@ class WorkspaceSlackBot:
                     }
                 }
                 result = await graph.ainvoke(initial_state, config=config)
-                return result.get("response", "")
+                return result
         except GraphInterrupt:
-            # Phase 6 — graph paused waiting for human approval.
             logger.info(
                 "Graph paused for interactive approval (employee=%s, thread=%s)",
                 employee_id, thread_key,
@@ -1133,7 +1163,30 @@ class WorkspaceSlackBot:
             logger.exception(
                 "Agent graph failed for employee %s on Slack", employee_id,
             )
-            return _SAFE_ERROR_MESSAGE
+            return {"response": _SAFE_ERROR_MESSAGE, "files": []}
+
+    # ------------------------------------------------------------------
+    # File upload helper (shared mode)
+    # ------------------------------------------------------------------
+
+    async def _send_files(
+        self,
+        channel: str,
+        files: list[dict],
+        thread_ts: str | None = None,
+    ) -> None:
+        """Upload agent-generated files (charts, PDFs, etc.) to the Slack channel."""
+        for f in files:
+            try:
+                await self.app.client.files_upload_v2(
+                    channel=channel,
+                    file=base64.b64decode(f["data"]),
+                    filename=f["filename"],
+                    title=f.get("title", f["filename"]),
+                    thread_ts=thread_ts,
+                )
+            except Exception:
+                logger.exception("Failed to upload file %s", f.get("filename", "unknown"))
 
     # ------------------------------------------------------------------
     # Phase 6 — interactive escalation button handlers (shared mode)
@@ -1202,15 +1255,18 @@ class WorkspaceSlackBot:
                     config=config,
                 )
                 response_text = result.get("response", "")
+                files = result.get("files", [])
         except GraphInterrupt:
             logger.info(
                 "Graph re-paused during escalation resume (thread=%s)", thread_key,
             )
+            files = []
         except Exception:
             logger.exception(
                 "Failed to resume graph for escalation (thread=%s)", thread_key,
             )
             response_text = "Something went wrong processing the escalation decision."
+            files = []
 
         # -- Record escalation decision (best-effort) -------------------------
         try:
@@ -1269,6 +1325,12 @@ class WorkspaceSlackBot:
                 )
             except Exception:
                 logger.exception("Failed to post escalation response to user thread")
+
+        # Upload any file attachments to the same thread
+        if files and channel_id:
+            await self._send_files(
+                channel=channel_id, files=files, thread_ts=thread_ts,
+            )
 
         logger.info(
             "Escalation resolved (shared): approved=%s by=%s thread=%s",

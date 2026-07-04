@@ -26,5 +26,6 @@ class AgentState(MessagesState):
     # -- Outputs -----------------------------------------------------------
     raw_response: str | None  # LLM's final text before formatting
     response: str | None  # formatted / safe-fallback output
+    files: list[dict] = []  # list of FileAttachment dicts for Slack upload
     citations: list[dict]  # citation list for attribution
     error: str | None

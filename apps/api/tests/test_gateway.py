@@ -502,7 +502,7 @@ class TestSlackBotFilters:
     @pytest.mark.anyio
     async def test_app_mention_triggers_processing(self):
         bot = self._make_bot()
-        bot._run_agent = AsyncMock(return_value="Hi!")  # type: ignore[method-assign]
+        bot._run_agent = AsyncMock(return_value={"response": "Hi!", "files": []})  # type: ignore[method-assign]
         bot._is_channel_allowed = AsyncMock(return_value=True)  # type: ignore[method-assign]
 
         event = {"text": "<@U123> hello bot", "channel": "C001", "ts": "100"}
@@ -514,7 +514,7 @@ class TestSlackBotFilters:
     @pytest.mark.anyio
     async def test_dm_triggers_processing(self):
         bot = self._make_bot()
-        bot._run_agent = AsyncMock(return_value="Hi!")  # type: ignore[method-assign]
+        bot._run_agent = AsyncMock(return_value={"response": "Hi!", "files": []})  # type: ignore[method-assign]
         bot._is_channel_allowed = AsyncMock(return_value=True)  # type: ignore[method-assign]
 
         event = {
@@ -569,7 +569,7 @@ class TestSlackBotFilters:
     async def test_replies_in_thread(self):
         """Slack responses should include thread_ts."""
         bot = self._make_bot()
-        bot._run_agent = AsyncMock(return_value="Hello!")  # type: ignore[method-assign]
+        bot._run_agent = AsyncMock(return_value={"response": "Hello!", "files": []})  # type: ignore[method-assign]
         bot._is_channel_allowed = AsyncMock(return_value=True)  # type: ignore[method-assign]
 
         event = {"text": "hi", "channel": "C001", "ts": "100.5"}
@@ -666,8 +666,8 @@ class TestErrorSanitization:
             AsyncMock(return_value=(mock_graph, [])),
         ):
             result = await bot._run_agent("hello")
-            assert result == _SAFE_ERROR_MESSAGE
-            assert "/etc/secrets" not in result
+            assert result["response"] == _SAFE_ERROR_MESSAGE
+            assert "/etc/secrets" not in result["response"]
 
     @pytest.mark.anyio
     async def test_discord_empty_response_gets_fallback(self):
