@@ -4,6 +4,7 @@ from uuid import uuid4
 import anyio
 import pytest
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.testclient import TestClient
 from sqlalchemy import event
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
@@ -200,3 +201,33 @@ def test_update_me_onboarding(client: TestClient) -> None:
     )
     assert resp.status_code == 200
     assert resp.json()["onboarding_completed"] is True
+
+
+def test_register_preflight_allows_railway_origin(client: TestClient) -> None:
+    """Railway-hosted web deployments should pass CORS preflight for auth."""
+    test_app = FastAPI()
+    test_app.add_middleware(
+        CORSMiddleware,
+        allow_origins=["https://openhuman-web.up.railway.app"],
+        allow_origin_regex=r"https://.*\.up\.railway\.app",
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+    test_app.include_router(auth_router)
+    test_app.dependency_overrides[get_db] = client.app.dependency_overrides[get_db]
+
+    with TestClient(test_app) as cors_client:
+        response = cors_client.options(
+            "/api/auth/register",
+            headers={
+                "Origin": "https://openhuman-web.up.railway.app",
+                "Access-Control-Request-Method": "POST",
+                "Access-Control-Request-Headers": "content-type",
+            },
+        )
+
+    assert response.status_code == 200
+    assert response.headers["access-control-allow-origin"] == (
+        "https://openhuman-web.up.railway.app"
+    )

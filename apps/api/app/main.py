@@ -4,6 +4,7 @@ from contextlib import asynccontextmanager
 import logging
 import subprocess
 import sys
+from urllib.parse import urlparse
 
 print(">>> [Startup] Running database migrations...", flush=True)
 try:
@@ -58,6 +59,17 @@ def custom_generate_unique_id(route: APIRoute) -> str:
     return route.name
 
 
+def _build_allowed_origins() -> list[str]:
+    """Return explicit CORS origins including the configured frontend URL."""
+    origins = list(settings.cors_origins)
+    frontend_url = settings.frontend_url.strip()
+    if frontend_url and frontend_url not in origins:
+        parsed = urlparse(frontend_url)
+        if parsed.scheme and parsed.netloc:
+            origins.append(f"{parsed.scheme}://{parsed.netloc}")
+    return origins
+
+
 @asynccontextmanager
 async def lifespan(_app: FastAPI) -> AsyncGenerator[None, None]:
     """Application lifespan — initialize and teardown resources here."""
@@ -104,8 +116,15 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.cors_origins,
-    allow_origin_regex=r"https://openhuman\.icyzh\.dev|https://openhooman\.icyzh\.dev|https://.*\.vercel\.app|http://localhost(:\d+)?|http://127\.0\.0\.1(:\d+)?",
+    allow_origins=_build_allowed_origins(),
+    allow_origin_regex=(
+        r"https://openhuman\.icyzh\.dev"
+        r"|https://openhooman\.icyzh\.dev"
+        r"|https://.*\.vercel\.app"
+        r"|https://.*\.up\.railway\.app"
+        r"|http://localhost(:\d+)?"
+        r"|http://127\.0\.0\.1(:\d+)?"
+    ),
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -124,4 +143,3 @@ app.include_router(slack_oauth_router)
 app.include_router(fixed_bots_router)
 app.include_router(mcp_router)
 app.include_router(mcp_oauth_router)
-
