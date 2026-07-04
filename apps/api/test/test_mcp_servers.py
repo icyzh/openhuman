@@ -30,6 +30,7 @@ async def test_all_servers():
         "notion": os.getenv("NOTION_TOKEN") or os.getenv("NOTION_INTEGRATION_TOKEN"),
         "vercel": os.getenv("VERCEL_TOKEN"),
         "web_search": None, # none needed
+        "gmail": os.getenv("GMAIL_TOKEN"), # OAuth access token for testing
     }
     
     for slug, spec in REGISTRY.items():

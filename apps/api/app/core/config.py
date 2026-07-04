@@ -130,6 +130,8 @@ class Settings(BaseSettings):
     # Only connectors that require a registered OAuth app need these (Notion, Vercel,
     # GitHub OAuth mode).  Leave empty for connectors that use PAT / API-key /
     # no-auth modes.
+    gmail_client_id: str = ""
+    gmail_client_secret: str = ""
     notion_client_id: str = ""
     notion_client_secret: str = ""
     vercel_client_id: str = ""
@@ -147,6 +149,11 @@ class Settings(BaseSettings):
         """Return ``{slug: {client_id, client_secret}}`` for every OAuth connector
         whose credentials are configured in the environment."""
         creds: dict[str, dict[str, str]] = {}
+        if self.gmail_client_id:
+            creds["gmail"] = {
+                "client_id": self.gmail_client_id,
+                "client_secret": self.gmail_client_secret,
+            }
         if self.notion_client_id:
             creds["notion"] = {
                 "client_id": self.notion_client_id,

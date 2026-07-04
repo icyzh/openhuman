@@ -109,7 +109,7 @@ SUPPORT_TEMPLATE = EmployeeTemplate(
         "escalate_to_human", "escalate_to_human_interactive",
     ],
     allowed_mcp_servers=["web_search"],
-    suggested_mcp_servers=["github", "zendesk", "intercom"],
+    suggested_mcp_servers=["github", "zendesk", "intercom", "gmail"],
     guardrail_config={"block_pii": True, "require_citations": False},
     suggested_duties=[
         "Answer support questions in #support when mentioned",
@@ -140,7 +140,7 @@ GENERAL_TEMPLATE = EmployeeTemplate(
         "check_background_task", "cancel_background_task",
     ],
     allowed_mcp_servers=["web_search"],
-    suggested_mcp_servers=["github"],
+    suggested_mcp_servers=["github", "gmail"],
     guardrail_config={"block_pii": False, "require_citations": False},
     suggested_duties=[
         "Answer general questions when mentioned",
@@ -171,7 +171,7 @@ LEGAL_COMPLIANCE_TEMPLATE = EmployeeTemplate(
         "escalate_to_human", "escalate_to_human_interactive",
     ],
     allowed_mcp_servers=["web_search"],
-    suggested_mcp_servers=["docusign", "github"],
+    suggested_mcp_servers=["docusign", "github", "gmail"],
     guardrail_config={"block_pii": True, "require_citations": True},
     suggested_duties=[
         "Review contract clauses shared in #legal-review",
