@@ -23,12 +23,6 @@ from app.agent.tools.mcp.connectors.registry import REGISTRY, ConnectorSpec
 
 logger = logging.getLogger(__name__)
 
-# Map our semantic auth types to the transport/auth config the SDK understands.
-_TRANSPORT_MAP: dict[str, str] = {
-    "streamable_http": "http",
-    "sse": "sse",
-}
-
 # ---------------------------------------------------------------------------
 # Circuit Breaker
 # ---------------------------------------------------------------------------
@@ -491,7 +485,7 @@ class MCPClientManager:
         ``MultiServerMCPClient`` expects for one server."""
         spec = conn.connector
 
-        transport = _TRANSPORT_MAP.get(spec.transport, "http")
+        transport = spec.transport
 
         config: dict[str, Any] = {
             "url": spec.base_url,
