@@ -47,8 +47,8 @@ def _get_previous_keys() -> list[bytes]:
 
 
 def encrypt_token(plaintext: str) -> str:
-    """Encrypt a bot token with the *current* key. Returns a base64-encoded
-    ciphertext (nonce || data)."""
+    """Encrypt a bot token with the *current* key (AES-256-GCM). Returns a
+    base64-encoded ciphertext (nonce || data)."""
     key = _get_encryption_key()
     nonce = os.urandom(12)
     ciphertext = AESGCM(key).encrypt(nonce, plaintext.encode(), None)
