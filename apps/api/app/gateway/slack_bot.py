@@ -23,8 +23,16 @@ from slack_bolt.adapter.socket_mode.async_handler import AsyncSocketModeHandler
 from slack_bolt.async_app import AsyncApp
 from sqlalchemy import select
 
+from app.activity.context import (
+    activity_channel_id,
+    activity_employee_id,
+    activity_employee_name,
+    activity_org_id,
+    activity_platform,
+)
 from app.agent.jobs.queue import cancel_active_jobs_for_thread, is_cancel_intent
 from app.agent.router import get_graph_for_employee
+from app.activity.service import record_activity
 from app.channel_assignments.models import ChannelAssignment
 from app.core.config import settings
 from app.core.database import async_session_factory
@@ -226,6 +234,27 @@ class EmployeeSlackBot:
                 cancelled = await cancel_active_jobs_for_thread(session, thread_key)
             if cancelled:
                 names = ", ".join(j.job_type for j in cancelled)
+                # Record cancellation (best-effort)
+                if org:
+                    try:
+                        async with async_session_factory() as s:
+                            await record_activity(
+                                s,
+                                org.id,
+                                "agent_run",
+                                f"Cancelled {len(cancelled)} background task(s): {names}",
+                                employee_id=self.employee_id,
+                                employee_name=employee_name,
+                                platform="slack",
+                                status="cancelled",
+                                metadata={
+                                    "cancelled_jobs": names,
+                                    "channel": channel,
+                                    "thread_ts": thread_ts,
+                                },
+                            )
+                    except Exception:
+                        pass
                 await say(
                     text=f"🫡 Cancelled: {names}.",
                     channel=channel,
@@ -261,6 +290,25 @@ class EmployeeSlackBot:
                     dataset_id=org.cognee_dataset_id,
                     background=True,
                 )
+                # Record auto-ingest (best-effort)
+                try:
+                    async with async_session_factory() as s2:
+                        await record_activity(
+                            s2,
+                            org.id,
+                            "memory_operation",
+                            f"Auto-ingested Slack message from {speaker} in #{ch}",
+                            employee_id=self.employee_id,
+                            employee_name=employee_name,
+                            platform="slack",
+                            metadata={
+                                "operation": "auto_ingest",
+                                "speaker": speaker,
+                                "channel": ch,
+                            },
+                        )
+                except Exception:
+                    pass
             except Exception:
                 logger.debug(
                     "Slack message Cognee ingest skipped for employee %s",
@@ -349,6 +397,14 @@ class EmployeeSlackBot:
                         )
         # ── End file attachments ──────────────────────────────────────────
 
+        # Thread recording context for per-tool activity
+        if org:
+            activity_org_id.set(str(org.id))
+        activity_employee_id.set(str(self.employee_id))
+        activity_employee_name.set(employee_name)
+        activity_platform.set("slack")
+        activity_channel_id.set(channel)
+
         # Run the agent
         response_text = await self._run_agent(
             text, channel_id=channel, thread_ts=thread_ts,
@@ -356,9 +412,58 @@ class EmployeeSlackBot:
         # Phase 6: None means the graph paused for interactive approval —
         # the tool already posted a "waiting" message to the thread.
         if response_text is None:
+            # Record escalation awaiting approval
+            if org:
+                try:
+                    async with async_session_factory() as s:
+                        await record_activity(
+                            s,
+                            org.id,
+                            "human_escalation",
+                            f"Escalation awaiting approval from: {text[:100]}",
+                            employee_id=self.employee_id,
+                            employee_name=employee_name,
+                            platform="slack",
+                            status="awaiting_approval",
+                            metadata={
+                                "channel": channel,
+                                "thread_ts": thread_ts,
+                                "slack_user": event.get("user"),
+                                "is_dm": is_dm,
+                            },
+                        )
+                except Exception:
+                    pass
             return
         if not response_text:
             response_text = "I processed your request but had no response."
+
+        # Record activity (best-effort)
+        if org:
+            try:
+                async with async_session_factory() as s:
+                    await record_activity(
+                        s,
+                        org.id,
+                        "agent_conversation",
+                        f"Responded to: {text[:100]}",
+                        employee_id=self.employee_id,
+                        employee_name=employee_name,
+                        platform="slack",
+                        status="succeeded",
+                        description=json.dumps({
+                            "response": response_text[:500],
+                            "channel": channel,
+                        }),
+                        metadata={
+                            "channel": channel,
+                            "thread_ts": thread_ts,
+                            "slack_user": event.get("user"),
+                            "is_dm": is_dm,
+                        },
+                    )
+            except Exception:
+                pass
 
         # Reply in thread — dynamically set username
         await say(
@@ -542,6 +647,29 @@ class EmployeeSlackBot:
             )
             response_text = "Something went wrong processing the escalation decision."
 
+        # -- Record escalation decision (best-effort) -------------------------
+        try:
+            async with async_session_factory() as s:
+                emp = await s.get(Employee, employee_id)
+                if emp:
+                    await record_activity(
+                        s,
+                        emp.org_id,
+                        "human_escalation",
+                        f"Escalation {'approved' if approved else 'denied'} by {decision['by']}",
+                        employee_id=employee_id,
+                        employee_name=emp.name,
+                        platform=platform,
+                        status="succeeded",
+                        metadata={
+                            "approved": approved,
+                            "channel": channel_id,
+                            "thread_ts": thread_ts,
+                        },
+                    )
+        except Exception:
+            pass
+
         # -- Update the manager's button message -----------------------------
         decision_text = "✅ Approved" if approved else "❌ Denied"
         decided_by = f"<@{decision['by']}>"
@@ -708,6 +836,7 @@ class WorkspaceSlackBot:
             return
 
         employee_name = "OpenHuman Agent"
+        org = None
         async with async_session_factory() as session:
             emp = await session.get(Employee, employee_id)
             if emp:
@@ -838,6 +967,27 @@ class WorkspaceSlackBot:
                 cancelled = await cancel_active_jobs_for_thread(session, thread_key)
             if cancelled:
                 names = ", ".join(j.job_type for j in cancelled)
+                # Record cancellation (best-effort)
+                if org:
+                    try:
+                        async with async_session_factory() as s:
+                            await record_activity(
+                                s,
+                                org.id,
+                                "agent_run",
+                                f"Cancelled {len(cancelled)} background task(s): {names}",
+                                employee_id=employee_id,
+                                employee_name=employee_name,
+                                platform="slack",
+                                status="cancelled",
+                                metadata={
+                                    "cancelled_jobs": names,
+                                    "channel": channel,
+                                    "thread_ts": thread_ts,
+                                },
+                            )
+                    except Exception:
+                        pass
                 await say(
                     text=f"🫡 Cancelled: {names}.",
                     channel=channel,
@@ -855,6 +1005,14 @@ class WorkspaceSlackBot:
                     username=employee_name,
                 )
             return
+
+        # Thread recording context for per-tool activity
+        if org:
+            activity_org_id.set(str(org.id))
+        activity_employee_id.set(str(employee_id))
+        activity_employee_name.set(employee_name)
+        activity_platform.set("slack")
+        activity_channel_id.set(channel)
 
         response_text = await self._run_agent(
             employee_id, text, channel_id=channel, thread_ts=thread_ts,
@@ -1053,6 +1211,29 @@ class WorkspaceSlackBot:
                 "Failed to resume graph for escalation (thread=%s)", thread_key,
             )
             response_text = "Something went wrong processing the escalation decision."
+
+        # -- Record escalation decision (best-effort) -------------------------
+        try:
+            async with async_session_factory() as s:
+                emp = await s.get(Employee, employee_id)
+                if emp:
+                    await record_activity(
+                        s,
+                        emp.org_id,
+                        "human_escalation",
+                        f"Escalation {'approved' if approved else 'denied'} by {decision['by']}",
+                        employee_id=employee_id,
+                        employee_name=emp.name,
+                        platform=platform,
+                        status="succeeded",
+                        metadata={
+                            "approved": approved,
+                            "channel": channel_id,
+                            "thread_ts": thread_ts,
+                        },
+                    )
+        except Exception:
+            pass
 
         # -- Update the manager's button message -----------------------------
         decision_text = "✅ Approved" if approved else "❌ Denied"

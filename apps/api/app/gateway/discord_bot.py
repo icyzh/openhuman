@@ -1,3 +1,4 @@
+import json
 import logging
 from uuid import UUID
 
@@ -5,10 +6,19 @@ import discord
 from langchain_core.messages import HumanMessage
 from sqlalchemy import select
 
+from app.activity.context import (
+    activity_channel_id,
+    activity_employee_id,
+    activity_employee_name,
+    activity_org_id,
+    activity_platform,
+)
 from app.agent.jobs.queue import cancel_active_jobs_for_thread, is_cancel_intent
 from app.agent.router import get_graph_for_employee
+from app.activity.service import record_activity
 from app.channel_assignments.models import ChannelAssignment
 from app.core.database import async_session_factory
+from app.employees.models import Employee
 
 logger = logging.getLogger(__name__)
 
@@ -100,6 +110,27 @@ class EmployeeDiscordBot(discord.Client):
             if cancelled:
                 names = ", ".join(j.job_type for j in cancelled)
                 await message.reply(f"🫡 Cancelled: {names}.")
+                # Record cancellation (best-effort)
+                try:
+                    async with async_session_factory() as s:
+                        emp = await s.get(Employee, self.employee_id)
+                        if emp:
+                            await record_activity(
+                                s,
+                                emp.org_id,
+                                "agent_run",
+                                f"Cancelled {len(cancelled)} background task(s): {names}",
+                                employee_id=self.employee_id,
+                                employee_name=emp.name,
+                                platform="discord",
+                                status="cancelled",
+                                metadata={
+                                    "cancelled_jobs": names,
+                                    "channel_id": str(message.channel.id),
+                                },
+                            )
+                except Exception:
+                    pass
             else:
                 await message.reply(
                     "Nothing to cancel — there are no active "
@@ -107,13 +138,54 @@ class EmployeeDiscordBot(discord.Client):
                 )
             return
 
+        # Thread recording context for per-tool activity
+        try:
+            async with async_session_factory() as s:
+                emp = await s.get(Employee, self.employee_id)
+                if emp:
+                    activity_org_id.set(str(emp.org_id))
+                    activity_employee_name.set(emp.name)
+        except Exception:
+            pass
+        activity_employee_id.set(str(self.employee_id))
+        activity_platform.set("discord")
+        activity_channel_id.set(str(message.channel.id))
+
         # Trigger typing indicator to show the bot is thinking
         async with message.channel.typing():
-            response_text = await self._run_agent(
+            response_text, is_error = await self._run_agent(
                 content,
                 channel_id=str(message.channel.id),
                 message_id=str(message.id),
             )
+
+        # Record activity (best-effort)
+        try:
+            async with async_session_factory() as s:
+                emp = await s.get(Employee, self.employee_id)
+                if emp:
+                    await record_activity(
+                        s,
+                        emp.org_id,
+                        "agent_conversation",
+                        f"Responded to: {content[:100]}",
+                        employee_id=self.employee_id,
+                        employee_name=emp.name,
+                        platform="discord",
+                        status="failed" if is_error else "succeeded",
+                        description=json.dumps({
+                            "response": response_text[:500] if response_text else None,
+                            "channel_id": str(message.channel.id),
+                        }),
+                        metadata={
+                            "channel_id": str(message.channel.id),
+                            "message_id": str(message.id),
+                            "discord_user_id": str(message.author.id),
+                            "is_dm": self._is_dm(message),
+                        },
+                    )
+        except Exception:
+            pass
 
         # Discord message character limit — chunk at 2000
         if not response_text:
@@ -130,11 +202,11 @@ class EmployeeDiscordBot(discord.Client):
         self, content: str,
         channel_id: str = "",
         message_id: str = "",
-    ) -> str:
+    ) -> tuple[str, bool]:
         """Run the LangGraph agent with a fresh DB session.
 
-        Never leaks raw exception details to the caller — returns a safe
-        fallback message on failure.
+        Returns (response_text, is_error). Never leaks raw exception
+        details to the caller — returns a safe fallback message on failure.
         """
         root_id = message_id or "direct"
         thread_key = f"discord:{self.employee_id}:{channel_id}:{root_id}"
@@ -162,9 +234,10 @@ class EmployeeDiscordBot(discord.Client):
                     }
                 }
                 result = await graph.ainvoke(initial_state, config=config)
-                return result.get("response", "")
+                error = result.get("error")
+                return (result.get("response", ""), error is not None)
         except Exception:
             logger.exception(
                 "Agent graph failed for employee %s on Discord", self.employee_id,
             )
-            return _SAFE_ERROR_MESSAGE
+            return (_SAFE_ERROR_MESSAGE, True)

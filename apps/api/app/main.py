@@ -29,6 +29,7 @@ import app.documents.models  # noqa: F401
 import app.employees.models  # noqa: F401
 import app.organizations.models  # noqa: F401
 import app.agent.tools.mcp.models  # noqa: F401
+from app.activity.router import router as activity_router
 from app.agent.checkpointer import close_checkpointer, init_checkpointer
 from app.agent.router import router as agent_router
 from app.auth.router import router as auth_router
@@ -110,6 +111,7 @@ app.add_middleware(
 )
 
 app.include_router(health_router)
+app.include_router(activity_router)
 app.include_router(auth_router)
 app.include_router(org_router)
 app.include_router(emp_router)

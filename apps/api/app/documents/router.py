@@ -8,6 +8,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import joinedload
 
+from app.activity.service import record_activity
 from app.auth.models import User
 from app.core.database import get_db
 from app.core.dependencies import get_current_user
@@ -89,6 +90,29 @@ async def delete_document_route(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> None:
+    doc = await get_document(db, doc_id, current_user.id)
+    if doc is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Document not found")
+
+    # Record activity BEFORE delete (best-effort)
+    try:
+        await record_activity(
+            db,
+            doc.org_id,
+            "document_upload",
+            f"Deleted {doc.filename}",
+            employee_id=doc.employee_id,
+            platform="api",
+            status="deleted",
+            metadata={
+                "filename": doc.filename,
+                "content_type": doc.content_type,
+                "size_bytes": doc.size_bytes,
+            },
+        )
+    except Exception:
+        pass
+
     deleted = await delete_document(db, doc_id, current_user.id)
     if not deleted:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Document not found")

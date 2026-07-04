@@ -3,6 +3,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.activity.service import record_activity
 from app.auth.models import User
 from app.core.database import get_db
 from app.core.dependencies import get_current_user
@@ -28,7 +29,17 @@ async def create_organization(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> OrganizationResponse:
-    return await create_org(db, current_user.id, data)  # type: ignore[return-value]
+    org = await create_org(db, current_user.id, data)
+    try:
+        await record_activity(
+            db, org.id, "org_created",
+            f"Organization '{org.name}' created",
+            platform="api",
+            metadata={"name": org.name},
+        )
+    except Exception:
+        pass
+    return org  # type: ignore[return-value]
 
 
 @router.get("", response_model=list[OrganizationResponse])
@@ -61,6 +72,15 @@ async def update_organization(
     org = await update_org(db, org_id, current_user.id, data)
     if org is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Organization not found")
+    try:
+        await record_activity(
+            db, org.id, "org_updated",
+            f"Organization '{org.name}' updated",
+            platform="api",
+            metadata={"name": org.name},
+        )
+    except Exception:
+        pass
     return org  # type: ignore[return-value]
 
 
@@ -70,6 +90,21 @@ async def delete_organization(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> None:
+    org = await get_org(db, org_id, current_user.id)
+    if org is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Organization not found")
+
+    # Record activity BEFORE delete (FK constraint)
+    try:
+        await record_activity(
+            db, org_id, "org_deleted",
+            f"Organization '{org.name}' deleted",
+            platform="api",
+            metadata={"name": org.name},
+        )
+    except Exception:
+        pass
+
     deleted = await delete_org(db, org_id, current_user.id)
     if not deleted:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Organization not found")

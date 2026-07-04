@@ -12,6 +12,7 @@ from fastapi.responses import RedirectResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.activity.service import record_activity
 from app.agent.tools.mcp.connectors import REGISTRY
 from app.agent.tools.mcp.models import McpConnection
 from app.auth.models import User
@@ -228,6 +229,26 @@ async def create_mcp_connection(
         org_id,
     )
 
+    # Record activity (best-effort)
+    try:
+        emp = await db.get(Employee, emp_id)
+        await record_activity(
+            db,
+            org_id,
+            "mcp_connected",
+            f"{'Connected' if is_new else 'Updated'} {slug} MCP tool",
+            employee_id=emp_id,
+            employee_name=emp.name if emp else None,
+            platform="api",
+            metadata={
+                "action": "create" if is_new else "update",
+                "connector_slug": slug,
+                "auth_type": spec.auth_type,
+            },
+        )
+    except Exception:
+        pass
+
     return McpConnectionRead(
         id=conn.id,
         connector_slug=conn.connector_slug,
@@ -279,6 +300,25 @@ async def delete_mcp_connection(
         emp_id,
         org_id,
     )
+
+    # Record activity (best-effort)
+    try:
+        emp = await db.get(Employee, emp_id)
+        await record_activity(
+            db,
+            org_id,
+            "mcp_connected",
+            f"Revoked {slug} MCP connection",
+            employee_id=emp_id,
+            employee_name=emp.name if emp else None,
+            platform="api",
+            metadata={
+                "action": "revoke",
+                "connector_slug": slug,
+            },
+        )
+    except Exception:
+        pass
 
 
 # ===========================================================================
@@ -351,6 +391,25 @@ async def mcp_oauth_install(
         emp_id,
         org_id,
     )
+
+    # Record activity (best-effort)
+    try:
+        await record_activity(
+            db,
+            org_id,
+            "mcp_connected",
+            f"OAuth install started for {slug}",
+            employee_id=emp_id,
+            employee_name=emp.name,
+            platform="api",
+            metadata={
+                "action": "oauth_install",
+                "connector_slug": slug,
+            },
+        )
+    except Exception:
+        pass
+
     return RedirectResponse(authorize_url, status_code=303)
 
 
@@ -491,6 +550,23 @@ async def mcp_oauth_callback(
             session.add(conn)
 
         await session.commit()
+
+        # Record activity (best-effort, inside the session block)
+        try:
+            await record_activity(
+                session,
+                UUID(org_id),
+                "mcp_connected",
+                f"{connector_slug} MCP OAuth complete",
+                employee_id=UUID(employee_id),
+                platform="api",
+                metadata={
+                    "action": "oauth_complete",
+                    "connector_slug": connector_slug,
+                },
+            )
+        except Exception:
+            pass
 
     logger.info(
         "MCP OAuth complete — %s tokens stored for employee %s (org %s)",

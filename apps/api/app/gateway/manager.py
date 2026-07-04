@@ -17,11 +17,12 @@ import logging
 from collections import defaultdict
 from uuid import UUID
 
+from app.activity.service import record_activity
 from app.agent.jobs.worker import AgentJobWorker, set_active_worker
-from app.core.config import settings
 from app.core.database import async_session_factory
-from app.core.security import decrypt_token
 from app.employees.models import Employee
+from app.core.config import settings
+from app.core.security import decrypt_token
 from app.employees.service import (
     decrypt_discord_token,
     decrypt_slack_token,
@@ -183,6 +184,20 @@ class BotGatewayManager:
                 "Started Discord bot for employee %s (attempt %d/%d)",
                 emp_id, attempt, _MAX_RETRIES,
             )
+
+            # Record bot connect (best-effort)
+            try:
+                async with async_session_factory() as s:
+                    emp = await s.get(Employee, emp_id)
+                    if emp:
+                        await record_activity(
+                            s, emp.org_id, "agent_conversation",
+                            f"Discord bot connected for {emp.name}",
+                            employee_id=emp_id, employee_name=emp.name,
+                            platform="discord", status="succeeded",
+                        )
+            except Exception:
+                pass
 
             try:
                 done, _ = await asyncio.wait([task], timeout=15)
@@ -368,6 +383,20 @@ class BotGatewayManager:
         per_emp_bots[emp_id] = bot
         logger.info("Started EmployeeSlackBot for employee %s", emp_id)
 
+        # Record bot connect (best-effort)
+        try:
+            async with async_session_factory() as s:
+                emp = await s.get(Employee, emp_id)
+                if emp:
+                    await record_activity(
+                        s, emp.org_id, "agent_conversation",
+                        f"Slack bot connected for {emp.name}",
+                        employee_id=emp_id, employee_name=emp.name,
+                        platform="slack", status="succeeded",
+                    )
+        except Exception:
+            pass
+
     async def _stop_employee_slack_bot(self, emp_id: UUID) -> None:
         """Disconnect and remove the EmployeeSlackBot for *emp_id*."""
         per_emp_bots: dict[UUID, EmployeeSlackBot] = self.slack_bots  # type: ignore[assignment]
@@ -376,6 +405,20 @@ class BotGatewayManager:
             return
         await bot.disconnect()
         logger.info("Stopped EmployeeSlackBot for employee %s", emp_id)
+
+        # Record bot disconnect (best-effort)
+        try:
+            async with async_session_factory() as s:
+                emp = await s.get(Employee, emp_id)
+                if emp:
+                    await record_activity(
+                        s, emp.org_id, "agent_conversation",
+                        f"Slack bot disconnected for {emp.name}",
+                        employee_id=emp_id, employee_name=emp.name,
+                        platform="slack", status="succeeded",
+                    )
+        except Exception:
+            pass
 
     # ------------------------------------------------------------------
     # Slack — fixed mode (named bots)

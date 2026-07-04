@@ -35,6 +35,7 @@ from slack_sdk.web.async_client import AsyncWebClient
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
+from app.activity.service import record_activity
 from app.core.config import settings
 from app.core.database import async_session_factory
 from app.core.security import decrypt_token, encrypt_token
@@ -254,6 +255,23 @@ async def slack_install(
         org_id,
         settings.slack_identity_mode,
     )
+
+    # Record activity (best-effort)
+    try:
+        async with async_session_factory() as s:
+            await record_activity(
+                s,
+                UUID(org_id),
+                "slack_oauth",
+                "Slack install started",
+                employee_id=UUID(employee_id),
+                employee_name=emp.name,
+                platform="slack",
+                metadata={"action": "install_initiated", "mode": settings.slack_identity_mode},
+            )
+    except Exception:
+        pass
+
     return RedirectResponse(authorize_url, status_code=303)
 
 
@@ -415,6 +433,27 @@ async def slack_oauth_callback(
             emp.status = "active"
 
         await session.commit()
+
+        # Record activity (best-effort, inside session block)
+        try:
+            team_name = oauth_response.get("team", {}).get("name", "unknown")
+            await record_activity(
+                session,
+                UUID(org_id),
+                "slack_oauth",
+                f"Slack integration connected (workspace: {team_name})",
+                employee_id=UUID(employee_id),
+                employee_name=emp.name,
+                platform="slack",
+                metadata={
+                    "action": "oauth_complete",
+                    "slack_team_id": oauth_response.get("team", {}).get("id"),
+                    "slack_team_name": team_name,
+                    "mode": settings.slack_identity_mode,
+                },
+            )
+        except Exception:
+            pass
 
     logger.info(
         "Slack OAuth complete — token stored for employee %s (team: %s, mode=%s)",

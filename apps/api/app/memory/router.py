@@ -7,6 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.activity.service import record_activity
 from app.auth.models import User
 from app.core.database import get_db
 from app.core.dependencies import get_current_user
@@ -78,6 +79,25 @@ async def search(
         )
         results = []
 
+    # Record activity (best-effort)
+    try:
+        await record_activity(
+            db,
+            emp.org_id,
+            "memory_operation",
+            f"Memory search: '{data.query[:100]}'",
+            employee_id=data.employee_id,
+            employee_name=emp.name,
+            platform="api",
+            metadata={
+                "operation": "search",
+                "query": data.query,
+                "results_count": len(results),
+            },
+        )
+    except Exception:
+        pass
+
     schemas = [
         MemoryResultSchema(
             text=r.get("text", ""),
@@ -105,6 +125,7 @@ async def ingest(
             detail="Employee Cognee not provisioned yet",
         )
 
+    ingest_ok = True
     try:
         await remember(
             data.content,
@@ -117,6 +138,29 @@ async def ingest(
         logger.exception(
             "Cognee remember failed for employee %s", data.employee_id
         )
+        ingest_ok = False
+
+    # Record activity (best-effort)
+    try:
+        content_preview = data.content[:100] if data.content else "(empty)"
+        await record_activity(
+            db,
+            emp.org_id,
+            "memory_operation",
+            f"Memory ingest: {content_preview}",
+            employee_id=data.employee_id,
+            employee_name=emp.name,
+            platform="api",
+            status="succeeded" if ingest_ok else "failed",
+            metadata={
+                "operation": "ingest",
+                "content_length": len(data.content) if data.content else 0,
+            },
+        )
+    except Exception:
+        pass
+
+    if not ingest_ok:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to ingest memory content",

@@ -5,6 +5,7 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.activity.service import record_activity
 from app.auth.models import User
 from app.channel_assignments.models import ChannelAssignment
 from app.channel_assignments.schemas import (
@@ -56,7 +57,7 @@ async def create_channel_assignment(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail=f"platform must be one of {sorted(_ALLOWED_PLATFORMS)}",
         )
-    await _verify_access(db, org_id, emp_id, current_user.id)
+    emp = await _verify_access(db, org_id, emp_id, current_user.id)
     ca = ChannelAssignment(
         employee_id=emp_id,
         platform=data.platform,
@@ -73,6 +74,26 @@ async def create_channel_assignment(
             detail="Channel assignment already exists for this employee/platform/channel",
         )
     await db.refresh(ca)
+
+    # Record activity (best-effort)
+    try:
+        await record_activity(
+            db,
+            org_id,
+            "channel_assigned",
+            f"Channel #{data.channel_name} ({data.platform}) assigned to {emp.name}",
+            employee_id=emp_id,
+            employee_name=emp.name,
+            platform=data.platform,
+            metadata={
+                "channel_id": data.channel_id,
+                "channel_name": data.channel_name,
+                "platform": data.platform,
+            },
+        )
+    except Exception:
+        pass
+
     return ChannelAssignmentResponse.model_validate(ca, from_attributes=True)
 
 
@@ -101,7 +122,7 @@ async def delete_channel_assignment(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> None:
-    await _verify_access(db, org_id, emp_id, current_user.id)
+    emp = await _verify_access(db, org_id, emp_id, current_user.id)
     ca = await db.scalar(
         select(ChannelAssignment).where(
             ChannelAssignment.id == ca_id,
@@ -112,5 +133,25 @@ async def delete_channel_assignment(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Channel assignment not found"
         )
+
+    # Record activity BEFORE delete (best-effort)
+    try:
+        await record_activity(
+            db,
+            org_id,
+            "channel_unassigned",
+            f"Channel #{ca.channel_name} ({ca.platform}) unassigned from {emp.name}",
+            employee_id=emp_id,
+            employee_name=emp.name,
+            platform=ca.platform,
+            metadata={
+                "channel_id": ca.channel_id,
+                "channel_name": ca.channel_name,
+                "platform": ca.platform,
+            },
+        )
+    except Exception:
+        pass
+
     await db.delete(ca)
     await db.commit()

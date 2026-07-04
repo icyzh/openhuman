@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import logging
 from uuid import UUID
 
@@ -11,6 +12,14 @@ from langgraph.graph.state import CompiledStateGraph
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.activity.context import (
+    activity_channel_id,
+    activity_employee_id,
+    activity_employee_name,
+    activity_org_id,
+    activity_platform,
+)
+from app.activity.service import record_activity
 from app.agent.build import build_graph
 from app.agent.schemas import AgentResponse, MessageInput
 from app.agent.tools.executor import BUILT_IN_TOOLS
@@ -244,6 +253,19 @@ async def run_agent(
         }
     }
 
+    # Resolve employee name + org for activity recording
+    emp = await db.scalar(select(Employee).where(Employee.id == employee_id))
+    employee_name = emp.name if emp else None
+    emp_org_id = emp.org_id if emp else None
+
+    # Thread recording context through graph nodes
+    ctx_org_id = str(emp_org_id) if emp_org_id else None
+    activity_org_id.set(ctx_org_id)
+    activity_employee_id.set(str(employee_id))
+    activity_employee_name.set(employee_name)
+    activity_platform.set(data.platform)
+    activity_channel_id.set(data.channel_id)
+
     try:
         result_state = await graph.ainvoke(initial_state, config=config)
 
@@ -260,6 +282,65 @@ async def run_agent(
             error,
         )
 
+        # Record guardrail events (best-effort)
+        if emp_org_id and result_state.get("input_blocked"):
+            try:
+                await record_activity(
+                    db,
+                    emp_org_id,
+                    "agent_conversation",
+                    f"Input blocked: {result_state.get('block_reason', 'unknown')}",
+                    employee_id=employee_id,
+                    employee_name=employee_name,
+                    platform=data.platform,
+                    status="blocked",
+                    metadata={"block_reason": result_state.get("block_reason")},
+                )
+            except Exception:
+                pass
+
+        if emp_org_id and not result_state.get("output_guardrail_passed", True):
+            try:
+                await record_activity(
+                    db,
+                    emp_org_id,
+                    "agent_conversation",
+                    "Output blocked by guardrail",
+                    employee_id=employee_id,
+                    employee_name=employee_name,
+                    platform=data.platform,
+                    status="blocked",
+                )
+            except Exception:
+                pass
+
+        # Record main conversation (best-effort, skip if already blocked)
+        if emp_org_id and not result_state.get("input_blocked"):
+            try:
+                await record_activity(
+                    db,
+                    emp_org_id,
+                    "agent_conversation",
+                    f"Agent responded to: {data.content[:100]}",
+                    employee_id=employee_id,
+                    employee_name=employee_name,
+                    platform=data.platform,
+                    status="failed" if error else "succeeded",
+                    description=json.dumps({
+                        "response": response_text[:500] if response_text else None,
+                        "tool_rounds": tool_rounds,
+                        "error": error,
+                        "channel_id": data.channel_id,
+                    }),
+                    metadata={
+                        "tool_rounds": tool_rounds,
+                        "user_id": data.user_id,
+                        "channel_id": data.channel_id,
+                    },
+                )
+            except Exception:
+                logger.exception("Failed to record agent_conversation activity")
+
         return AgentResponse(
             response=response_text,
             tool_calls_count=tool_rounds,
@@ -273,6 +354,25 @@ async def run_agent(
             elapsed,
             str(exc),
         )
+
+        # Record failure activity (best-effort)
+        if emp_org_id:
+            try:
+                await record_activity(
+                    db,
+                    emp_org_id,
+                    "agent_conversation",
+                    f"Agent error for: {data.content[:100]}",
+                    employee_id=employee_id,
+                    employee_name=employee_name,
+                    platform=data.platform,
+                    status="failed",
+                    description=json.dumps({"error": str(exc)}),
+                    metadata={"error": str(exc)},
+                )
+            except Exception:
+                pass
+
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Agent graph execution failed: {exc}",
