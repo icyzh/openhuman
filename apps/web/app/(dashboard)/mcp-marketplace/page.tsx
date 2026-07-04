@@ -662,7 +662,7 @@ export default function McpMarketplacePage() {
       </div>
 
       {/* Filter and Search Bar */}
-      <div className="flex flex-col gap-4 md:flex-row md:items-center justify-between bg-muted/20 border border-border p-4 rounded-xl backdrop-blur-sm">
+      <div className="flex flex-col gap-4 md:flex-row md:items-center justify-between bg-muted/20 p-4 rounded-xl backdrop-blur-sm">
         <div className="relative flex-1 max-w-md">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
           <Input
@@ -687,10 +687,10 @@ export default function McpMarketplacePage() {
             <button
               key={category}
               onClick={() => setSelectedCategory(category)}
-              className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-all border ${
+              className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-all ${
                 selectedCategory === category
-                  ? "bg-primary text-primary-foreground border-primary shadow-sm"
-                  : "bg-background text-muted-foreground border-border hover:text-foreground hover:bg-muted/50"
+                  ? "bg-primary text-primary-foreground shadow-sm"
+                  : "bg-muted text-muted-foreground hover:text-foreground hover:bg-muted/80"
               }`}
             >
               {category}
@@ -733,7 +733,7 @@ export default function McpMarketplacePage() {
                       </span>
                     </div>
                     <span className="text-[10px] text-muted-foreground/80 font-medium">
-                      by {server.author} • ★ {server.rating}
+                      by {server.author} • Rating: {server.rating}
                     </span>
                   </div>
                 </CardHeader>

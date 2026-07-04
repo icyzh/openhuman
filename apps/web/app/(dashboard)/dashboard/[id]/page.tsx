@@ -15,6 +15,11 @@ import {
   Trash2Icon,
   UploadIcon,
   XIcon,
+  Terminal,
+  Layers,
+  Code,
+  Globe,
+  Puzzle,
 } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
@@ -1106,6 +1111,129 @@ export default function EmployeeDetailPage() {
             </p>
           </div>
         )}
+      </div>
+
+      <div className="flex flex-col gap-4 border-t border-border pt-8 mt-4">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <Puzzle className="size-5 text-muted-foreground" />
+            <h3 className="text-base font-semibold text-foreground">
+              Featured MCP Integrations Catalog
+            </h3>
+          </div>
+          <Link
+            href="/mcp-marketplace"
+            className="text-xs font-semibold text-primary hover:underline flex items-center gap-1"
+          >
+            Browse All Marketplace
+            <ExternalLinkIcon className="size-3" />
+          </Link>
+        </div>
+        <p className="text-xs text-muted-foreground -mt-2">
+          Connect Model Context Protocol (MCP) data sources and server tools to extend the capabilities of {employee.name}.
+        </p>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mt-2">
+          {[
+            {
+              slug: "gmail",
+              name: "Gmail / Google Workspace",
+              description: "Let the agent draft, search, and send email messages.",
+              icon: MailIcon,
+              iconBg: "bg-red-500/10 text-red-500",
+            },
+            {
+              slug: "github",
+              name: "GitHub Copilot",
+              description: "Access repos, create PRs, search code, and update issues.",
+              icon: Terminal,
+              iconBg: "bg-slate-800/10 text-slate-800 dark:text-slate-200",
+            },
+            {
+              slug: "notion",
+              name: "Notion Workspaces",
+              description: "Read, write, query, and synchronize Notion pages.",
+              icon: Layers,
+              iconBg: "bg-zinc-700/10 text-zinc-700 dark:text-zinc-200",
+            },
+            {
+              slug: "vercel",
+              name: "Vercel Deployments",
+              description: "Control serverless setups, logs, and variables.",
+              icon: Code,
+              iconBg: "bg-neutral-900/10 text-neutral-900 dark:text-zinc-200",
+            },
+            {
+              slug: "gamma",
+              name: "Gamma Presentations",
+              description: "Generate documents, slides, and websites using AI.",
+              icon: Presentation,
+              iconBg: "bg-fuchsia-500/10 text-fuchsia-500",
+            },
+            {
+              slug: "web_search",
+              name: "Brave Web Search",
+              description: "Query search engines for web index answers.",
+              icon: Globe,
+              iconBg: "bg-orange-500/10 text-orange-500",
+            },
+          ].map((item) => {
+            const isConnected = mcpConnectionsData?.connections?.some(
+              (c) => c.connector_slug === item.slug && c.status === "connected"
+            );
+            const Icon = item.icon;
+
+            return (
+              <div
+                key={item.slug}
+                className="flex flex-col justify-between rounded-xl border border-border/80 bg-muted/20 p-4 transition-all hover:border-primary/30 hover:bg-muted/30"
+              >
+                <div className="flex flex-col gap-2">
+                  <div className="flex items-center gap-2.5">
+                    <div className={`flex size-8 items-center justify-center rounded-lg ${item.iconBg}`}>
+                      <Icon className="size-4" />
+                    </div>
+                    <span className="text-sm font-semibold text-foreground">
+                      {item.name}
+                    </span>
+                  </div>
+                  <p className="text-xs text-muted-foreground leading-relaxed line-clamp-2">
+                    {item.description}
+                  </p>
+                </div>
+
+                <div className="flex items-center justify-between border-t border-border/50 pt-3 mt-4">
+                  <span className={`text-[10px] font-semibold ${
+                    isConnected ? "text-green-600 dark:text-green-400" : "text-muted-foreground"
+                  }`}>
+                    {isConnected ? "Connected" : "Disconnected"}
+                  </span>
+
+                  {isConnected ? (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-6 px-2.5 text-[10px] text-destructive hover:bg-destructive/10 hover:text-destructive shrink-0"
+                      onClick={() => handleDisconnectMcp(item.slug)}
+                      disabled={deleteMcpConnectionMutation.isPending}
+                    >
+                      Disconnect
+                    </Button>
+                  ) : (
+                    <a
+                      href={`${API_URL}/api/organizations/${orgId}/employees/${empId}/mcp-connections/${item.slug}/install?redirect_to=${encodeURIComponent(
+                        window.location.origin + window.location.pathname
+                      )}`}
+                      className="inline-flex h-6 items-center justify-center rounded bg-primary px-2.5 text-[10px] font-bold text-primary-foreground hover:bg-primary/90 shrink-0"
+                    >
+                      Connect
+                    </a>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
       </div>
 
       <input
