@@ -1,1 +1,0 @@
-{"name": "Jordan", "role": "General Assistant", "employee_type": "general", "personality": null, "specialization": null}
