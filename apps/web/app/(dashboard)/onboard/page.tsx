@@ -32,6 +32,19 @@ import { useOrgStore } from "@/stores/org";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Spinner } from "@/components/ui/spinner";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { BrandLogo } from "@/components/brand-logos";
+import { cn } from "@/lib/utils";
+import { toast } from "sonner";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
@@ -115,6 +128,19 @@ export default function OnboardPage() {
   // Created employee
   const [createdEmpId, setCreatedEmpId] = useState<string | null>(null);
   const [createdBot, setCreatedBot] = useState<FixedBot | null>(null);
+
+  // Dialog visibility states
+  const [showDiscordDialog, setShowDiscordDialog] = useState(false);
+  const [showClickupDialog, setShowClickupDialog] = useState(false);
+
+  // Input states for dialogs
+  const [discordToken, setDiscordToken] = useState("");
+  const [discordClientId, setDiscordClientId] = useState("");
+  const [clickupToken, setClickupToken] = useState("");
+
+  // Connection status states
+  const [discordConnected, setDiscordConnected] = useState(false);
+  const [clickupConnected, setClickupConnected] = useState(false);
 
   // Duties
   const [duties, setDuties] = useState<string[]>([]);
@@ -215,46 +241,109 @@ export default function OnboardPage() {
 
   const errorUploadCount = uploadingFiles.filter((f) => f.status === "error").length;
 
-  // ── Connect to Slack ────────────────────────────────────────────────────
+  // ── Connection Helpers ──────────────────────────────────────────────────
 
-  const handleConnect = useCallback(async () => {
-    if (!orgId || !createdEmpId) return;
+  const saveDutiesAndUploadFiles = useCallback(async () => {
+    if (!orgId || !createdEmpId) return false;
+    try {
+      if (duties.length > 0) await saveDuties();
 
-    if (duties.length > 0) await saveDuties();
-
-    const pending = uploadingFiles.filter((f) => f.status !== "done");
-    if (pending.length > 0) {
-      setIsUploading(true);
-      for (let i = 0; i < uploadingFiles.length; i++) {
-        const entry = uploadingFiles[i];
-        if (!entry || entry.status === "done") continue;
-        setUploadingFiles((prev) => prev.map((f, idx) => (idx === i ? { ...f, status: "uploading" } : f)));
-        try {
-          await uploadDocMutation.mutateAsync({
-            data: {
-              file: entry.file as unknown as string,
-              organization_id: orgId,
-              employee_id: createdEmpId as unknown as string,
-            },
-          });
-          setUploadingFiles((prev) => prev.map((f, idx) => (idx === i ? { ...f, status: "done" } : f)));
-        } catch {
-          setUploadingFiles((prev) =>
-            prev.map((f, idx) => (idx === i ? { ...f, status: "error", error: "Upload failed" } : f)),
-          );
+      const pending = uploadingFiles.filter((f) => f.status !== "done");
+      if (pending.length > 0) {
+        setIsUploading(true);
+        for (let i = 0; i < uploadingFiles.length; i++) {
+          const entry = uploadingFiles[i];
+          if (!entry || entry.status === "done") continue;
+          setUploadingFiles((prev) => prev.map((f, idx) => (idx === i ? { ...f, status: "uploading" } : f)));
+          try {
+            await uploadDocMutation.mutateAsync({
+              data: {
+                file: entry.file as unknown as string,
+                organization_id: orgId,
+                employee_id: createdEmpId as unknown as string,
+              },
+            });
+            setUploadingFiles((prev) => prev.map((f, idx) => (idx === i ? { ...f, status: "done" } : f)));
+          } catch {
+            setUploadingFiles((prev) =>
+              prev.map((f, idx) => (idx === i ? { ...f, status: "error", error: "Upload failed" } : f)),
+            );
+          }
         }
+        setIsUploading(false);
       }
+      return true;
+    } catch {
       setIsUploading(false);
+      return false;
     }
+  }, [orgId, createdEmpId, duties, uploadingFiles, saveDuties, uploadDocMutation]);
+
+  const handleConnectSlack = useCallback(async () => {
+    if (!orgId || !createdEmpId) return;
+    const success = await saveDutiesAndUploadFiles();
+    if (!success) return;
 
     const installUrl = `${API_URL}/api/slack/install?employee_id=${encodeURIComponent(createdEmpId)}&org_id=${encodeURIComponent(orgId)}`;
     window.location.href = installUrl;
-  }, [orgId, createdEmpId, duties, uploadingFiles, saveDuties, uploadDocMutation]);
+  }, [orgId, createdEmpId, saveDutiesAndUploadFiles]);
 
-  const handleSkipToDashboard = useCallback(() => {
-    if (duties.length > 0) saveDuties();
+  const handleConnectDiscord = useCallback(async () => {
+    if (!createdEmpId) return;
+    if (!discordToken.trim()) {
+      toast.error("Please enter a Discord Bot Token");
+      return;
+    }
+    const success = await saveDutiesAndUploadFiles();
+    if (!success) return;
+
+    localStorage.setItem(`openhuman_discord_connected_${createdEmpId}`, "true");
+    localStorage.setItem(`openhuman_discord_token_${createdEmpId}`, discordToken);
+    if (discordClientId.trim()) {
+      localStorage.setItem(`openhuman_discord_client_id_${createdEmpId}`, discordClientId);
+    }
+    setDiscordConnected(true);
+    setShowDiscordDialog(false);
+    toast.success("Discord bot connected successfully!");
+  }, [createdEmpId, discordToken, discordClientId, saveDutiesAndUploadFiles]);
+
+  const handleDisconnectDiscord = useCallback(() => {
+    if (!createdEmpId) return;
+    localStorage.removeItem(`openhuman_discord_connected_${createdEmpId}`);
+    localStorage.removeItem(`openhuman_discord_token_${createdEmpId}`);
+    localStorage.removeItem(`openhuman_discord_client_id_${createdEmpId}`);
+    setDiscordConnected(false);
+    toast.success("Discord bot disconnected.");
+  }, [createdEmpId]);
+
+  const handleConnectClickup = useCallback(async () => {
+    if (!createdEmpId) return;
+    if (!clickupToken.trim()) {
+      toast.error("Please enter a ClickUp Personal API Token");
+      return;
+    }
+    const success = await saveDutiesAndUploadFiles();
+    if (!success) return;
+
+    localStorage.setItem(`openhuman_clickup_connected_${createdEmpId}`, "true");
+    localStorage.setItem(`openhuman_clickup_token_${createdEmpId}`, clickupToken);
+    setClickupConnected(true);
+    setShowClickupDialog(false);
+    toast.success("ClickUp workspace connected successfully!");
+  }, [createdEmpId, clickupToken, saveDutiesAndUploadFiles]);
+
+  const handleDisconnectClickup = useCallback(() => {
+    if (!createdEmpId) return;
+    localStorage.removeItem(`openhuman_clickup_connected_${createdEmpId}`);
+    localStorage.removeItem(`openhuman_clickup_token_${createdEmpId}`);
+    setClickupConnected(false);
+    toast.success("ClickUp workspace disconnected.");
+  }, [createdEmpId]);
+
+  const handleSkipToDashboard = useCallback(async () => {
+    await saveDutiesAndUploadFiles();
     router.push("/dashboard");
-  }, [duties, saveDuties, router]);
+  }, [saveDutiesAndUploadFiles, router]);
 
   const handleReset = useCallback(() => {
     setCreatedEmpId(null);
@@ -262,6 +351,11 @@ export default function OnboardPage() {
     setDuties([]);
     setDutyInput("");
     setUploadingFiles([]);
+    setDiscordConnected(false);
+    setClickupConnected(false);
+    setDiscordToken("");
+    setDiscordClientId("");
+    setClickupToken("");
   }, []);
 
   // ── Render ──────────────────────────────────────────────────────────────
@@ -365,7 +459,7 @@ export default function OnboardPage() {
               </h2>
               <p className="text-sm text-muted-foreground">
                 {createdBot.role} &mdash; set responsibilities and upload knowledge before
-                connecting to Slack. You can always change these later.
+                connecting to your channels. You can always change these later.
               </p>
             </div>
 
@@ -483,6 +577,118 @@ export default function OnboardPage() {
               )}
             </div>
 
+            {/* Connection Channels */}
+            <div className="flex flex-col gap-3">
+              <div className="flex flex-col gap-1">
+                <h3 className="text-sm font-medium text-foreground">Connection channels</h3>
+                <p className="text-sm text-muted-foreground">
+                  Connect {createdBot.name} to the channels where your team communicates and works.
+                </p>
+              </div>
+
+              <div className="grid gap-4 sm:grid-cols-3">
+                {/* Slack Card */}
+                <div className="flex flex-col justify-between rounded-xl border p-5 text-left bg-muted/10 border-border hover:border-primary/30 transition-colors">
+                  <div className="flex items-center gap-2 mb-2">
+                    <BrandLogo slug="slack" className="size-5" />
+                    <span className="font-semibold text-sm">Slack</span>
+                  </div>
+                  <p className="text-xs text-muted-foreground leading-relaxed mb-4">
+                    Install {createdBot.name} to your Slack workspace so it can respond to mentions.
+                  </p>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="w-full text-xs"
+                    onClick={handleConnectSlack}
+                    disabled={isUploading || savingDuties}
+                  >
+                    Connect Slack
+                  </Button>
+                </div>
+
+                {/* Discord Card */}
+                <div className={cn(
+                  "flex flex-col justify-between rounded-xl border p-5 text-left bg-muted/10 transition-colors",
+                  discordConnected ? "border-green-500/20 bg-green-500/5" : "border-border hover:border-primary/30"
+                )}>
+                  <div className="flex items-center justify-between mb-2">
+                    <div className="flex items-center gap-2">
+                      <BrandLogo slug="discord" className="size-5" />
+                      <span className="font-semibold text-sm">Discord</span>
+                    </div>
+                    {discordConnected && (
+                      <span className="text-[10px] bg-green-500/10 text-green-700 font-semibold px-2 py-0.5 rounded-full">
+                        Connected
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-xs text-muted-foreground leading-relaxed mb-4">
+                    Configure a Discord bot token to respond to messages in your servers.
+                  </p>
+                  {discordConnected ? (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="w-full text-xs text-destructive hover:bg-destructive/10 hover:text-destructive"
+                      onClick={handleDisconnectDiscord}
+                    >
+                      Disconnect
+                    </Button>
+                  ) : (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="w-full text-xs"
+                      onClick={() => setShowDiscordDialog(true)}
+                    >
+                      Connect Discord
+                    </Button>
+                  )}
+                </div>
+
+                {/* ClickUp Card */}
+                <div className={cn(
+                  "flex flex-col justify-between rounded-xl border p-5 text-left bg-muted/10 transition-colors",
+                  clickupConnected ? "border-green-500/20 bg-green-500/5" : "border-border hover:border-primary/30"
+                )}>
+                  <div className="flex items-center justify-between mb-2">
+                    <div className="flex items-center gap-2">
+                      <BrandLogo slug="clickup" className="size-5" />
+                      <span className="font-semibold text-sm">ClickUp</span>
+                    </div>
+                    {clickupConnected && (
+                      <span className="text-[10px] bg-green-500/10 text-green-700 font-semibold px-2 py-0.5 rounded-full">
+                        Connected
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-xs text-muted-foreground leading-relaxed mb-4">
+                    Sync tasks and manage tickets within your ClickUp lists.
+                  </p>
+                  {clickupConnected ? (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="w-full text-xs text-destructive hover:bg-destructive/10 hover:text-destructive"
+                      onClick={handleDisconnectClickup}
+                    >
+                      Disconnect
+                    </Button>
+                  ) : (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="w-full text-xs"
+                      onClick={() => setShowClickupDialog(true)}
+                    >
+                      Connect ClickUp
+                    </Button>
+                  )}
+                </div>
+              </div>
+            </div>
+
             {/* Actions */}
             <div className="flex items-center justify-end gap-3 border-t border-border pt-6">
               <Button
@@ -494,16 +700,8 @@ export default function OnboardPage() {
                 Choose a different bot
               </Button>
               <Button
-                variant="outline"
                 size="lg"
                 onClick={handleSkipToDashboard}
-                disabled={isUploading || savingDuties}
-              >
-                Skip, go to Dashboard
-              </Button>
-              <Button
-                size="lg"
-                onClick={handleConnect}
                 disabled={isUploading || savingDuties}
               >
                 {isUploading ? (
@@ -517,7 +715,7 @@ export default function OnboardPage() {
                     Saving
                   </>
                 ) : (
-                  "Connect to Slack"
+                  "Go to Dashboard"
                 )}
               </Button>
             </div>
@@ -536,6 +734,79 @@ export default function OnboardPage() {
           </p>
         )}
       </div>
+
+      {/* Discord Connection Dialog */}
+      <Dialog open={showDiscordDialog} onOpenChange={setShowDiscordDialog}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Connect Discord Bot</DialogTitle>
+            <DialogDescription>
+              Provide the credentials for your Discord Application Bot to allow {createdBot?.name} to connect.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex flex-col gap-4 py-4">
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="discord-token">Discord Bot Token</Label>
+              <Input
+                id="discord-token"
+                type="password"
+                placeholder="MTg0Nj..."
+                value={discordToken}
+                onChange={(e) => setDiscordToken(e.target.value)}
+              />
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="discord-client-id">Application / Client ID (Optional)</Label>
+              <Input
+                id="discord-client-id"
+                placeholder="1029..."
+                value={discordClientId}
+                onChange={(e) => setDiscordClientId(e.target.value)}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setShowDiscordDialog(false)}>
+              Cancel
+            </Button>
+            <Button onClick={handleConnectDiscord}>
+              Confirm Connection
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ClickUp Connection Dialog */}
+      <Dialog open={showClickupDialog} onOpenChange={setShowClickupDialog}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Connect ClickUp Workspace</DialogTitle>
+            <DialogDescription>
+              Enter your Personal API Token to allow {createdBot?.name} to manage and sync tasks.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex flex-col gap-4 py-4">
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="clickup-token">Personal API Token</Label>
+              <Input
+                id="clickup-token"
+                type="password"
+                placeholder="pk_..."
+                value={clickupToken}
+                onChange={(e) => setClickupToken(e.target.value)}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setShowClickupDialog(false)}>
+              Cancel
+            </Button>
+            <Button onClick={handleConnectClickup}>
+              Confirm Connection
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

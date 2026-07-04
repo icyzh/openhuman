@@ -71,6 +71,14 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { cn } from "@/lib/utils";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 
 import { useAuth } from "@clerk/nextjs";
 
@@ -145,6 +153,82 @@ export default function EmployeeDetailPage() {
   const orgId = useOrgStore((s) => s.orgId);
   const { getToken } = useAuth();
 
+  // Dialog visibility states
+  const [showDiscordDialog, setShowDiscordDialog] = useState(false);
+  const [showClickupDialog, setShowClickupDialog] = useState(false);
+
+  // Input states for dialogs
+  const [discordToken, setDiscordToken] = useState("");
+  const [discordClientId, setDiscordClientId] = useState("");
+  const [clickupToken, setClickupToken] = useState("");
+
+  // Local connection states loaded from localStorage
+  const [localDiscordConnected, setLocalDiscordConnected] = useState(false);
+  const [localClickupConnected, setLocalClickupConnected] = useState(false);
+
+  useEffect(() => {
+    if (typeof window !== "undefined" && empId) {
+      setLocalDiscordConnected(
+        localStorage.getItem(`openhuman_discord_connected_${empId}`) === "true"
+      );
+      setLocalClickupConnected(
+        localStorage.getItem(`openhuman_clickup_connected_${empId}`) === "true"
+      );
+      setDiscordToken(localStorage.getItem(`openhuman_discord_token_${empId}`) || "");
+      setDiscordClientId(localStorage.getItem(`openhuman_discord_client_id_${empId}`) || "");
+      setClickupToken(localStorage.getItem(`openhuman_clickup_token_${empId}`) || "");
+    }
+  }, [empId]);
+
+  const handleConnectDiscord = useCallback(() => {
+    if (!empId) return;
+    if (!discordToken.trim()) {
+      toast.error("Please enter a Discord Bot Token");
+      return;
+    }
+    localStorage.setItem(`openhuman_discord_connected_${empId}`, "true");
+    localStorage.setItem(`openhuman_discord_token_${empId}`, discordToken);
+    if (discordClientId.trim()) {
+      localStorage.setItem(`openhuman_discord_client_id_${empId}`, discordClientId);
+    }
+    setLocalDiscordConnected(true);
+    setShowDiscordDialog(false);
+    toast.success("Discord bot connected successfully!");
+  }, [empId, discordToken, discordClientId]);
+
+  const handleDisconnectDiscord = useCallback(() => {
+    if (!empId) return;
+    localStorage.removeItem(`openhuman_discord_connected_${empId}`);
+    localStorage.removeItem(`openhuman_discord_token_${empId}`);
+    localStorage.removeItem(`openhuman_discord_client_id_${empId}`);
+    setLocalDiscordConnected(false);
+    setDiscordToken("");
+    setDiscordClientId("");
+    toast.success("Discord bot disconnected.");
+  }, [empId]);
+
+  const handleConnectClickup = useCallback(() => {
+    if (!empId) return;
+    if (!clickupToken.trim()) {
+      toast.error("Please enter a ClickUp Personal API Token");
+      return;
+    }
+    localStorage.setItem(`openhuman_clickup_connected_${empId}`, "true");
+    localStorage.setItem(`openhuman_clickup_token_${empId}`, clickupToken);
+    setLocalClickupConnected(true);
+    setShowClickupDialog(false);
+    toast.success("ClickUp workspace connected successfully!");
+  }, [empId, clickupToken]);
+
+  const handleDisconnectClickup = useCallback(() => {
+    if (!empId) return;
+    localStorage.removeItem(`openhuman_clickup_connected_${empId}`);
+    localStorage.removeItem(`openhuman_clickup_token_${empId}`);
+    setLocalClickupConnected(false);
+    setClickupToken("");
+    toast.success("ClickUp workspace disconnected.");
+  }, [empId]);
+
   const {
     data: apiEmployee,
     isLoading,
@@ -164,8 +248,9 @@ export default function EmployeeDetailPage() {
         specialization: apiEmployee.specialization ?? "",
         duties: (apiEmployee.duties ?? []) as string[],
         status: apiEmployee.status,
-        hasDiscord: apiEmployee.has_discord_token,
+        hasDiscord: apiEmployee.has_discord_token || localDiscordConnected,
         hasSlack: apiEmployee.has_slack_token,
+        hasClickup: localClickupConnected,
         slackTeamName: apiEmployee.slack_team_name ?? null,
         deployedAt: apiEmployee.created_at,
       }
@@ -641,6 +726,10 @@ export default function EmployeeDetailPage() {
                     : "Not connected"
               }
             />
+            <InfoRow
+              label="ClickUp"
+              value={employee.hasClickup ? "Connected" : "Not connected"}
+            />
             {orgId && (
               <div className="flex items-center justify-between">
                 <span className="text-sm text-muted-foreground">Slack Bot</span>
@@ -714,46 +803,25 @@ export default function EmployeeDetailPage() {
 
               <Separator />
 
-              {/* Discord / Slack integration status */}
-              <div className="flex items-center justify-between rounded-lg border border-border bg-muted/30 px-4 py-3">
-                <div className="flex flex-col gap-0.5">
-                  <span className="text-sm font-medium text-foreground">
-                    Discord
-                  </span>
-                  <span className="text-xs text-muted-foreground">
-                    {employee.hasDiscord
-                      ? "Bot token configured"
-                      : "No bot token configured"}
-                  </span>
-                </div>
-                <span
-                  className={cn(
-                    "inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium",
-                    employee.hasDiscord
-                      ? "bg-green-500/10 text-green-700"
-                      : "bg-muted text-muted-foreground",
-                  )}
-                >
-                  {employee.hasDiscord ? "Connected" : "Inactive"}
-                </span>
-              </div>
-
+              {/* Slack Bot Row */}
               {orgId && (
                 <div className="flex items-center justify-between rounded-lg border border-border bg-muted/30 px-4 py-3">
-                  <div className="flex flex-col gap-0.5">
-                    <span className="text-sm font-medium text-foreground">
-                      Connect Slack Bot
-                    </span>
-                    {employee.hasSlack && employee.slackTeamName ? (
-                      <span className="text-xs text-green-600 dark:text-green-400">
-                        Connected to {employee.slackTeamName}
+                  <div className="flex items-center gap-3">
+                    <BrandLogo slug="slack" className="size-5 shrink-0" />
+                    <div className="flex flex-col gap-0.5">
+                      <span className="text-sm font-medium text-foreground">
+                        Slack Integration
                       </span>
-                    ) : (
-                      <span className="text-xs text-muted-foreground">
-                        Install {employee.name}&apos;s Slack app so it can
-                        respond to @mentions and DMs.
-                      </span>
-                    )}
+                      {employee.hasSlack && employee.slackTeamName ? (
+                        <span className="text-xs text-green-600 dark:text-green-400">
+                          Connected to {employee.slackTeamName}
+                        </span>
+                      ) : (
+                        <span className="text-xs text-muted-foreground">
+                          Install Slack app so {employee.name} can respond to @mentions.
+                        </span>
+                      )}
+                    </div>
                   </div>
                   {employee.hasSlack ? (
                     <span className="inline-flex shrink-0 items-center gap-1.5 rounded-md bg-green-100 px-3 py-1.5 text-sm font-medium text-green-700 dark:bg-green-900/30 dark:text-green-400">
@@ -770,6 +838,86 @@ export default function EmployeeDetailPage() {
                   )}
                 </div>
               )}
+
+              {/* Discord Bot Row */}
+              <div className="flex items-center justify-between rounded-lg border border-border bg-muted/30 px-4 py-3">
+                <div className="flex items-center gap-3">
+                  <BrandLogo slug="discord" className="size-5 shrink-0" />
+                  <div className="flex flex-col gap-0.5">
+                    <span className="text-sm font-medium text-foreground">
+                      Discord Integration
+                    </span>
+                    <span className="text-xs text-muted-foreground">
+                      {employee.hasDiscord
+                        ? "Bot token configured"
+                        : "No bot token configured"}
+                    </span>
+                  </div>
+                </div>
+                {employee.hasDiscord ? (
+                  <div className="flex items-center gap-2">
+                    <span className="inline-flex shrink-0 items-center gap-1.5 rounded-md bg-green-100 px-3 py-1.5 text-sm font-medium text-green-700 dark:bg-green-900/30 dark:text-green-400">
+                      Connected
+                    </span>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="text-destructive hover:bg-destructive/10 hover:text-destructive h-8 px-2"
+                      onClick={handleDisconnectDiscord}
+                    >
+                      Disconnect
+                    </Button>
+                  </div>
+                ) : (
+                  <Button
+                    size="sm"
+                    className="inline-flex shrink-0 items-center gap-1.5 rounded-md bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground hover:bg-primary/90"
+                    onClick={() => setShowDiscordDialog(true)}
+                  >
+                    Connect
+                  </Button>
+                )}
+              </div>
+
+              {/* ClickUp Row */}
+              <div className="flex items-center justify-between rounded-lg border border-border bg-muted/30 px-4 py-3">
+                <div className="flex items-center gap-3">
+                  <BrandLogo slug="clickup" className="size-5 shrink-0" />
+                  <div className="flex flex-col gap-0.5">
+                    <span className="text-sm font-medium text-foreground">
+                      ClickUp Integration
+                    </span>
+                    <span className="text-xs text-muted-foreground">
+                      {employee.hasClickup
+                        ? "Workspace api token configured"
+                        : "No workspace token configured"}
+                    </span>
+                  </div>
+                </div>
+                {employee.hasClickup ? (
+                  <div className="flex items-center gap-2">
+                    <span className="inline-flex shrink-0 items-center gap-1.5 rounded-md bg-green-100 px-3 py-1.5 text-sm font-medium text-green-700 dark:bg-green-900/30 dark:text-green-400">
+                      Connected
+                    </span>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="text-destructive hover:bg-destructive/10 hover:text-destructive h-8 px-2"
+                      onClick={handleDisconnectClickup}
+                    >
+                      Disconnect
+                    </Button>
+                  </div>
+                ) : (
+                  <Button
+                    size="sm"
+                    className="inline-flex shrink-0 items-center gap-1.5 rounded-md bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground hover:bg-primary/90"
+                    onClick={() => setShowClickupDialog(true)}
+                  >
+                    Connect
+                  </Button>
+                )}
+              </div>
 
               <Separator />
 
@@ -867,8 +1015,8 @@ export default function EmployeeDetailPage() {
               {/* Gmail Connection Row */}
               <div className="flex items-center justify-between rounded-lg border border-border bg-muted/30 px-4 py-3">
                 <div className="flex items-center gap-3">
-                  <div className="flex size-10 items-center justify-center rounded-lg border border-border bg-background">
-                    <MailIcon className="size-5 text-primary" />
+                  <div className="flex size-10 items-center justify-center rounded-lg border border-border bg-background p-2">
+                    <BrandLogo slug="gmail" className="size-full" />
                   </div>
                   <div className="flex flex-col gap-0.5">
                     <span className="text-sm font-medium text-foreground">
@@ -915,8 +1063,8 @@ export default function EmployeeDetailPage() {
               {/* Gamma Connection Row */}
               <div className="flex items-center justify-between rounded-lg border border-border bg-muted/30 px-4 py-3">
                 <div className="flex items-center gap-3">
-                  <div className="flex size-10 items-center justify-center rounded-lg border border-border bg-background">
-                    <Presentation className="size-5 text-primary" />
+                  <div className="flex size-10 items-center justify-center rounded-lg border border-border bg-background p-2">
+                    <BrandLogo slug="gamma" className="size-full" />
                   </div>
                   <div className="flex flex-col gap-0.5">
                     <span className="text-sm font-medium text-foreground">
@@ -1259,6 +1407,79 @@ export default function EmployeeDetailPage() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Discord Connection Dialog */}
+      <Dialog open={showDiscordDialog} onOpenChange={setShowDiscordDialog}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Connect Discord Bot</DialogTitle>
+            <DialogDescription>
+              Provide the credentials for your Discord Application Bot to allow {employee?.name} to connect.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex flex-col gap-4 py-4">
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="discord-token">Discord Bot Token</Label>
+              <Input
+                id="discord-token"
+                type="password"
+                placeholder="MTg0Nj..."
+                value={discordToken}
+                onChange={(e) => setDiscordToken(e.target.value)}
+              />
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="discord-client-id">Application / Client ID (Optional)</Label>
+              <Input
+                id="discord-client-id"
+                placeholder="1029..."
+                value={discordClientId}
+                onChange={(e) => setDiscordClientId(e.target.value)}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setShowDiscordDialog(false)}>
+              Cancel
+            </Button>
+            <Button onClick={handleConnectDiscord}>
+              Confirm Connection
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ClickUp Connection Dialog */}
+      <Dialog open={showClickupDialog} onOpenChange={setShowClickupDialog}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Connect ClickUp Workspace</DialogTitle>
+            <DialogDescription>
+              Enter your Personal API Token to allow {employee?.name} to manage and sync tasks.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex flex-col gap-4 py-4">
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="clickup-token">Personal API Token</Label>
+              <Input
+                id="clickup-token"
+                type="password"
+                placeholder="pk_..."
+                value={clickupToken}
+                onChange={(e) => setClickupToken(e.target.value)}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setShowClickupDialog(false)}>
+              Cancel
+            </Button>
+            <Button onClick={handleConnectClickup}>
+              Confirm Connection
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

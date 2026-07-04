@@ -11,6 +11,7 @@ export interface EmployeeDisplay {
   status: string;
   hasDiscord: boolean;
   hasSlack: boolean;
+  hasClickup?: boolean;
   deployedAt: string;
 }
 
@@ -31,6 +32,7 @@ export function apiToEmployeeDisplay(api: EmployeeResponse): EmployeeDisplay {
     status: api.status,
     hasDiscord: api.has_discord_token,
     hasSlack: api.has_slack_token,
+    hasClickup: false,
     deployedAt: api.created_at,
   };
 }
