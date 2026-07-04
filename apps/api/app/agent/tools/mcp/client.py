@@ -485,7 +485,10 @@ class MCPClientManager:
         ``MultiServerMCPClient`` expects for one server."""
         spec = conn.connector
 
-        transport = spec.transport
+        # langchain-mcp-adapters 0.3.x expects HTTP-based MCP servers to use
+        # the transport key "http", even when our internal connector registry
+        # stores the more explicit "streamable_http" label.
+        transport = "http" if spec.transport == "streamable_http" else spec.transport
 
         config: dict[str, Any] = {
             "url": spec.base_url,

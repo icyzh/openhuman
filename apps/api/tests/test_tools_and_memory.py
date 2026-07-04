@@ -440,6 +440,27 @@ class TestMcpClientManager:
         tools = await mgr.connect([])
         assert tools == []
 
+    def test_build_server_config_maps_streamable_http_to_http(self):
+        from app.agent.tools.mcp.client import MCPClientManager, ResolvedConnection
+        from app.agent.tools.mcp.connectors.spec import ConnectorSpec
+
+        spec = ConnectorSpec(
+            slug="pitchdeck",
+            name="Pitchdeck",
+            description="Pitch deck MCP",
+            base_url="https://pitchdeck-mcp.fly.dev/mcp",
+            transport="streamable_http",
+            auth_type="none",
+        )
+
+        mgr = MCPClientManager()
+        config = mgr._build_server_config(  # type: ignore[attr-defined]
+            ResolvedConnection(slug="pitchdeck", connector=spec, credentials=None)
+        )
+
+        assert config["transport"] == "http"
+        assert config["url"] == "https://pitchdeck-mcp.fly.dev/mcp"
+
     @pytest.mark.anyio
     async def test_disconnect_does_not_raise(self):
         from app.agent.tools.mcp.client import MCPClientManager
