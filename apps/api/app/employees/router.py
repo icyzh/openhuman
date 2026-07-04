@@ -99,7 +99,10 @@ async def get_employee_knowledge_graph(
         )
 
     try:
-        html = await render_graph_visualization_html(employee.cognee_dataset_id)
+        html = await render_graph_visualization_html(
+            employee.cognee_dataset_id,
+            user_id=employee.cognee_user_id,
+        )
     except Exception as exc:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,

@@ -234,9 +234,24 @@ async def forget_dataset(dataset_name: str) -> dict:
     return {"status": "ok"}
 
 
-async def render_graph_visualization_html(dataset_id: str) -> str:
-    """Render a dataset-scoped Cognee knowledge graph to HTML and return it."""
+async def render_graph_visualization_html(
+    dataset_id: str,
+    user_id: str | None = None,
+) -> str:
+    """Render a dataset-scoped Cognee knowledge graph to HTML and return it.
+
+    Args:
+        dataset_id: Cognee dataset UUID to visualize.
+        user_id: Optional Cognee user UUID. When provided, the graph is
+            authorized against this user's permissions. When omitted,
+            Cognee's default user is used (which may lack access to
+            tenant-scoped datasets).
+    """
     from cognee.api.v1.visualize.visualize import visualize_graph
+
+    cognee_user = None
+    if user_id:
+        cognee_user = await _cognee_get_user(UUID(user_id))
 
     with tempfile.NamedTemporaryFile(
         suffix=".html", delete=False, prefix="employee-graph-"
@@ -244,10 +259,11 @@ async def render_graph_visualization_html(dataset_id: str) -> str:
         destination = tmp.name
 
     try:
-        try:
-            await visualize_graph(destination, dataset=UUID(dataset_id))
-        except TypeError:
-            await visualize_graph(destination, dataset_id=UUID(dataset_id))
+        await visualize_graph(
+            destination,
+            user=cognee_user,
+            dataset=UUID(dataset_id),
+        )
 
         with open(destination, encoding="utf-8") as handle:
             return handle.read()
