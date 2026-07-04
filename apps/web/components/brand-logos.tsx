@@ -76,6 +76,17 @@ export const GammaLogo = (props: React.SVGProps<SVGSVGElement>) => (
   </svg>
 );
 
+// Pitch Deck Generator — simple presentation/slides icon
+export const PitchDeckLogo = (props: React.SVGProps<SVGSVGElement>) => (
+  <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" {...props}>
+    <rect x="2" y="4" width="20" height="13" rx="2" fill="#F97316" />
+    <rect x="4.5" y="6.5" width="8" height="1.6" rx="0.8" fill="white" fillOpacity="0.9" />
+    <rect x="4.5" y="9.2" width="12" height="1.4" rx="0.7" fill="white" fillOpacity="0.7" />
+    <rect x="4.5" y="11.6" width="10" height="1.4" rx="0.7" fill="white" fillOpacity="0.7" />
+    <path d="M9 20L12 17L15 20" stroke="#F97316" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+  </svg>
+);
+
 // Twilio Logo custom SVG
 export const TwilioLogo = (props: React.SVGProps<SVGSVGElement>) => (
   <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" {...props}>
@@ -91,6 +102,7 @@ export const BRAND_LOGOS: Record<string, React.ComponentType<React.SVGProps<SVGS
   vercel: (props) => <SiVercel fill="currentColor" className="text-black dark:text-white" {...props} />,
   gamma: GammaLogo,
   canva: (props) => <SiCanvas fill="#00C4CC" {...props} />,
+  pitchdeck: PitchDeckLogo,
   slack: SlackLogo,
   postgres: (props) => <SiPostgresql fill="#4169E1" {...props} />,
   "brave-search": (props) => <SiBrave fill="#FF1B2D" {...props} />,

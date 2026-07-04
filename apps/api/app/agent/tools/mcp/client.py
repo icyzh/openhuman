@@ -533,28 +533,22 @@ class MCPClientManager:
             if not spec.command:
                 raise ValueError(f"Connector '{spec.slug}' is missing a stdio command")
 
+            # NOTE: no "timeout" key here — langchain-mcp-adapters'
+            # ``_create_stdio_session`` does not accept a ``timeout`` kwarg
+            # (only http/sse sessions do) and passing one raises
+            # ``TypeError: _create_stdio_session() got an unexpected keyword
+            # argument 'timeout'``. Per-call timeouts are already enforced
+            # above via ``asyncio.wait_for``.
             return {
                 "transport": "stdio",
                 "command": spec.command,
                 "args": spec.args,
-                "timeout": spec.request_timeout_seconds,
             }
 
         # langchain-mcp-adapters 0.3.x expects HTTP-based MCP servers to use
         # the transport key "http", even when our internal connector registry
         # stores the more explicit "streamable_http" label.
         transport = "http" if spec.transport == "streamable_http" else spec.transport
-
-        # ── stdio transport ──────────────────────────────────────────
-        if transport == "stdio":
-            config: dict[str, Any] = {
-                "command": spec.command,
-                "args": spec.args,
-                "transport": "stdio",
-                "timeout": spec.request_timeout_seconds,
-            }
-            # stdio has no URL or headers
-            return config
 
         # ── streamable_http / sse ────────────────────────────────────
         config: dict[str, Any] = {

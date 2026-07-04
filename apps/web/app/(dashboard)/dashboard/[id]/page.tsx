@@ -1381,6 +1381,11 @@ export default function EmployeeDetailPage() {
               name: "Canva",
               description: "Generate and export pitch decks and designs — free on every Canva plan.",
             },
+            {
+              slug: "pitchdeck",
+              name: "Pitch Deck Generator",
+              description: "Generate styled .pptx pitch decks instantly — free, no API key, no signup.",
+            },
           ].map((item) => {
             const isConnected = mcpConnectionsData?.connections?.some(
               (c) => c.connector_slug === item.slug && c.status === "connected"

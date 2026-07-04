@@ -43,7 +43,7 @@ def _summarize_connected_tools(tool_names: list[str]) -> str:
     lines = [
         "\n\nTool execution rules:",
         "- If the user asks for a file, attachment, export, PDF, PPTX, TXT, or document, you must use create_document when that tool is available. Never claim you cannot create or upload files when create_document is available.",
-        "- If the user asks for a pitch deck, slides, or presentation and Canva MCP is available, use it to generate the content/design, then use create_document to deliver the result as a file.",
+        "- If the user asks for a pitch deck, slides, or presentation, use the Pitch Deck MCP tool (create_pitch_deck) when available — it generates a styled .pptx directly. If only Canva MCP is available, use that instead. Otherwise fall back to create_document.",
         "- Do not say you are only a language model or that the user must manually create the file when the needed tools are available.",
     ]
     if builtin_tools:

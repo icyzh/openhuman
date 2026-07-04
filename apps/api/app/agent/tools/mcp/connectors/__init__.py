@@ -2,6 +2,7 @@ from app.agent.tools.mcp.connectors.canva import CANVA_CONNECTOR
 from app.agent.tools.mcp.connectors.github import GITHUB_CONNECTOR
 from app.agent.tools.mcp.connectors.gmail import GMAIL_CONNECTOR
 from app.agent.tools.mcp.connectors.notion import NOTION_CONNECTOR
+from app.agent.tools.mcp.connectors.pitchdeck import PITCHDECK_CONNECTOR
 from app.agent.tools.mcp.connectors.registry import REGISTRY
 from app.agent.tools.mcp.connectors.spec import ConnectorSpec
 from app.agent.tools.mcp.connectors.vercel import VERCEL_CONNECTOR
@@ -16,6 +17,7 @@ __all__ = [
     "GITHUB_CONNECTOR",
     "GMAIL_CONNECTOR",
     "NOTION_CONNECTOR",
+    "PITCHDECK_CONNECTOR",
     "VERCEL_CONNECTOR",
     "VISUALIZATION_CONNECTOR",
     "WEB_SEARCH_CONNECTOR",
