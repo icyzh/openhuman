@@ -11,13 +11,19 @@ import {
 import { useAuthUpdateMe } from "@repo/api-client";
 import { useOrgStore } from "@/stores/org";
 import { Spinner } from "@/components/ui/spinner";
+import { KnowledgeUpload } from "./_components/knowledge-upload";
 import { OrgSetupForm } from "./_components/org-setup-form";
 import type { OrgSetupFormData } from "./_components/org-setup-form";
+
+type Step = "org-details" | "knowledge-upload";
 
 export default function SetupPage() {
   const router = useRouter();
   const { isSignedIn, isLoaded } = useAuth();
   const setOrg = useOrgStore((s) => s.setOrg);
+  const [step, setStep] = useState<Step>("org-details");
+  const [orgId, setOrgId] = useState<string | null>(null);
+  const [orgName, setOrgName] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -44,6 +50,18 @@ export default function SetupPage() {
     router.replace("/dashboard");
   }, [existingOrg, router, setOrg, shouldGoToDashboard]);
 
+  const finishSetup = useCallback(
+    async (finalOrgId: string, finalOrgName: string) => {
+      await updateUserMutation.mutateAsync({
+        data: { onboarding_completed: true },
+      });
+
+      setOrg(finalOrgId, finalOrgName);
+      router.replace("/dashboard");
+    },
+    [router, setOrg, updateUserMutation],
+  );
+
   const handleSubmit = useCallback(
     async (data: OrgSetupFormData) => {
       setIsSubmitting(true);
@@ -69,12 +87,9 @@ export default function SetupPage() {
               },
             });
 
-        await updateUserMutation.mutateAsync({
-          data: { onboarding_completed: true },
-        });
-
-        setOrg(org.id, org.name);
-        router.replace("/dashboard");
+        setOrgId(org.id);
+        setOrgName(org.name);
+        setStep("knowledge-upload");
       } catch {
         setError("Failed to set up your organization. Please try again.");
       } finally {
@@ -84,10 +99,7 @@ export default function SetupPage() {
     [
       createOrgMutation,
       existingOrg,
-      router,
-      setOrg,
       updateOrgMutation,
-      updateUserMutation,
     ],
   );
 
@@ -105,20 +117,41 @@ export default function SetupPage() {
 
   return (
     <div className="space-y-6">
-      <div className="space-y-1.5 text-center">
-        <h1 className="text-xl font-semibold tracking-tight text-foreground">
-          Set up your workspace
-        </h1>
-        <p className="text-sm text-muted-foreground">
-          Add your organization details to get started
-        </p>
-      </div>
+      {step === "org-details" ? (
+        <>
+          <div className="space-y-1.5 text-center">
+            <h1 className="text-xl font-semibold tracking-tight text-foreground">
+              Set up your workspace
+            </h1>
+            <p className="text-sm text-muted-foreground">
+              Add your organization details to get started
+            </p>
+          </div>
 
-      <OrgSetupForm
-        onSubmit={handleSubmit}
-        isSubmitting={isSubmitting}
-        error={error}
-      />
+          <OrgSetupForm
+            onSubmit={handleSubmit}
+            isSubmitting={isSubmitting}
+            error={error}
+          />
+        </>
+      ) : orgId ? (
+        <>
+          <div className="space-y-1.5 text-center">
+            <h1 className="text-xl font-semibold tracking-tight text-foreground">
+              Add your knowledge base
+            </h1>
+            <p className="text-sm text-muted-foreground">
+              Upload company docs now, or skip and do it later from the dashboard.
+            </p>
+          </div>
+
+          <KnowledgeUpload
+            orgId={orgId}
+            onComplete={() => void finishSetup(orgId, orgName)}
+            onSkip={() => void finishSetup(orgId, orgName)}
+          />
+        </>
+      ) : null}
     </div>
   );
 }
