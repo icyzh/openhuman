@@ -1,3 +1,14 @@
+[build]
+builder = "DOCKERFILE"
+dockerfilePath = "apps/web/Dockerfile"
+watchPatterns = [
+  "apps/web/**",
+  "packages/api-client/**",
+  "package.json",
+  "bun.lock",
+  "turbo.json",
+]
+
 [deploy]
 healthcheckPath = "/"
 healthcheckTimeout = 300

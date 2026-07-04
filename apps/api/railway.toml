@@ -1,7 +1,15 @@
 [build]
 builder = "DOCKERFILE"
 dockerfilePath = "Dockerfile"
-watchPatterns = ["app/**", "railway.toml", "Dockerfile", "pyproject.toml", "uv.lock", "alembic.ini", "alembic/**"]
+watchPatterns = [
+  "app/**",
+  "alembic/**",
+  "alembic.ini",
+  "pyproject.toml",
+  "uv.lock",
+  "Dockerfile",
+  "railway.toml",
+]
 
 [deploy]
 healthcheckPath = "/api/health"
