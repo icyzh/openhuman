@@ -109,6 +109,10 @@ class BaseSlackBot:
 
     async def handle_mention(self, event: dict, say) -> None:
         """Respond to @mentions in public channels."""
+        if self.bot_user_id:
+            text = event.get("text", "")
+            if f"<@{self.bot_user_id}>" not in text:
+                return
         await self._process_slack_message(event, say)
 
     async def handle_message(self, event: dict, say) -> None:
@@ -587,6 +591,11 @@ class EmployeeSlackBot(BaseSlackBot):
         """Process an incoming Slack event for this employee."""
         if "bot_id" in event:
             return
+
+        if self.bot_user_id and event.get("channel_type") != "im":
+            text = event.get("text", "")
+            if f"<@{self.bot_user_id}>" not in text:
+                return
 
         text = event.get("text", "").strip()
         channel = event.get("channel")
