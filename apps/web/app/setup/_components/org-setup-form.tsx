@@ -91,7 +91,7 @@ export function OrgSetupForm({ onSubmit, isSubmitting, error }: Props) {
 
       <Button type="submit" className="w-full" disabled={isSubmitting}>
         {isSubmitting && <Spinner className="mr-2" />}
-        {isSubmitting ? "Creating workspace…" : "Create workspace"}
+        {isSubmitting ? "Saving…" : "Continue"}
       </Button>
     </form>
   );

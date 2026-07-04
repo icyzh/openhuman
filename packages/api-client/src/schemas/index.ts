@@ -105,6 +105,7 @@ export * from './updateOrganizationRequestName';
 export * from './updateOrganizationRequestWebsiteUrl';
 export * from './updateOrganizationRequestWhatItDoes';
 export * from './updateSlackSlotRequest';
+export * from './updateUserRequest';
 export * from './updateSlackSlotRequestAppToken';
 export * from './updateSlackSlotRequestClientId';
 export * from './updateSlackSlotRequestClientSecret';

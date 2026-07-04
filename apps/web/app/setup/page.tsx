@@ -6,7 +6,9 @@ import { useAuth } from "@clerk/nextjs";
 import {
   useOrganizationsCreateOrganization,
   useOrganizationsListOrganizations,
+  useOrganizationsUpdateOrganization,
 } from "@repo/api-client";
+import { useAuthMe, useAuthUpdateMe } from "@repo/api-client";
 import { useOrgStore } from "@/stores/org";
 import { Spinner } from "@/components/ui/spinner";
 import { OrgSetupForm } from "./_components/org-setup-form";
@@ -26,18 +28,26 @@ export default function SetupPage() {
   const [error, setError] = useState<string | null>(null);
 
   const createMutation = useOrganizationsCreateOrganization();
+  const updateOrgMutation = useOrganizationsUpdateOrganization();
+  const updateUserMutation = useAuthUpdateMe();
 
   const { data: orgs, isLoading: listLoading } =
     useOrganizationsListOrganizations({
       query: { enabled: isLoaded && isSignedIn && !orgId },
     });
 
-  const handleOrgCreated = useCallback(
+  const { data: currentUser, isLoading: userLoading } = useAuthMe({
+    query: { enabled: isLoaded && isSignedIn },
+  });
+
+  const handleOrgDetailsSaved = useCallback(
     async (data: OrgSetupFormData) => {
+      if (!createdOrgId) return;
       setIsCreating(true);
       setError(null);
       try {
-        const org = await createMutation.mutateAsync({
+        await updateOrgMutation.mutateAsync({
+          orgId: createdOrgId,
           data: {
             name: data.name,
             description: data.description || undefined,
@@ -45,46 +55,53 @@ export default function SetupPage() {
             website_url: data.website_url || undefined,
           },
         });
-        setCreatedOrgId(org.id);
-        setOrgName(org.name);
+        setOrgName(data.name);
         setStep("upload");
       } catch {
-        setError("Failed to create organization. Please try again.");
+        setError("Failed to update organization. Please try again.");
       } finally {
         setIsCreating(false);
       }
     },
-    [createMutation],
+    [createdOrgId, updateOrgMutation],
   );
 
-  const handleUploadComplete = useCallback(() => {
+  const completeSetup = useCallback(async () => {
     if (!createdOrgId) return;
+    try {
+      await updateUserMutation.mutateAsync({ data: { onboarding_completed: true } });
+    } catch {
+      // Non-blocking — the dashboard guard will redirect back if needed
+    }
     setOrg(createdOrgId, orgName);
     router.replace("/onboard");
-  }, [createdOrgId, orgName, setOrg, router]);
+  }, [createdOrgId, orgName, setOrg, router, updateUserMutation]);
+
+  const handleUploadComplete = useCallback(() => {
+    completeSetup();
+  }, [completeSetup]);
 
   const handleSkipUpload = useCallback(() => {
-    if (!createdOrgId) return;
-    setOrg(createdOrgId, orgName);
-    router.replace("/onboard");
-  }, [createdOrgId, orgName, setOrg, router]);
+    completeSetup();
+  }, [completeSetup]);
 
-  // Guard: if user already has an org (from store or API), redirect to dashboard
+  // Guard: if already onboarded, redirect to dashboard
   useEffect(() => {
-    if (orgId) {
+    if (currentUser?.onboarding_completed) {
       router.replace("/dashboard");
       return;
     }
-    if (orgs && orgs.length > 0) {
+    // Store the existing org ID for PATCH (org is auto-created by backend)
+    if (orgs && orgs.length > 0 && !createdOrgId) {
       const first = orgs[0];
       if (!first) return;
-      setOrg(first.id, first.name);
-      router.replace("/dashboard");
+      setCreatedOrgId(first.id);
+      setOrgName(first.name);
     }
-  }, [orgs, orgId, setOrg, router]);
+  }, [orgs, currentUser, router, createdOrgId]);
 
-  // Still loading Clerk auth state
-  if (!isLoaded) {
+  // Still loading Clerk auth state or user profile
+  if (!isLoaded || userLoading) {
     return (
       <div className="flex justify-center">
         <Spinner />
@@ -92,8 +109,8 @@ export default function SetupPage() {
     );
   }
 
-  // Still loading org list or org already exists
-  if (orgId || (orgs && orgs.length > 0)) {
+  // Already onboarded — redirect guard
+  if (currentUser?.onboarding_completed) {
     return null;
   }
 
@@ -118,7 +135,7 @@ export default function SetupPage() {
             </p>
           </div>
           <OrgSetupForm
-            onSubmit={handleOrgCreated}
+            onSubmit={handleOrgDetailsSaved}
             isSubmitting={isCreating}
             error={error}
           />

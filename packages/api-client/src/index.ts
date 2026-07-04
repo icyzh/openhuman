@@ -16,9 +16,12 @@ export type {
 // Auth
 export {
   useAuthMe,
+  useAuthUpdateMe,
   getAuthMeQueryKey,
   getAuthMeQueryOptions,
+  getAuthUpdateMeMutationOptions,
   authMe,
+  authUpdateMe,
 } from "./api/auth/auth";
 
 export type {
@@ -167,6 +170,7 @@ export type {
 // Schemas
 export type {
   HealthResponse,
+  UpdateUserRequest,
   UserResponse,
   HTTPValidationError,
   EmployeeResponse,

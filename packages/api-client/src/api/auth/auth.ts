@@ -6,6 +6,7 @@
  * OpenAPI spec version: 0.1.0
  */
 import {
+  useMutation,
   useQuery
 } from '@tanstack/react-query';
 import type {
@@ -16,11 +17,14 @@ import type {
   QueryFunction,
   QueryKey,
   UndefinedInitialDataOptions,
+  UseMutationOptions,
+  UseMutationResult,
   UseQueryOptions,
   UseQueryResult
 } from '@tanstack/react-query';
 
 import type {
+  UpdateUserRequest,
   UserResponse
 } from '../../schemas';
 
@@ -122,4 +126,60 @@ export function useAuthMe<TData = Awaited<ReturnType<typeof authMe>>, TError = u
 
 
 
+/**
+ * @summary Update Me
+ */
+export const authUpdateMe = (
+  updateUserRequest: UpdateUserRequest,
+  options?: SecondParameter<typeof customInstance>,
+) => {
+  return customInstance<UserResponse>(
+    { url: `/api/auth/me`, method: 'PATCH', data: updateUserRequest },
+    options,
+  );
+};
 
+export const getAuthUpdateMeMutationOptions = <
+  TError = unknown,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof authUpdateMe>>,
+    TError,
+    { data: UpdateUserRequest },
+    TContext
+  >;
+  request?: SecondParameter<typeof customInstance>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof authUpdateMe>>,
+  TError,
+  { data: UpdateUserRequest },
+  TContext
+> => {
+  const mutationKey = ['authUpdateMe'];
+  const { mutation: mutationOptions, request: requestOptions } = options ?? {};
+
+  return {
+    mutationKey,
+    mutationFn: ({ data }) => authUpdateMe(data, requestOptions),
+    ...mutationOptions,
+  };
+};
+
+export const useAuthUpdateMe = <TError = unknown, TContext = unknown>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof authUpdateMe>>,
+    TError,
+    { data: UpdateUserRequest },
+    TContext
+  >;
+  request?: SecondParameter<typeof customInstance>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof authUpdateMe>>,
+  TError,
+  { data: UpdateUserRequest },
+  TContext
+> => {
+  const mutationOptions = getAuthUpdateMeMutationOptions(options);
+  return useMutation(mutationOptions);
+};

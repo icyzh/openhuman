@@ -4,7 +4,7 @@ from datetime import datetime
 from typing import TYPE_CHECKING
 from uuid import UUID
 
-from sqlalchemy import DateTime, String, Uuid, func
+from sqlalchemy import Boolean, DateTime, String, Uuid, func, text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
@@ -27,6 +27,9 @@ class User(Base):
     )
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     is_active: Mapped[bool] = mapped_column(default=True, server_default="true")
+    onboarding_completed: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default=text("true")
+    )
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()

@@ -3,7 +3,7 @@
 import { Suspense, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@clerk/nextjs";
-import { useOrganizationsListOrganizations } from "@repo/api-client";
+import { useOrganizationsListOrganizations, useAuthMe } from "@repo/api-client";
 import { useOrgStore } from "@/stores/org";
 import { DashboardShell } from "@/app/(dashboard)/_components/dashboard-shell";
 import { Button } from "@/components/ui/button";
@@ -23,18 +23,34 @@ function OrgInitializer({ children }: { children: React.ReactNode }) {
     query: { enabled: isLoaded && isSignedIn && !orgId },
   });
 
+  const {
+    data: currentUser,
+    isLoading: userLoading,
+  } = useAuthMe({
+    query: { enabled: isLoaded && isSignedIn },
+  });
+
   useEffect(() => {
     if (orgId) return;
-    if (listLoading || !orgs) return;
+    if (listLoading || userLoading || !orgs) return;
+
     if (orgs.length > 0) {
       const first = orgs[0];
-      if (first) setOrg(first.id, first.name);
+      if (!first) return;
+
+      if (currentUser?.onboarding_completed) {
+        // Existing user — set org and render dashboard
+        setOrg(first.id, first.name);
+      } else {
+        // New user — send to org setup first
+        router.replace("/setup");
+      }
     } else {
       router.replace("/setup");
     }
-  }, [orgs, listLoading, setOrg, router, orgId]);
+  }, [orgs, listLoading, userLoading, currentUser, setOrg, router, orgId]);
 
-  if (!isLoaded || listLoading) {
+  if (!isLoaded || listLoading || userLoading) {
     return (
       <div className="flex h-screen items-center justify-center">
         <Spinner />

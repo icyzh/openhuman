@@ -6,12 +6,6 @@
  * OpenAPI spec version: 0.1.0
  */
 
-export interface UserResponse {
-  id: string;
-  clerk_id: string;
-  email: string;
-  name: string;
-  is_active: boolean;
+export interface UpdateUserRequest {
   onboarding_completed: boolean;
-  created_at: string;
 }
