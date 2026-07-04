@@ -37,6 +37,7 @@ import {
   DialogTitle,
   DialogFooter,
 } from "@/components/ui/dialog";
+import { BrandLogo } from "@/components/brand-logos";
 
 // Define categories
 type Category = "All" | "Productivity" | "Development" | "Data & DBs" | "Communication" | "AI & Search";
@@ -708,7 +709,6 @@ export default function McpMarketplacePage() {
       {filteredServers.length > 0 ? (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {filteredServers.map((server) => {
-            const IconComponent = server.icon;
             const isInstalled = installedServers[server.id];
 
             return (
@@ -722,8 +722,8 @@ export default function McpMarketplacePage() {
 
                 <CardHeader className="flex flex-row items-start gap-4 p-5 pb-3">
                   {/* Styled Icon Wrapper */}
-                  <div className={`flex size-12 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br ${server.iconColor} text-white shadow-sm`}>
-                    <IconComponent className="size-6" />
+                  <div className="flex size-12 shrink-0 items-center justify-center rounded-xl bg-muted/20 border border-border/80 shadow-sm overflow-hidden p-2">
+                    <BrandLogo slug={server.id} className="size-full" />
                   </div>
 
                   <div className="flex flex-col gap-1 min-w-0">
@@ -799,8 +799,8 @@ export default function McpMarketplacePage() {
         {selectedServer && (
           <DialogContent className="max-w-2xl overflow-hidden rounded-xl border border-border bg-card">
             <DialogHeader className="flex flex-row items-center gap-4 border-b border-muted/50 pb-4">
-              <div className={`flex size-14 items-center justify-center rounded-xl bg-gradient-to-br ${selectedServer.iconColor} text-white shadow-md`}>
-                {React.createElement(selectedServer.icon, { className: "size-7" })}
+              <div className="flex size-14 items-center justify-center rounded-xl bg-muted/25 border border-border shadow-md overflow-hidden p-2.5">
+                <BrandLogo slug={selectedServer.id} className="size-full" />
               </div>
               <div className="flex flex-col gap-1 min-w-0">
                 <DialogTitle className="text-xl font-bold text-foreground">

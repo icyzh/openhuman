@@ -45,6 +45,7 @@ import { useOrgStore } from "@/stores/org";
 import { getStatusConfig, EMPLOYEE_TYPE_LABELS } from "@/types/employee";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { BrandLogo } from "@/components/brand-logos";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -1139,49 +1140,36 @@ export default function EmployeeDetailPage() {
               slug: "gmail",
               name: "Gmail / Google Workspace",
               description: "Let the agent draft, search, and send email messages.",
-              icon: MailIcon,
-              iconBg: "bg-red-500/10 text-red-500",
             },
             {
               slug: "github",
               name: "GitHub Copilot",
               description: "Access repos, create PRs, search code, and update issues.",
-              icon: Terminal,
-              iconBg: "bg-slate-800/10 text-slate-800 dark:text-slate-200",
             },
             {
               slug: "notion",
               name: "Notion Workspaces",
               description: "Read, write, query, and synchronize Notion pages.",
-              icon: Layers,
-              iconBg: "bg-zinc-700/10 text-zinc-700 dark:text-zinc-200",
             },
             {
               slug: "vercel",
               name: "Vercel Deployments",
               description: "Control serverless setups, logs, and variables.",
-              icon: Code,
-              iconBg: "bg-neutral-900/10 text-neutral-900 dark:text-zinc-200",
             },
             {
               slug: "gamma",
               name: "Gamma Presentations",
               description: "Generate documents, slides, and websites using AI.",
-              icon: Presentation,
-              iconBg: "bg-fuchsia-500/10 text-fuchsia-500",
             },
             {
               slug: "web_search",
               name: "Brave Web Search",
               description: "Query search engines for web index answers.",
-              icon: Globe,
-              iconBg: "bg-orange-500/10 text-orange-500",
             },
           ].map((item) => {
             const isConnected = mcpConnectionsData?.connections?.some(
               (c) => c.connector_slug === item.slug && c.status === "connected"
             );
-            const Icon = item.icon;
 
             return (
               <div
@@ -1190,8 +1178,8 @@ export default function EmployeeDetailPage() {
               >
                 <div className="flex flex-col gap-2">
                   <div className="flex items-center gap-2.5">
-                    <div className={`flex size-8 items-center justify-center rounded-lg ${item.iconBg}`}>
-                      <Icon className="size-4" />
+                    <div className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-muted/25 border border-border/70 p-1.5 overflow-hidden">
+                      <BrandLogo slug={item.slug} className="size-full" />
                     </div>
                     <span className="text-sm font-semibold text-foreground">
                       {item.name}
