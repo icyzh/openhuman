@@ -1,3 +1,4 @@
+// Deploy check: verify Railway auto-deploy on push (web).
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 

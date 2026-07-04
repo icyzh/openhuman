@@ -1,3 +1,4 @@
+# Deploy check: verify Railway auto-deploy on push (api).
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 import logging
