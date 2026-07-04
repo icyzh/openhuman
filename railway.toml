@@ -1,14 +1,16 @@
 [build]
 builder = "DOCKERFILE"
-dockerfilePath = "Dockerfile"
+dockerfilePath = "apps/web/Dockerfile"
 watchPatterns = [
-  "apps/api/**",
-  "Dockerfile",
-  "railway.toml",
+  "apps/web/**",
+  "packages/api-client/**",
+  "package.json",
+  "bun.lock",
+  "turbo.json",
 ]
 
 [deploy]
-healthcheckPath = "/api/health"
+healthcheckPath = "/"
 healthcheckTimeout = 300
 restartPolicyType = "ON_FAILURE"
 numReplicas = 1
