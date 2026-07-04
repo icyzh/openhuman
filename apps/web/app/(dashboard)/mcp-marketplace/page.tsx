@@ -667,9 +667,7 @@ export default function McpMarketplacePage() {
         toast.success(`Revoked access to ${server.name}.`);
       } else {
         if (server.authType === "OAuth2") {
-          const token = typeof window !== "undefined" && window.Clerk?.session
-            ? await window.Clerk.session.getToken()
-            : null;
+          const token = typeof window !== "undefined" ? localStorage.getItem("oh_token") : null;
           const apiUrl = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
           const url = `${apiUrl}/api/organizations/${orgId}/employees/${empId}/mcp-connections/${server.id}/install?token=${encodeURIComponent(token ?? "")}&redirect_to=${encodeURIComponent(window.location.href)}`;
           window.location.href = url;

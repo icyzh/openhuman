@@ -22,6 +22,7 @@ from langgraph.errors import GraphInterrupt
 from langgraph.types import Command
 from slack_bolt.adapter.socket_mode.async_handler import AsyncSocketModeHandler
 from slack_bolt.async_app import AsyncApp
+from slack_sdk.errors import SlackApiError
 from sqlalchemy import select
 
 from app.activity.context import (
@@ -49,47 +50,29 @@ _SAFE_ERROR_MESSAGE = (
     "I ran into a problem processing your request. Please try again later."
 )
 
+_MAX_SLACK_FILE_SIZE = 10 * 1024 * 1024  # 10 MB
 
-class EmployeeSlackBot:
-    """One Slack Socket Mode connection per AI employee.
 
-    Each employee has its own Slack app identity (its own ``xoxb-`` bot token
-    and ``xapp-`` app-level token).  The bot responds in all channels by
-    default; if the employee has ``channel_assignments`` those act as an
-    allowlist — only messages in assigned channels (and DMs) are processed.
-    """
+class BaseSlackBot:
+    """Shared logic for Slack Socket Mode bots."""
 
-    def __init__(
-        self,
-        employee_id: UUID,
-        bot_token: str,
-        app_token: str,
-    ) -> None:
-        self.employee_id = employee_id
+    _bot_label: str = "BaseSlackBot"
+
+    def __init__(self, bot_token: str, app_token: str) -> None:
         self.bot_token = bot_token
         self.app_token = app_token
-
-        import os
-        # Temporarily remove global Slack client credentials from environment
-        # to prevent Bolt from ignoring the individual per-employee bot token.
-        slack_client_id = os.environ.pop("SLACK_CLIENT_ID", None)
-        slack_client_secret = os.environ.pop("SLACK_CLIENT_SECRET", None)
-        try:
-            self.app = AsyncApp(token=bot_token)
-        finally:
-            if slack_client_id is not None:
-                os.environ["SLACK_CLIENT_ID"] = slack_client_id
-            if slack_client_secret is not None:
-                os.environ["SLACK_CLIENT_SECRET"] = slack_client_secret
-
+        self._build_app()
         self._handler = AsyncSocketModeHandler(self.app, app_token)
-        self.bot_user_id = None
+        self.bot_user_id: str | None = None
+        self._register_event_handlers()
 
-        # Register event handlers
+    def _build_app(self) -> None:
+        """Hook for subclasses to customize AsyncApp creation."""
+        self.app = AsyncApp(token=self.bot_token)
+
+    def _register_event_handlers(self) -> None:
         self.app.event("app_mention")(self.handle_mention)
         self.app.event("message")(self.handle_message)
-
-        # Phase 6 — interactive escalation Approve / Deny buttons
         self.app.action("escalation_approve")(self._handle_escalation_approve)
         self.app.action("escalation_deny")(self._handle_escalation_deny)
 
@@ -107,8 +90,8 @@ class EmployeeSlackBot:
             logger.exception("Failed to fetch bot user_id on connection")
             self.bot_user_id = None
         logger.info(
-            "EmployeeSlackBot connected (employee=%s, bot_user_id=%s)",
-            self.employee_id,
+            "%s connected (bot_user_id=%s)",
+            self._bot_label,
             self.bot_user_id,
         )
 
@@ -117,36 +100,30 @@ class EmployeeSlackBot:
         try:
             await self._handler.close_async()
         except Exception:
-            logger.exception("Error closing EmployeeSlackBot Socket Mode connection")
-        logger.info(
-            "EmployeeSlackBot disconnected (employee=%s)",
-            self.employee_id,
-        )
+            logger.exception("Error closing %s Socket Mode connection", self._bot_label)
+        logger.info("%s disconnected", self._bot_label)
 
     # ------------------------------------------------------------------
     # Event handlers
     # ------------------------------------------------------------------
 
-    async def handle_mention(self, event: dict, say) -> None:  # type: ignore[type-arg]
+    async def handle_mention(self, event: dict, say) -> None:
         """Respond to @mentions in public channels."""
         await self._process_slack_message(event, say)
 
-    async def handle_message(self, event: dict, say) -> None:  # type: ignore[type-arg]
+    async def handle_message(self, event: dict, say) -> None:
         """Respond to DMs, or thread replies where the bot is already participating."""
         channel_type = event.get("channel_type")
         thread_ts = event.get("thread_ts")
         channel = event.get("channel")
         ts = event.get("ts")
 
-        # 1. Direct Message (DM)
         if channel_type == "im":
             await self._process_slack_message(event, say)
             return
 
-        # 2. Thread reply in a channel/group (without needing a direct mention)
         if thread_ts and thread_ts != ts and channel:
             text = event.get("text", "")
-            # Skip if the message contains a direct mention (let handle_mention respond)
             if self.bot_user_id and f"<@{self.bot_user_id}>" in text:
                 return
 
@@ -163,23 +140,420 @@ class EmployeeSlackBot:
                 )
                 if bot_participated:
                     await self._process_slack_message(event, say)
-            except Exception as e:
-                from slack_sdk.errors import SlackApiError
-                if isinstance(e, SlackApiError):
-                    logger.warning(
-                        "Slack API error checking thread participation in channel %s, thread %s: %s (error code: %s)",
-                        channel, thread_ts, e.response.get("error", "unknown"), e.response.status_code
+            except SlackApiError as e:
+                logger.warning(
+                    "Slack API error checking thread participation in channel %s, "
+                    "thread %s: %s (error code: %s)",
+                    channel, thread_ts,
+                    e.response.get("error", "unknown"),
+                    e.response.status_code,
+                )
+            except Exception:
+                logger.exception("Error checking thread participation for message event")
+
+    # ------------------------------------------------------------------
+    # Message processing (abstract — overridden by subclasses)
+    # ------------------------------------------------------------------
+
+    async def _process_slack_message(self, event: dict, say) -> None:
+        raise NotImplementedError
+
+    # ------------------------------------------------------------------
+    # Shared helpers
+    # ------------------------------------------------------------------
+
+    async def _auto_ingest_message(
+        self,
+        text: str,
+        event: dict,
+        org: Organization | None,
+        employee_id: UUID,
+        employee_name: str,
+    ) -> None:
+        """Auto-ingest a Slack message into org memory (best-effort)."""
+        if not (org and org.cognee_dataset_name and org.cognee_system_user_id):
+            return
+        try:
+            speaker = event.get("user", "unknown")
+            ch = event.get("channel", "unknown")
+            ts = event.get("ts", "")
+            ingest_text = (
+                f"Slack message from <@{speaker}> "
+                f"in <#{ch}> at {ts}:\n{text}"
+            )
+            await remember(
+                ingest_text,
+                org.cognee_dataset_name,
+                org.cognee_system_user_id,
+                dataset_id=org.cognee_dataset_id,
+                background=True,
+            )
+            try:
+                async with async_session_factory() as s2:
+                    await record_activity(
+                        s2,
+                        org.id,
+                        "memory_operation",
+                        f"Auto-ingested Slack message from {speaker} in #{ch}",
+                        employee_id=employee_id,
+                        employee_name=employee_name,
+                        platform="slack",
+                        metadata={
+                            "operation": "auto_ingest",
+                            "speaker": speaker,
+                            "channel": ch,
+                        },
                     )
-                else:
-                    logger.exception("Error checking thread participation for message event")
+            except Exception:
+                pass
+        except Exception:
+            logger.debug(
+                "Slack message Cognee ingest skipped for employee %s",
+                employee_id,
+                exc_info=True,
+            )
+
+    async def _process_file_attachments(
+        self,
+        files: list[dict],
+        org: Organization | None,
+        emp: Employee | None,
+        employee_id: UUID,
+        bot_token: str,
+    ) -> None:
+        """Download Slack file attachments, save to bucket, ingest into Cognee."""
+        if not (files and org and org.cognee_dataset_name and org.cognee_system_user_id and emp):
+            return
+        backend = get_storage_backend()
+        async with httpx.AsyncClient(timeout=30) as http_client:
+            for file_info in files:
+                try:
+                    file_url = file_info.get("url_private")
+                    if not file_url:
+                        continue
+
+                    if not file_url.startswith("https://files.slack.com/"):
+                        logger.warning(
+                            "Rejected non-Slack file URL for employee %s: %s",
+                            employee_id, file_url,
+                        )
+                        continue
+
+                    file_size = file_info.get("size", 0)
+                    if file_size > _MAX_SLACK_FILE_SIZE:
+                        logger.debug(
+                            "Slack file %s (%d bytes) exceeds size limit — skipping",
+                            file_info.get("name"), file_size,
+                        )
+                        continue
+
+                    headers = {"Authorization": f"Bearer {bot_token}"}
+                    resp = await http_client.get(file_url, headers=headers)
+                    resp.raise_for_status()
+                    file_bytes = resp.content
+
+                    storage_path = await backend.save(
+                        org_id=emp.org_id,
+                        filename=file_info.get("name", "slack_file"),
+                        content=file_bytes,
+                        content_type=file_info.get("mimetype"),
+                    )
+
+                    async with async_session_factory() as doc_session:
+                        doc = Document(
+                            org_id=emp.org_id,
+                            employee_id=employee_id,
+                            filename=file_info.get("name", "slack_file"),
+                            content_type=file_info.get("mimetype"),
+                            size_bytes=len(file_bytes),
+                            storage_path=storage_path,
+                            storage_backend=settings.storage_backend,
+                            status="uploaded",
+                        )
+                        doc_session.add(doc)
+                        await doc_session.commit()
+
+                    if settings.storage_backend == "s3":
+                        cognee_input = f"s3://{settings.s3_bucket_name}/{storage_path}"
+                    else:
+                        cognee_input = storage_path
+                    await remember(
+                        cognee_input,
+                        org.cognee_dataset_name,
+                        org.cognee_system_user_id,
+                        dataset_id=org.cognee_dataset_id,
+                        background=True,
+                    )
+
+                except Exception:
+                    logger.debug(
+                        "Slack file attachment ingest skipped (employee=%s, file=%s)",
+                        employee_id,
+                        file_info.get("name", "unknown"),
+                        exc_info=True,
+                    )
+
+    async def _cancel_and_respond(
+        self,
+        text: str,
+        employee_id: UUID,
+        employee_name: str,
+        channel: str,
+        thread_ts: str,
+        org: Organization | None,
+        say,
+    ) -> bool:
+        """Check for cancel intent and respond if detected. Returns True if cancelled."""
+        if not is_cancel_intent(text):
+            return False
+
+        root_ts = thread_ts or "direct"
+        thread_key = f"slack:{employee_id}:{channel}:{root_ts}"
+        async with async_session_factory() as session:
+            cancelled = await cancel_active_jobs_for_thread(session, thread_key)
+        if cancelled:
+            names = ", ".join(j.job_type for j in cancelled)
+            if org:
+                try:
+                    async with async_session_factory() as s:
+                        await record_activity(
+                            s,
+                            org.id,
+                            "agent_run",
+                            f"Cancelled {len(cancelled)} background task(s): {names}",
+                            employee_id=employee_id,
+                            employee_name=employee_name,
+                            platform="slack",
+                            status="cancelled",
+                            metadata={
+                                "cancelled_jobs": names,
+                                "channel": channel,
+                                "thread_ts": thread_ts,
+                            },
+                        )
+                except Exception:
+                    pass
+            await say(
+                text=f"🫡 Cancelled: {names}.",
+                channel=channel,
+                thread_ts=thread_ts,
+                username=employee_name,
+            )
+        else:
+            await say(
+                text=(
+                    "Nothing to cancel — there are no active "
+                    "background tasks in this conversation."
+                ),
+                channel=channel,
+                thread_ts=thread_ts,
+                username=employee_name,
+            )
+        return True
+
+    # ------------------------------------------------------------------
+    # File upload helper
+    # ------------------------------------------------------------------
+
+    async def _send_files(
+        self,
+        channel: str,
+        files: list[dict],
+        thread_ts: str | None = None,
+    ) -> None:
+        """Upload agent-generated files (charts, PDFs, etc.) to the Slack channel."""
+        for f in files:
+            try:
+                await self.app.client.files_upload_v2(
+                    channel=channel,
+                    file=base64.b64decode(f["data"]),
+                    filename=f["filename"],
+                    title=f.get("title", f["filename"]),
+                    thread_ts=thread_ts,
+                )
+            except Exception:
+                logger.exception("Failed to upload file %s", f.get("filename", "unknown"))
+
+    # ------------------------------------------------------------------
+    # Phase 6 — interactive escalation button handlers
+    # ------------------------------------------------------------------
+
+    async def _handle_escalation_approve(self, ack, body, client):
+        await self._handle_escalation_button(ack, body, client, approved=True)
+
+    async def _handle_escalation_deny(self, ack, body, client):
+        await self._handle_escalation_button(ack, body, client, approved=False)
+
+    async def _handle_escalation_button(self, ack, body, client, approved: bool) -> None:
+        """Shared logic for Approve / Deny button clicks."""
+        await ack()
+
+        action = body.get("actions", [{}])[0]
+        value_str = action.get("value", "{}")
+        try:
+            ctx = json.loads(value_str)
+        except json.JSONDecodeError:
+            logger.warning("Invalid escalation button value: %s", value_str)
+            return
+
+        thread_key: str = ctx.get("thread_key", "")
+        channel_id: str = ctx.get("channel_id", "")
+        thread_ts: str = ctx.get("thread_ts", "")
+        employee_id_str: str = ctx.get("employee_id", "")
+        platform: str = ctx.get("platform", "slack")
+
+        if not thread_key or not employee_id_str:
+            logger.warning("Escalation button missing thread_key or employee_id")
+            return
+
+        try:
+            employee_id = UUID(employee_id_str)
+        except (ValueError, TypeError):
+            logger.warning("Invalid employee_id in escalation button: %s", employee_id_str)
+            return
+
+        decision = {
+            "approved": approved,
+            "by": body.get("user", {}).get("id", "unknown"),
+            "note": "",
+        }
+
+        response_text = ""
+        files: list[dict] = []
+        try:
+            async with async_session_factory() as session:
+                graph, all_tools = await get_graph_for_employee(session, employee_id)
+                config = {
+                    "configurable": {
+                        "db": session,
+                        "employee_id": employee_id_str,
+                        "all_tools": all_tools,
+                        "thread_id": thread_key,
+                        "platform": platform,
+                        "channel_id": channel_id,
+                        "thread_ts": thread_ts,
+                    }
+                }
+                result = await graph.ainvoke(
+                    Command(resume=decision),
+                    config=config,
+                )
+                response_text = result.get("response", "")
+                files = result.get("files", [])
+        except GraphInterrupt:
+            logger.info(
+                "Graph re-paused during escalation resume (thread=%s)", thread_key,
+            )
+        except Exception:
+            logger.exception(
+                "Failed to resume graph for escalation (thread=%s)", thread_key,
+            )
+            response_text = "Something went wrong processing the escalation decision."
+
+        try:
+            async with async_session_factory() as s:
+                emp = await s.get(Employee, employee_id)
+                if emp:
+                    await record_activity(
+                        s,
+                        emp.org_id,
+                        "human_escalation",
+                        f"Escalation {'approved' if approved else 'denied'} by {decision['by']}",
+                        employee_id=employee_id,
+                        employee_name=emp.name,
+                        platform=platform,
+                        status="succeeded",
+                        metadata={
+                            "approved": approved,
+                            "channel": channel_id,
+                            "thread_ts": thread_ts,
+                        },
+                    )
+        except Exception:
+            pass
+
+        decision_text = "✅ Approved" if approved else "❌ Denied"
+        decided_by = f"<@{decision['by']}>"
+        try:
+            await client.chat_update(
+                channel=body["channel"]["id"],
+                ts=body["message"]["ts"],
+                text=f"{decision_text} by {decided_by}: {ctx.get('reason', 'Escalation')}",
+                blocks=[
+                    {
+                        "type": "section",
+                        "text": {
+                            "type": "mrkdwn",
+                            "text": (
+                                f"{decision_text} by {decided_by}\n"
+                                f"*Reason:* {ctx.get('reason', 'Escalation request')}"
+                            ),
+                        },
+                    }
+                ],
+            )
+        except Exception:
+            logger.exception("Failed to update manager escalation message")
+
+        if response_text and channel_id:
+            try:
+                await client.chat_postMessage(
+                    channel=channel_id,
+                    thread_ts=thread_ts,
+                    text=response_text,
+                )
+            except Exception:
+                logger.exception("Failed to post escalation response to user thread")
+
+        if files and channel_id:
+            await self._send_files(
+                channel=channel_id, files=files, thread_ts=thread_ts,
+            )
+
+        logger.info(
+            "%s escalation resolved: approved=%s by=%s thread=%s",
+            self._bot_label, approved, decision["by"], thread_key,
+        )
+
+
+class EmployeeSlackBot(BaseSlackBot):
+    """One Slack Socket Mode connection per AI employee.
+
+    Each employee has its own Slack app identity (its own ``xoxb-`` bot token
+    and ``xapp-`` app-level token).  The bot responds in all channels by
+    default; if the employee has ``channel_assignments`` those act as an
+    allowlist — only messages in assigned channels (and DMs) are processed.
+    """
+
+    _bot_label: str = "EmployeeSlackBot"
+
+    def __init__(
+        self,
+        employee_id: UUID,
+        bot_token: str,
+        app_token: str,
+    ) -> None:
+        self.employee_id = employee_id
+        super().__init__(bot_token, app_token)
+
+    def _build_app(self) -> None:
+        import os
+        slack_client_id = os.environ.pop("SLACK_CLIENT_ID", None)
+        slack_client_secret = os.environ.pop("SLACK_CLIENT_SECRET", None)
+        try:
+            self.app = AsyncApp(token=self.bot_token)
+        finally:
+            if slack_client_id is not None:
+                os.environ["SLACK_CLIENT_ID"] = slack_client_id
+            if slack_client_secret is not None:
+                os.environ["SLACK_CLIENT_SECRET"] = slack_client_secret
 
     # ------------------------------------------------------------------
     # Message processing
     # ------------------------------------------------------------------
 
-    async def _process_slack_message(self, event: dict, say) -> None:  # type: ignore[type-arg]
+    async def _process_slack_message(self, event: dict, say) -> None:
         """Process an incoming Slack event for this employee."""
-        # Ignore messages from other bots (including ourselves)
         if "bot_id" in event:
             return
 
@@ -188,215 +562,50 @@ class EmployeeSlackBot:
         thread_ts = event.get("thread_ts") or event.get("ts")
         is_dm = event.get("channel_type") == "im"
 
-        # If employee has channel assignments, only respond in assigned channels
         if not is_dm and not await self._is_channel_allowed(channel):
             logger.debug(
                 "Channel %s is not assigned to employee %s — ignoring",
-                channel,
-                self.employee_id,
+                channel, self.employee_id,
             )
             return
 
-        # Ensure the bot is in the channel (if not a DM) to prevent not_in_channel errors on reply
         if not is_dm and channel:
             try:
                 await self.app.client.conversations_join(channel=channel)
             except Exception:
                 logger.debug(
                     "Failed to auto-join channel %s (private/lacks channels:join)",
-                    channel,
-                    exc_info=True,
+                    channel, exc_info=True,
                 )
 
-        # Fetch employee and organization details from database for customization & ingestion
         employee_name = "OpenHuman Agent"
         org = None
+        emp = None
         try:
             async with async_session_factory() as session:
                 emp = await session.get(Employee, self.employee_id)
                 if emp:
-                    if emp.role:
-                        employee_name = f"{emp.name} ({emp.role})"
-                    else:
-                        employee_name = emp.name
+                    employee_name = (
+                        f"{emp.name} ({emp.role})" if emp.role else emp.name
+                    )
                     org = await session.scalar(
-                        select(Organization).where(
-                            Organization.id == emp.org_id
-                        )
+                        select(Organization).where(Organization.id == emp.org_id)
                     )
         except Exception:
             logger.exception("Failed to fetch employee/org info for Slack event")
 
-        # -- Phase 3: lightweight cancel keyword fast path -------------------
-        if is_cancel_intent(text):
-            root_ts = thread_ts or "direct"
-            thread_key = f"slack:{self.employee_id}:{channel}:{root_ts}"
-            async with async_session_factory() as session:
-                cancelled = await cancel_active_jobs_for_thread(session, thread_key)
-            if cancelled:
-                names = ", ".join(j.job_type for j in cancelled)
-                # Record cancellation (best-effort)
-                if org:
-                    try:
-                        async with async_session_factory() as s:
-                            await record_activity(
-                                s,
-                                org.id,
-                                "agent_run",
-                                f"Cancelled {len(cancelled)} background task(s): {names}",
-                                employee_id=self.employee_id,
-                                employee_name=employee_name,
-                                platform="slack",
-                                status="cancelled",
-                                metadata={
-                                    "cancelled_jobs": names,
-                                    "channel": channel,
-                                    "thread_ts": thread_ts,
-                                },
-                            )
-                    except Exception:
-                        pass
-                await say(
-                    text=f"🫡 Cancelled: {names}.",
-                    channel=channel,
-                    thread_ts=thread_ts,
-                    username=employee_name,
-                )
-            else:
-                await say(
-                    text=(
-                        "Nothing to cancel — there are no active "
-                        "background tasks in this conversation."
-                    ),
-                    channel=channel,
-                    thread_ts=thread_ts,
-                    username=employee_name,
-                )
+        # -- Cancel fast path (before potentially slow ingest/file ops) --
+        if await self._cancel_and_respond(
+            text, self.employee_id, employee_name, channel, thread_ts, org, say,
+        ):
             return
 
-        # ── Auto-ingest Slack message into org memory ────────────────────
-        if org and org.cognee_dataset_name and org.cognee_system_user_id:
-            try:
-                speaker = event.get("user", "unknown")
-                ch = event.get("channel", "unknown")
-                ts = event.get("ts", "")
-                ingest_text = (
-                    f"Slack message from <@{speaker}> "
-                    f"in <#{ch}> at {ts}:\n{text}"
-                )
-                await remember(
-                    ingest_text,
-                    org.cognee_dataset_name,
-                    org.cognee_system_user_id,
-                    dataset_id=org.cognee_dataset_id,
-                    background=True,
-                )
-                # Record auto-ingest (best-effort)
-                try:
-                    async with async_session_factory() as s2:
-                        await record_activity(
-                            s2,
-                            org.id,
-                            "memory_operation",
-                            f"Auto-ingested Slack message from {speaker} in #{ch}",
-                            employee_id=self.employee_id,
-                            employee_name=employee_name,
-                            platform="slack",
-                            metadata={
-                                "operation": "auto_ingest",
-                                "speaker": speaker,
-                                "channel": ch,
-                            },
-                        )
-                except Exception:
-                    pass
-            except Exception:
-                logger.debug(
-                    "Slack message Cognee ingest skipped for employee %s",
-                    self.employee_id,
-                    exc_info=True,
-                )
-        # ── End auto-ingest ──────────────────────────────────────────────
-
-        # ── Handle file attachments — download → bucket → Cognee ──────────
+        # Auto-ingest + file processing
+        await self._auto_ingest_message(text, event, org, self.employee_id, employee_name)
         files = event.get("files", [])
-        _MAX_SLACK_FILE_SIZE = 10 * 1024 * 1024  # 10 MB
-
-        if files and org and org.cognee_dataset_name and org.cognee_system_user_id:
-            backend = get_storage_backend()
-            async with httpx.AsyncClient(timeout=30) as http_client:
-                for file_info in files:
-                    try:
-                        file_url = file_info.get("url_private")
-                        if not file_url:
-                            continue
-
-                        # SSRF guard: only download from Slack's CDN
-                        if not file_url.startswith("https://files.slack.com/"):
-                            logger.warning(
-                                "Rejected non-Slack file URL for employee %s: %s",
-                                self.employee_id, file_url,
-                            )
-                            continue
-
-                        file_size = file_info.get("size", 0)
-                        if file_size > _MAX_SLACK_FILE_SIZE:
-                            logger.debug(
-                                "Slack file %s (%d bytes) exceeds size limit — skipping",
-                                file_info.get("name"), file_size,
-                            )
-                            continue
-
-                        # 1. Download from Slack
-                        headers = {"Authorization": f"Bearer {self.bot_token}"}
-                        resp = await http_client.get(file_url, headers=headers)
-                        resp.raise_for_status()
-                        file_bytes = resp.content
-
-                        # 2. Save to bucket
-                        storage_path = await backend.save(
-                            org_id=emp.org_id,
-                            filename=file_info.get("name", "slack_file"),
-                            content=file_bytes,
-                            content_type=file_info.get("mimetype"),
-                        )
-
-                        # 3. Create Document DB row
-                        async with async_session_factory() as doc_session:
-                            doc = Document(
-                                org_id=emp.org_id,
-                                employee_id=self.employee_id,
-                                filename=file_info.get("name", "slack_file"),
-                                content_type=file_info.get("mimetype"),
-                                size_bytes=len(file_bytes),
-                                storage_path=storage_path,
-                                storage_backend=settings.storage_backend,
-                                status="uploaded",
-                            )
-                            doc_session.add(doc)
-                            await doc_session.commit()
-
-                        # 4. Cognee ingest via bucket path (local or S3 URL)
-                        if settings.storage_backend == "s3":
-                            cognee_input = f"s3://{settings.s3_bucket_name}/{storage_path}"
-                        else:
-                            cognee_input = storage_path
-                        await remember(
-                            cognee_input,
-                            org.cognee_dataset_name,
-                            org.cognee_system_user_id,
-                            dataset_id=org.cognee_dataset_id,
-                            background=True,
-                        )
-
-                    except Exception:
-                        logger.debug(
-                            "Slack file attachment ingest skipped (employee=%s, file=%s)",
-                            self.employee_id,
-                            file_info.get("name", "unknown"),
-                            exc_info=True,
-                        )
-        # ── End file attachments ──────────────────────────────────────────
+        await self._process_file_attachments(
+            files, org, emp, self.employee_id, self.bot_token,
+        )
 
         # Thread recording context for per-tool activity
         if org:
@@ -406,19 +615,16 @@ class EmployeeSlackBot:
         activity_platform.set("slack")
         activity_channel_id.set(channel)
 
-        # Run the agent
         result = await self._run_agent(
             text, channel_id=channel, thread_ts=thread_ts,
         )
-        # Phase 6: None means the graph paused for interactive approval.
+
         if result is None:
             if org:
                 try:
                     async with async_session_factory() as s:
                         await record_activity(
-                            s,
-                            org.id,
-                            "human_escalation",
+                            s, org.id, "human_escalation",
                             f"Escalation awaiting approval from: {text[:100]}",
                             employee_id=self.employee_id,
                             employee_name=employee_name,
@@ -438,14 +644,11 @@ class EmployeeSlackBot:
         response_text = result.get("response", "") or "I processed your request but had no response."
         files = result.get("files", [])
 
-        # Record activity (best-effort)
         if org:
             try:
                 async with async_session_factory() as s:
                     await record_activity(
-                        s,
-                        org.id,
-                        "agent_conversation",
+                        s, org.id, "agent_conversation",
                         f"Responded to: {text[:100]}",
                         employee_id=self.employee_id,
                         employee_name=employee_name,
@@ -465,7 +668,6 @@ class EmployeeSlackBot:
             except Exception:
                 pass
 
-        # Reply in thread — dynamically set username
         await say(
             text=response_text,
             channel=channel,
@@ -473,22 +675,15 @@ class EmployeeSlackBot:
             username=employee_name,
         )
 
-        # Upload any file attachments to the same thread
         if files:
-            await self._send_files(
-                channel=channel, files=files, thread_ts=thread_ts,
-            )
+            await self._send_files(channel=channel, files=files, thread_ts=thread_ts)
 
     # ------------------------------------------------------------------
     # Channel allowlist
     # ------------------------------------------------------------------
 
     async def _is_channel_allowed(self, channel_id: str) -> bool:
-        """Return ``True`` if this employee should respond in *channel_id*.
-
-        If the employee has **no** Slack channel assignments, all channels
-        are allowed.  Otherwise only assigned channels pass.
-        """
+        """Return ``True`` if this employee should respond in *channel_id*."""
         async with async_session_factory() as session:
             any_assignments = await session.scalar(
                 select(ChannelAssignment).where(
@@ -497,10 +692,7 @@ class EmployeeSlackBot:
                 ).limit(1)
             )
             if any_assignments is None:
-                # No assignments → unrestricted, respond everywhere
                 return True
-
-            # Has assignments → check for this specific channel
             result = await session.execute(
                 select(ChannelAssignment).where(
                     ChannelAssignment.platform == "slack",
@@ -519,11 +711,7 @@ class EmployeeSlackBot:
         channel_id: str = "",
         thread_ts: str = "",
     ) -> dict | None:
-        """Run the LangGraph agent as this employee.
-
-        Returns the full result dict (``response``, ``files``, …), or
-        ``None`` when the graph paused for interactive approval (Phase 6).
-        """
+        """Run the LangGraph agent as this employee."""
         root_ts = thread_ts or "direct"
         thread_key = f"slack:{self.employee_id}:{channel_id}:{root_ts}"
 
@@ -564,180 +752,8 @@ class EmployeeSlackBot:
             )
             return {"response": _SAFE_ERROR_MESSAGE, "files": []}
 
-    # ------------------------------------------------------------------
-    # File upload helper
-    # ------------------------------------------------------------------
 
-    async def _send_files(
-        self,
-        channel: str,
-        files: list[dict],
-        thread_ts: str | None = None,
-    ) -> None:
-        """Upload agent-generated files (charts, PDFs, etc.) to the Slack channel."""
-        for f in files:
-            try:
-                await self.app.client.files_upload_v2(
-                    channel=channel,
-                    file=base64.b64decode(f["data"]),
-                    filename=f["filename"],
-                    title=f.get("title", f["filename"]),
-                    thread_ts=thread_ts,
-                )
-            except Exception:
-                logger.exception("Failed to upload file %s", f.get("filename", "unknown"))
-
-    # ------------------------------------------------------------------
-    # Phase 6 — interactive escalation button handlers
-    # ------------------------------------------------------------------
-
-    async def _handle_escalation_approve(self, ack, body, client):
-        """Resume the paused graph with an **approved** decision."""
-        await self._handle_escalation_button(ack, body, client, approved=True)
-
-    async def _handle_escalation_deny(self, ack, body, client):
-        """Resume the paused graph with a **denied** decision."""
-        await self._handle_escalation_button(ack, body, client, approved=False)
-
-    async def _handle_escalation_button(self, ack, body, client, approved: bool) -> None:
-        """Shared logic for Approve / Deny button clicks."""
-        await ack()
-
-        action = body.get("actions", [{}])[0]
-        value_str = action.get("value", "{}")
-        try:
-            ctx = json.loads(value_str)
-        except json.JSONDecodeError:
-            logger.warning("Invalid escalation button value: %s", value_str)
-            return
-
-        thread_key: str = ctx.get("thread_key", "")
-        channel_id: str = ctx.get("channel_id", "")
-        thread_ts: str = ctx.get("thread_ts", "")
-        employee_id_str: str = ctx.get("employee_id", "")
-        platform: str = ctx.get("platform", "slack")
-
-        if not thread_key or not employee_id_str:
-            logger.warning("Escalation button missing thread_key or employee_id")
-            return
-
-        try:
-            employee_id = UUID(employee_id_str)
-        except (ValueError, TypeError):
-            logger.warning("Invalid employee_id in escalation button: %s", employee_id_str)
-            return
-
-        decision = {
-            "approved": approved,
-            "by": body.get("user", {}).get("id", "unknown"),
-            "note": "",
-        }
-
-        # -- Resume the paused graph -----------------------------------------
-        response_text = ""
-        try:
-            async with async_session_factory() as session:
-                graph, all_tools = await get_graph_for_employee(session, employee_id)
-                config = {
-                    "configurable": {
-                        "db": session,
-                        "employee_id": employee_id_str,
-                        "all_tools": all_tools,
-                        "thread_id": thread_key,
-                        "platform": platform,
-                        "channel_id": channel_id,
-                        "thread_ts": thread_ts,
-                    }
-                }
-                result = await graph.ainvoke(
-                    Command(resume=decision),
-                    config=config,
-                )
-                response_text = result.get("response", "")
-                files = result.get("files", [])
-        except GraphInterrupt:
-            logger.info(
-                "Graph re-paused during escalation resume (thread=%s)", thread_key,
-            )
-            files = []
-        except Exception:
-            logger.exception(
-                "Failed to resume graph for escalation (thread=%s)", thread_key,
-            )
-            response_text = "Something went wrong processing the escalation decision."
-            files = []
-
-        # -- Record escalation decision (best-effort) -------------------------
-        try:
-            async with async_session_factory() as s:
-                emp = await s.get(Employee, employee_id)
-                if emp:
-                    await record_activity(
-                        s,
-                        emp.org_id,
-                        "human_escalation",
-                        f"Escalation {'approved' if approved else 'denied'} by {decision['by']}",
-                        employee_id=employee_id,
-                        employee_name=emp.name,
-                        platform=platform,
-                        status="succeeded",
-                        metadata={
-                            "approved": approved,
-                            "channel": channel_id,
-                            "thread_ts": thread_ts,
-                        },
-                    )
-        except Exception:
-            pass
-
-        # -- Update the manager's button message -----------------------------
-        decision_text = "✅ Approved" if approved else "❌ Denied"
-        decided_by = f"<@{decision['by']}>"
-        try:
-            await client.chat_update(
-                channel=body["channel"]["id"],
-                ts=body["message"]["ts"],
-                text=f"{decision_text} by {decided_by}: {ctx.get('reason', 'Escalation')}",
-                blocks=[
-                    {
-                        "type": "section",
-                        "text": {
-                            "type": "mrkdwn",
-                            "text": (
-                                f"{decision_text} by {decided_by}\n"
-                                f"*Reason:* {ctx.get('reason', 'Escalation request')}"
-                            ),
-                        },
-                    }
-                ],
-            )
-        except Exception:
-            logger.exception("Failed to update manager escalation message")
-
-        # -- Post the agent's response to the user's thread -------------------
-        if response_text and channel_id:
-            try:
-                await client.chat_postMessage(
-                    channel=channel_id,
-                    thread_ts=thread_ts,
-                    text=response_text,
-                )
-            except Exception:
-                logger.exception("Failed to post escalation response to user thread")
-
-        # Upload any file attachments to the same thread
-        if files and channel_id:
-            await self._send_files(
-                channel=channel_id, files=files, thread_ts=thread_ts,
-            )
-
-        logger.info(
-            "Escalation resolved: approved=%s by=%s thread=%s",
-            approved, decision["by"], thread_key,
-        )
-
-
-class WorkspaceSlackBot:
+class WorkspaceSlackBot(BaseSlackBot):
     """Legacy shared-mode Slack bot — one Socket Mode connection per unique
     bot token, routing messages to multiple employees via channel assignments.
 
@@ -745,104 +761,23 @@ class WorkspaceSlackBot:
     is active, :class:`EmployeeSlackBot` is used instead (one per employee).
     """
 
+    _bot_label: str = "WorkspaceSlackBot"
+
     def __init__(
         self,
         bot_token: str,
         app_token: str,
         employee_ids: list[UUID],
     ) -> None:
-        self.bot_token = bot_token
-        self.app_token = app_token
         self.employee_ids = employee_ids
         self._employee_id_set = frozenset(employee_ids)
-
-        self.app = AsyncApp(token=bot_token)
-        self._handler = AsyncSocketModeHandler(self.app, app_token)
-        self.bot_user_id: str | None = None
-
-        # Register event handlers
-        self.app.event("app_mention")(self.handle_mention)
-        self.app.event("message")(self.handle_message)
-
-        # Phase 6 — interactive escalation Approve / Deny buttons
-        self.app.action("escalation_approve")(self._handle_escalation_approve)
-        self.app.action("escalation_deny")(self._handle_escalation_deny)
-
-    # ------------------------------------------------------------------
-    # Lifecycle
-    # ------------------------------------------------------------------
-
-    async def connect(self) -> None:
-        """Open the Socket Mode WebSocket connection."""
-        await self._handler.connect_async()
-        try:
-            auth_res = await self.app.client.auth_test()
-            self.bot_user_id = auth_res.get("user_id")
-        except Exception:
-            logger.exception("Failed to fetch bot user_id on connection")
-            self.bot_user_id = None
-        logger.info(
-            "WorkspaceSlackBot connected (token=...%s, employees=%d, bot_user_id=%s)",
-            self.bot_token[-8:],
-            len(self.employee_ids),
-            self.bot_user_id,
-        )
-
-    async def disconnect(self) -> None:
-        """Close the Socket Mode WebSocket connection."""
-        try:
-            await self._handler.close_async()
-        except Exception:
-            logger.exception("Error closing WorkspaceSlackBot Socket Mode connection")
-        logger.info(
-            "WorkspaceSlackBot disconnected (token=...%s)",
-            self.bot_token[-8:],
-        )
-
-    # ------------------------------------------------------------------
-    # Event handlers
-    # ------------------------------------------------------------------
-
-    async def handle_mention(self, event: dict, say) -> None:  # type: ignore[type-arg]
-        """Respond to @mentions in public channels."""
-        await self._process_slack_message(event, say)
-
-    async def handle_message(self, event: dict, say) -> None:  # type: ignore[type-arg]
-        """Respond to DMs, or thread replies where the bot is already participating."""
-        channel_type = event.get("channel_type")
-        thread_ts = event.get("thread_ts")
-        channel = event.get("channel")
-        ts = event.get("ts")
-
-        if channel_type == "im":
-            await self._process_slack_message(event, say)
-            return
-
-        if thread_ts and thread_ts != ts and channel:
-            text = event.get("text", "")
-            if self.bot_user_id and f"<@{self.bot_user_id}>" in text:
-                return
-            try:
-                replies = await self.app.client.conversations_replies(
-                    channel=channel,
-                    ts=thread_ts,
-                    limit=50,
-                )
-                messages = replies.get("messages", [])
-                bot_participated = any(
-                    msg.get("user") == self.bot_user_id or msg.get("bot_id") is not None
-                    for msg in messages
-                )
-                if bot_participated:
-                    await self._process_slack_message(event, say)
-            except Exception:
-                logger.exception("Error checking thread participation for message event")
+        super().__init__(bot_token, app_token)
 
     # ------------------------------------------------------------------
     # Message processing
     # ------------------------------------------------------------------
 
-    async def _process_slack_message(self, event: dict, say) -> None:  # type: ignore[type-arg]
+    async def _process_slack_message(self, event: dict, say) -> None:
         """Route an incoming Slack event to the right employee and respond."""
         if "bot_id" in event:
             return
@@ -856,181 +791,37 @@ class WorkspaceSlackBot:
         if employee_id is None:
             logger.debug(
                 "No employee assigned for channel=%s (token=...%s) — ignoring",
-                channel,
-                self.bot_token[-8:],
+                channel, self.bot_token[-8:],
             )
+            return
+
+        # -- Cancel fast path (before potentially slow ingest/file ops) --
+        if await self._cancel_and_respond(
+            text, employee_id, "OpenHuman Agent", channel, thread_ts, None, say,
+        ):
             return
 
         employee_name = "OpenHuman Agent"
         org = None
+        emp = None
         async with async_session_factory() as session:
             emp = await session.get(Employee, employee_id)
             if emp:
-                if emp.role:
-                    employee_name = f"{emp.name} ({emp.role})"
-                else:
-                    employee_name = emp.name
-
-                # ── Auto-ingest Slack message into org memory ────────────
-                try:
-                    org = await session.scalar(
-                        select(Organization).where(
-                            Organization.id == emp.org_id
-                        )
-                    )
-                    if (
-                        org
-                        and org.cognee_dataset_name
-                        and org.cognee_system_user_id
-                    ):
-                        speaker = event.get("user", "unknown")
-                        ch = event.get("channel", "unknown")
-                        ts = event.get("ts", "")
-                        ingest_text = (
-                            f"Slack message from <@{speaker}> "
-                            f"in <#{ch}> at {ts}:\n{text}"
-                        )
-                        await remember(
-                            ingest_text,
-                            org.cognee_dataset_name,
-                            org.cognee_system_user_id,
-                            dataset_id=org.cognee_dataset_id,
-                            background=True,
-                        )
-                except Exception:
-                    logger.debug(
-                        "Slack message Cognee ingest skipped for employee %s",
-                        employee_id,
-                        exc_info=True,
-                    )
-                # ── End auto-ingest ──────────────────────────────────────
-
-                # ── Handle file attachments — download → bucket → Cognee ──
-                files = event.get("files", [])
-                _MAX_SLACK_FILE_SIZE = 10 * 1024 * 1024  # 10 MB
-
-                if files and org and org.cognee_dataset_name and org.cognee_system_user_id:
-                    backend = get_storage_backend()
-                    async with httpx.AsyncClient(timeout=30) as http_client:
-                        for file_info in files:
-                            try:
-                                file_url = file_info.get("url_private")
-                                if not file_url:
-                                    continue
-
-                                # SSRF guard: only download from Slack's CDN
-                                if not file_url.startswith("https://files.slack.com/"):
-                                    logger.warning(
-                                        "Rejected non-Slack file URL for employee %s: %s",
-                                        employee_id, file_url,
-                                    )
-                                    continue
-
-                                file_size = file_info.get("size", 0)
-                                if file_size > _MAX_SLACK_FILE_SIZE:
-                                    logger.debug(
-                                        "Slack file %s (%d bytes) exceeds size limit — skipping",
-                                        file_info.get("name"), file_size,
-                                    )
-                                    continue
-
-                                # 1. Download from Slack
-                                headers = {"Authorization": f"Bearer {self.bot_token}"}
-                                resp = await http_client.get(file_url, headers=headers)
-                                resp.raise_for_status()
-                                file_bytes = resp.content
-
-                                # 2. Save to bucket
-                                storage_path = await backend.save(
-                                    org_id=emp.org_id,
-                                    filename=file_info.get("name", "slack_file"),
-                                    content=file_bytes,
-                                    content_type=file_info.get("mimetype"),
-                                )
-
-                                # 3. Create Document DB row
-                                async with async_session_factory() as doc_session:
-                                    doc = Document(
-                                        org_id=emp.org_id,
-                                        employee_id=employee_id,
-                                        filename=file_info.get("name", "slack_file"),
-                                        content_type=file_info.get("mimetype"),
-                                        size_bytes=len(file_bytes),
-                                        storage_path=storage_path,
-                                        storage_backend=settings.storage_backend,
-                                        status="uploaded",
-                                    )
-                                    doc_session.add(doc)
-                                    await doc_session.commit()
-
-                                # 4. Cognee ingest via bucket path (local or S3 URL)
-                                if settings.storage_backend == "s3":
-                                    cognee_input = f"s3://{settings.s3_bucket_name}/{storage_path}"
-                                else:
-                                    cognee_input = storage_path
-                                await remember(
-                                    cognee_input,
-                                    org.cognee_dataset_name,
-                                    org.cognee_system_user_id,
-                                    dataset_id=org.cognee_dataset_id,
-                                    background=True,
-                                )
-
-                            except Exception:
-                                logger.debug(
-                                    "Slack file attachment ingest skipped (employee=%s, file=%s)",
-                                    employee_id,
-                                    file_info.get("name", "unknown"),
-                                    exc_info=True,
-                                )
-                # ── End file attachments ────────────────────────────────────
-
-        # -- Phase 3: lightweight cancel keyword fast path -------------------
-        if is_cancel_intent(text):
-            root_ts = thread_ts or "direct"
-            thread_key = f"slack:{employee_id}:{channel}:{root_ts}"
-            async with async_session_factory() as session:
-                cancelled = await cancel_active_jobs_for_thread(session, thread_key)
-            if cancelled:
-                names = ", ".join(j.job_type for j in cancelled)
-                # Record cancellation (best-effort)
-                if org:
-                    try:
-                        async with async_session_factory() as s:
-                            await record_activity(
-                                s,
-                                org.id,
-                                "agent_run",
-                                f"Cancelled {len(cancelled)} background task(s): {names}",
-                                employee_id=employee_id,
-                                employee_name=employee_name,
-                                platform="slack",
-                                status="cancelled",
-                                metadata={
-                                    "cancelled_jobs": names,
-                                    "channel": channel,
-                                    "thread_ts": thread_ts,
-                                },
-                            )
-                    except Exception:
-                        pass
-                await say(
-                    text=f"🫡 Cancelled: {names}.",
-                    channel=channel,
-                    thread_ts=thread_ts,
-                    username=employee_name,
+                employee_name = (
+                    f"{emp.name} ({emp.role})" if emp.role else emp.name
                 )
-            else:
-                await say(
-                    text=(
-                        "Nothing to cancel — there are no active "
-                        "background tasks in this conversation."
-                    ),
-                    channel=channel,
-                    thread_ts=thread_ts,
-                    username=employee_name,
+                org = await session.scalar(
+                    select(Organization).where(Organization.id == emp.org_id)
                 )
-            return
+                await self._auto_ingest_message(
+                    text, event, org, employee_id, employee_name,
+                )
+
+        # File processing
+        files = event.get("files", [])
+        await self._process_file_attachments(
+            files, org, emp, employee_id, self.bot_token,
+        )
 
         # Thread recording context for per-tool activity
         if org:
@@ -1057,9 +848,7 @@ class WorkspaceSlackBot:
         )
 
         if files:
-            await self._send_files(
-                channel=channel, files=files, thread_ts=thread_ts,
-            )
+            await self._send_files(channel=channel, files=files, thread_ts=thread_ts)
 
     # ------------------------------------------------------------------
     # Channel → Employee routing
@@ -1096,7 +885,6 @@ class WorkspaceSlackBot:
 
     async def _find_unrestricted_employee(self, session) -> UUID | None:
         """Return first candidate with no Slack channel assignments."""
-        assigned_ids: set[UUID] = set()
         result = await session.execute(
             select(ChannelAssignment.employee_id).where(
                 ChannelAssignment.platform == "slack",
@@ -1108,7 +896,6 @@ class WorkspaceSlackBot:
         for eid in self.employee_ids:
             if eid not in assigned_ids:
                 return eid
-
         return self.employee_ids[0] if self.employee_ids else None
 
     # ------------------------------------------------------------------
@@ -1120,11 +907,7 @@ class WorkspaceSlackBot:
         channel_id: str = "",
         thread_ts: str = "",
     ) -> dict | None:
-        """Run the LangGraph agent as *employee_id*.
-
-        Returns the full result dict, or ``None`` when the graph paused
-        for interactive approval (Phase 6).
-        """
+        """Run the LangGraph agent as *employee_id*."""
         root_ts = thread_ts or "direct"
         thread_key = f"slack:{employee_id}:{channel_id}:{root_ts}"
 
@@ -1164,175 +947,3 @@ class WorkspaceSlackBot:
                 "Agent graph failed for employee %s on Slack", employee_id,
             )
             return {"response": _SAFE_ERROR_MESSAGE, "files": []}
-
-    # ------------------------------------------------------------------
-    # File upload helper (shared mode)
-    # ------------------------------------------------------------------
-
-    async def _send_files(
-        self,
-        channel: str,
-        files: list[dict],
-        thread_ts: str | None = None,
-    ) -> None:
-        """Upload agent-generated files (charts, PDFs, etc.) to the Slack channel."""
-        for f in files:
-            try:
-                await self.app.client.files_upload_v2(
-                    channel=channel,
-                    file=base64.b64decode(f["data"]),
-                    filename=f["filename"],
-                    title=f.get("title", f["filename"]),
-                    thread_ts=thread_ts,
-                )
-            except Exception:
-                logger.exception("Failed to upload file %s", f.get("filename", "unknown"))
-
-    # ------------------------------------------------------------------
-    # Phase 6 — interactive escalation button handlers (shared mode)
-    # ------------------------------------------------------------------
-
-    async def _handle_escalation_approve(self, ack, body, client):
-        """Resume the paused graph with an **approved** decision."""
-        await self._handle_escalation_button(ack, body, client, approved=True)
-
-    async def _handle_escalation_deny(self, ack, body, client):
-        """Resume the paused graph with a **denied** decision."""
-        await self._handle_escalation_button(ack, body, client, approved=False)
-
-    async def _handle_escalation_button(self, ack, body, client, approved: bool) -> None:
-        """Shared logic for Approve / Deny button clicks (shared mode)."""
-        await ack()
-
-        action = body.get("actions", [{}])[0]
-        value_str = action.get("value", "{}")
-        try:
-            ctx = json.loads(value_str)
-        except json.JSONDecodeError:
-            logger.warning("Invalid escalation button value: %s", value_str)
-            return
-
-        thread_key: str = ctx.get("thread_key", "")
-        channel_id: str = ctx.get("channel_id", "")
-        thread_ts: str = ctx.get("thread_ts", "")
-        employee_id_str: str = ctx.get("employee_id", "")
-        platform: str = ctx.get("platform", "slack")
-
-        if not thread_key or not employee_id_str:
-            logger.warning("Escalation button missing thread_key or employee_id")
-            return
-
-        try:
-            employee_id = UUID(employee_id_str)
-        except (ValueError, TypeError):
-            logger.warning("Invalid employee_id in escalation button: %s", employee_id_str)
-            return
-
-        decision = {
-            "approved": approved,
-            "by": body.get("user", {}).get("id", "unknown"),
-            "note": "",
-        }
-
-        # -- Resume the paused graph -----------------------------------------
-        response_text = ""
-        try:
-            async with async_session_factory() as session:
-                graph, all_tools = await get_graph_for_employee(session, employee_id)
-                config = {
-                    "configurable": {
-                        "db": session,
-                        "employee_id": employee_id_str,
-                        "all_tools": all_tools,
-                        "thread_id": thread_key,
-                        "platform": platform,
-                        "channel_id": channel_id,
-                        "thread_ts": thread_ts,
-                    }
-                }
-                result = await graph.ainvoke(
-                    Command(resume=decision),
-                    config=config,
-                )
-                response_text = result.get("response", "")
-                files = result.get("files", [])
-        except GraphInterrupt:
-            logger.info(
-                "Graph re-paused during escalation resume (thread=%s)", thread_key,
-            )
-            files = []
-        except Exception:
-            logger.exception(
-                "Failed to resume graph for escalation (thread=%s)", thread_key,
-            )
-            response_text = "Something went wrong processing the escalation decision."
-            files = []
-
-        # -- Record escalation decision (best-effort) -------------------------
-        try:
-            async with async_session_factory() as s:
-                emp = await s.get(Employee, employee_id)
-                if emp:
-                    await record_activity(
-                        s,
-                        emp.org_id,
-                        "human_escalation",
-                        f"Escalation {'approved' if approved else 'denied'} by {decision['by']}",
-                        employee_id=employee_id,
-                        employee_name=emp.name,
-                        platform=platform,
-                        status="succeeded",
-                        metadata={
-                            "approved": approved,
-                            "channel": channel_id,
-                            "thread_ts": thread_ts,
-                        },
-                    )
-        except Exception:
-            pass
-
-        # -- Update the manager's button message -----------------------------
-        decision_text = "✅ Approved" if approved else "❌ Denied"
-        decided_by = f"<@{decision['by']}>"
-        try:
-            await client.chat_update(
-                channel=body["channel"]["id"],
-                ts=body["message"]["ts"],
-                text=f"{decision_text} by {decided_by}: {ctx.get('reason', 'Escalation')}",
-                blocks=[
-                    {
-                        "type": "section",
-                        "text": {
-                            "type": "mrkdwn",
-                            "text": (
-                                f"{decision_text} by {decided_by}\n"
-                                f"*Reason:* {ctx.get('reason', 'Escalation request')}"
-                            ),
-                        },
-                    }
-                ],
-            )
-        except Exception:
-            logger.exception("Failed to update manager escalation message")
-
-        # -- Post the agent's response to the user's thread -------------------
-        if response_text and channel_id:
-            try:
-                await client.chat_postMessage(
-                    channel=channel_id,
-                    thread_ts=thread_ts,
-                    text=response_text,
-                )
-            except Exception:
-                logger.exception("Failed to post escalation response to user thread")
-
-        # Upload any file attachments to the same thread
-        if files and channel_id:
-            await self._send_files(
-                channel=channel_id, files=files, thread_ts=thread_ts,
-            )
-
-        logger.info(
-            "Escalation resolved (shared): approved=%s by=%s thread=%s",
-            approved, decision["by"], thread_key,
-        )

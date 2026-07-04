@@ -1,13 +1,13 @@
 "use client";
 
 import Link from "next/link";
-import { useAuth } from "@clerk/nextjs";
+import { useIsSignedIn } from "@/hooks/use-auth";
 
 import CardNav from "@/components/CardNav";
 import { Logo } from "@/components/logo";
 
 export function SiteNav() {
-  const { isSignedIn, isLoaded } = useAuth();
+  const { isSignedIn, isLoaded } = useIsSignedIn();
 
   return (
     <CardNav

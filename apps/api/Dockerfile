@@ -18,6 +18,8 @@ RUN uv sync --frozen --no-install-project --no-dev
 # Stage 2: Final runtime image
 FROM python:3.12-slim
 
+RUN apt-get update -qq && apt-get install -y -qq fonts-dejavu-core && rm -rf /var/lib/apt/lists/*
+
 WORKDIR /app
 
 # Copy virtual environment from builder stage
@@ -31,8 +33,8 @@ COPY app /app/app
 COPY alembic.ini /app/
 COPY alembic /app/alembic
 
-# Create storage directory for uploads
-RUN mkdir -p /app/uploads
+# Persistent storage directories
+RUN mkdir -p /app/uploads /app/cognee_data/data /app/cognee_data/system /app/cognee_data/cache /app/cognee_data/logs
 
 ENV PYTHONUNBUFFERED=1
 

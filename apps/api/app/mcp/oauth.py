@@ -45,7 +45,7 @@ _STATE_MAX_AGE = 600  # 10 minutes
 
 def _get_state_secret() -> str:
     """Return a secret key for signing OAuth state tokens."""
-    return settings.encryption_key or settings.clerk_secret_key or "change-me"
+    return settings.encryption_key or settings.jwt_secret_key or "change-me"
 
 
 def _get_serializer() -> URLSafeTimedSerializer:

@@ -44,14 +44,10 @@ class Settings(BaseSettings):
     # from database_url if empty.
     checkpoint_database_url: str = ""
 
-    # Clerk authentication
-    clerk_secret_key: str = ""
-    clerk_jwt_key: str | None = None
-    clerk_authorized_parties: str = ""
-
-    @property
-    def clerk_authorized_parties_list(self) -> list[str]:
-        return [p.strip() for p in self.clerk_authorized_parties.split(",") if p.strip()]
+    # JWT authentication
+    jwt_secret_key: str = "change-me-in-production"
+    jwt_algorithm: str = "HS256"
+    jwt_expire_minutes: int = 60
 
     @model_validator(mode="after")
     def validate_db_urls(self) -> "Settings":
@@ -194,9 +190,9 @@ class Settings(BaseSettings):
     def validate_production_secrets(self) -> "Settings":
         """Fail fast if production is configured with development-only secrets."""
         if self.environment.lower() in {"production", "prod"}:
-            if not self.clerk_secret_key:
+            if not self.jwt_secret_key or self.jwt_secret_key == "change-me-in-production":
                 raise ValueError(
-                    "clerk_secret_key must be set in production"
+                    "jwt_secret_key must be set to a strong random secret in production"
                 )
             if not self.encryption_key or len(self.encryption_key) != 64:
                 raise ValueError(

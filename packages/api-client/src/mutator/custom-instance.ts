@@ -13,21 +13,10 @@ export class ApiError extends Error {
   }
 }
 
-async function getAuthToken(): Promise<string | null> {
-  // Use Clerk session token when available
-  if (typeof window !== "undefined" && window.Clerk?.session) {
-    try {
-      return await window.Clerk.session.getToken();
-    } catch {
-      // Clerk session may not be ready yet
-    }
-  }
-
-  // Fallback: legacy token during transition period
+function getAuthToken(): string | null {
   if (typeof window !== "undefined") {
     return localStorage.getItem("oh_token");
   }
-
   return null;
 }
 
@@ -46,7 +35,7 @@ export const customInstance = async <T>(
 ): Promise<T> => {
   const { url, method, headers: configHeaders, params, data, signal } = config;
 
-  const token = await getAuthToken();
+  const token = getAuthToken();
 
   let queryParams = "";
   if (params) {

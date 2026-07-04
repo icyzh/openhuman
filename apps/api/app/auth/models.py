@@ -19,13 +19,15 @@ class User(Base):
     id: Mapped[UUID] = mapped_column(
         Uuid, primary_key=True, server_default=func.gen_random_uuid()
     )
-    clerk_id: Mapped[str] = mapped_column(
-        String(255), unique=True, index=True, nullable=False
+    # clerk_id kept for DB compatibility; nullable for new JWT-auth users
+    clerk_id: Mapped[str | None] = mapped_column(
+        String(255), unique=True, index=True, nullable=True
     )
     email: Mapped[str] = mapped_column(
         String(255), unique=True, index=True, nullable=False
     )
     name: Mapped[str] = mapped_column(String(255), nullable=False)
+    password_hash: Mapped[str | None] = mapped_column(String(255), nullable=True)
     is_active: Mapped[bool] = mapped_column(default=True, server_default="true")
     onboarding_completed: Mapped[bool] = mapped_column(
         Boolean, default=False, server_default=text("true")

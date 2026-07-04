@@ -1,8 +1,7 @@
 "use client";
 
 import { RefreshCw, Search } from "lucide-react";
-import { useMemo, useState } from "react";
-import { useAuth } from "@clerk/nextjs";
+import { useCallback, useMemo, useState } from "react";
 import { useEmployeesListEmployeesRoute } from "@repo/api-client";
 
 import { LogCard } from "@/components/log-card";
@@ -29,7 +28,10 @@ function readEmployeeId(): string | undefined {
 
 export default function ActivityPage() {
   const orgId = useOrgStore((s) => s.orgId);
-  const { getToken } = useAuth();
+  const getToken = useCallback(async () => {
+    if (typeof window === "undefined") return null;
+    return localStorage.getItem("oh_token");
+  }, []);
 
   const [search, setSearch] = useState("");
   const [level, setLevel] = useState("");

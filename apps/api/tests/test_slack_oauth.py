@@ -13,7 +13,7 @@ from app.gateway.slack_oauth import router as slack_oauth_router
 
 def _make_state_token(employee_id: str, org_id: str, redirect_to: str | None = None) -> str:
     """Create a signed OAuth state token for tests."""
-    secret = settings.encryption_key or settings.clerk_secret_key or "test-secret"
+    secret = settings.encryption_key or settings.jwt_secret_key or "test-secret"
     serializer = URLSafeTimedSerializer(secret, salt="slack-oauth-state")
     payload: dict[str, str] = {
         "employee_id": employee_id,
@@ -64,7 +64,7 @@ async def test_slack_install_custom_redirect_to(client: TestClient) -> None:
         mock_settings.slack_oauth_redirect_uri = "https://example.com/callback"
         mock_settings.slack_identity_mode = "shared"
         mock_settings.encryption_key = ""
-        mock_settings.clerk_secret_key = "test-secret"
+        mock_settings.jwt_secret_key = "test-secret"
 
         mock_session = MagicMock()
         mock_emp = MagicMock()
@@ -89,7 +89,7 @@ async def test_slack_install_custom_redirect_to(client: TestClient) -> None:
         parsed = urlparse(location)
         state_param = parse_qs(parsed.query)["state"][0]
 
-        secret = mock_settings.encryption_key or mock_settings.clerk_secret_key
+        secret = mock_settings.encryption_key or mock_settings.jwt_secret_key
         serializer = URLSafeTimedSerializer(secret, salt="slack-oauth-state")
         decoded = serializer.loads(state_param)
         assert decoded["employee_id"] == employee_id
@@ -115,12 +115,12 @@ async def test_slack_callback_redirects_to_custom_url(client: TestClient) -> Non
         mock_settings.slack_oauth_redirect_uri = "https://example.com/callback"
         mock_settings.slack_identity_mode = "shared"
         mock_settings.encryption_key = ""
-        mock_settings.clerk_secret_key = "test-secret"
+        mock_settings.jwt_secret_key = "test-secret"
         mock_core_settings.encryption_key = ""
-        mock_core_settings.clerk_secret_key = "test-secret"
+        mock_core_settings.jwt_secret_key = "test-secret"
 
         # Create state token using the same mocked settings
-        secret = mock_core_settings.encryption_key or mock_core_settings.clerk_secret_key or "test-secret"
+        secret = mock_core_settings.encryption_key or mock_core_settings.jwt_secret_key or "test-secret"
         serializer = URLSafeTimedSerializer(secret, salt="slack-oauth-state")
         payload = {
             "employee_id": employee_id,

@@ -8,7 +8,6 @@
 
 export interface UserResponse {
   id: string;
-  clerk_id: string;
   email: string;
   name: string;
   is_active: boolean;

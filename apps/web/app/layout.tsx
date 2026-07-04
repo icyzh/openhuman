@@ -1,5 +1,3 @@
-import { ClerkProvider } from "@clerk/nextjs";
-import { shadcn } from "@clerk/ui/themes";
 import type { Metadata } from "next";
 import { hafferSans, hafferMono } from "@/lib/fonts";
 import { Providers } from "@/components/providers";
@@ -27,9 +25,7 @@ export default function RootLayout({
       )}
     >
       <body className="min-h-full">
-        <ClerkProvider appearance={{ theme: shadcn }}>
-          <Providers>{children}</Providers>
-        </ClerkProvider>
+        <Providers>{children}</Providers>
       </body>
     </html>
   );

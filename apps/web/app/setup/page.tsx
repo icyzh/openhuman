@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { useAuth } from "@clerk/nextjs";
+import { useIsSignedIn } from "@/hooks/use-auth";
 import {
   useOrganizationsCreateOrganization,
   useOrganizationsListOrganizations,
@@ -19,7 +19,7 @@ type Step = "org-details" | "knowledge-upload";
 
 export default function SetupPage() {
   const router = useRouter();
-  const { isSignedIn, isLoaded } = useAuth();
+  const { isSignedIn, isLoaded } = useIsSignedIn();
   const setOrg = useOrgStore((s) => s.setOrg);
   const [step, setStep] = useState<Step>("org-details");
   const [orgId, setOrgId] = useState<string | null>(null);

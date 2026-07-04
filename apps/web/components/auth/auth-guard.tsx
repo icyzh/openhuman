@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useAuth } from "@clerk/nextjs";
+import { useIsSignedIn } from "@/hooks/use-auth";
 import { ArrowRightIcon } from "lucide-react";
 
 import { Spinner } from "@/components/ui/spinner";
@@ -11,7 +11,7 @@ interface AuthGuardProps {
 }
 
 export function AuthGuard({ children }: AuthGuardProps) {
-  const { isSignedIn, isLoaded } = useAuth();
+  const { isSignedIn, isLoaded } = useIsSignedIn();
 
   if (!isLoaded) {
     return (

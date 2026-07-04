@@ -1,47 +1,57 @@
 import logging
+from datetime import datetime, timedelta, timezone
 
+import bcrypt
+from fastapi import HTTPException, status
+from jose import jwt
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.models import User
 from app.auth.schemas import UpdateUserRequest
+from app.core.config import settings
 from app.organizations.schemas import CreateOrganizationRequest
 from app.organizations.service import create_org
 
 logger = logging.getLogger(__name__)
 
 
-async def get_or_create_user(db: AsyncSession, clerk_id: str, clerk_payload: dict) -> User:
-    """Look up a local User by Clerk ID, creating one on first login.
+def _hash_password(password: str) -> str:
+    return bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
 
-    On first login a default "My Organization" is also provisioned so the
-    dashboard has something to show immediately.
-    """
-    user = await db.scalar(select(User).where(User.clerk_id == clerk_id))
-    if user is not None:
-        return user
 
-    # Extract info from Clerk's JWT payload
-    email = clerk_payload.get("email") or clerk_payload.get("email_address")
-    if not email:
-        email = f"{clerk_id}@noemail.clerk.user"
+def _verify_password(plain: str, hashed: str) -> bool:
+    return bcrypt.checkpw(plain.encode("utf-8"), hashed.encode("utf-8"))
 
-    first_name = clerk_payload.get("first_name", "")
-    last_name = clerk_payload.get("last_name", "")
-    first_last = f"{first_name} {last_name}".strip()
-    name = clerk_payload.get("name") or first_last or f"User {clerk_id[-8:]}"
+
+def _create_access_token(user_id: str) -> str:
+    expire = datetime.now(timezone.utc) + timedelta(minutes=settings.jwt_expire_minutes)
+    return jwt.encode(
+        {"sub": user_id, "exp": expire},
+        settings.jwt_secret_key,
+        algorithm=settings.jwt_algorithm,
+    )
+
+
+async def register_user(db: AsyncSession, email: str, password: str, name: str) -> str:
+    """Create a new user and return a JWT access token."""
+    existing = await db.scalar(select(User).where(User.email == email))
+    if existing is not None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="An account with this email already exists",
+        )
 
     user = User(
-        clerk_id=clerk_id,
         email=email,
         name=name,
+        password_hash=_hash_password(password),
         onboarding_completed=False,
     )
     db.add(user)
     await db.commit()
     await db.refresh(user)
 
-    # Auto-create a default organization for every new user
     try:
         await create_org(
             db,
@@ -49,22 +59,31 @@ async def get_or_create_user(db: AsyncSession, clerk_id: str, clerk_payload: dic
             CreateOrganizationRequest(name="My Organization"),
         )
     except Exception:
-        logger.exception(
-            "Failed to create default org for user %s (non-blocking)", user.id
-        )
+        logger.exception("Failed to create default org for user %s", user.id)
 
-    return user
+    return _create_access_token(str(user.id))
+
+
+async def login_user(db: AsyncSession, email: str, password: str) -> str:
+    """Verify credentials and return a JWT access token."""
+    user = await db.scalar(select(User).where(User.email == email))
+    if user is None or not user.password_hash or not _verify_password(password, user.password_hash):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid email or password",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    if not user.is_active:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Account is disabled")
+
+    return _create_access_token(str(user.id))
 
 
 async def get_user_by_id(db: AsyncSession, user_id: str) -> User | None:
-    """Fetch a user by their UUID string."""
     return await db.scalar(select(User).where(User.id == user_id))
 
 
-async def update_user(
-    db: AsyncSession, user: User, data: UpdateUserRequest
-) -> User:
-    """Update the current user's profile fields."""
+async def update_user(db: AsyncSession, user: User, data: UpdateUserRequest) -> User:
     user.onboarding_completed = data.onboarding_completed
     await db.commit()
     await db.refresh(user)

@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useClerk } from "@clerk/nextjs";
+import { handleSignOut } from "@/hooks/use-auth";
 import {
   Activity,
   BookOpen,
@@ -40,7 +40,6 @@ const NAV_ITEMS = [
 
 export function DashboardSidebar() {
   const pathname = usePathname();
-  const { signOut } = useClerk();
   const clearOrg = useOrgStore((s) => s.clearOrg);
 
   return (
@@ -86,7 +85,7 @@ export function DashboardSidebar() {
                   tooltip="Logout"
                   onClick={() => {
                     clearOrg();
-                    signOut({ redirectUrl: "/" });
+                    handleSignOut("/");
                   }}
                 >
                   <LogOut />

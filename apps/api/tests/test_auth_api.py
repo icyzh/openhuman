@@ -1,5 +1,4 @@
 from collections.abc import AsyncGenerator, Generator
-from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
 
 import anyio
@@ -17,8 +16,12 @@ import app.organizations.models  # noqa: F401
 import app.agent.tools.mcp.models  # noqa: F401
 from app.auth.models import User
 from app.auth.router import router as auth_router
-from app.core.config import settings
 from app.core.database import get_db
+from app.organizations.models import Organization
+
+# Make sure we have a valid JWT secret for tests
+import app.core.config
+app.core.config.settings.jwt_secret_key = "test-jwt-secret-key-for-tests"
 
 
 @pytest.fixture()
@@ -39,6 +42,7 @@ def client(tmp_path) -> Generator[TestClient, None, None]:
     async def prepare_database() -> None:
         async with engine.begin() as connection:
             await connection.run_sync(User.__table__.create)
+            await connection.run_sync(Organization.__table__.create)
 
     async def override_get_db() -> AsyncGenerator[AsyncSession, None]:
         async with session_factory() as session:
@@ -60,27 +64,15 @@ def client(tmp_path) -> Generator[TestClient, None, None]:
 # ---------------------------------------------------------------------------
 
 
-def _mock_clerk_auth(test_app: FastAPI, clerk_user_id: str, email: str, name: str):
-    """Patch ``authenticate_request`` to return a signed-in Clerk user."""
-    mock_request_state = MagicMock()
-    mock_request_state.is_signed_in = True
-    mock_request_state.message = None
-    mock_request_state.payload = {
-        "sub": clerk_user_id,
+def _register_and_get_token(client: TestClient, email: str, password: str, name: str) -> str:
+    """Register a new user and return the JWT access token."""
+    resp = client.post("/api/auth/register", json={
         "email": email,
+        "password": password,
         "name": name,
-    }
-
-    patcher = patch(
-        "app.core.dependencies.authenticate_request",
-        return_value=mock_request_state,
-    )
-    patcher.start()
-
-    # Also set a valid secret key so authenticate_request doesn't fail early
-    settings.clerk_secret_key = "sk_test_mock"
-
-    return patcher
+    })
+    assert resp.status_code == 200, resp.text
+    return resp.json()["access_token"]
 
 
 # ---------------------------------------------------------------------------
@@ -94,53 +86,117 @@ def test_me_rejects_missing_token(client: TestClient) -> None:
     assert response.status_code == 401
 
 
-def test_me_returns_user_when_authenticated(client: TestClient) -> None:
-    """With a valid Clerk token, /me returns the user profile (auto-creating
-    the local User row on first call)."""
-    clerk_id = "user_mock_123"
+def test_me_rejects_invalid_token(client: TestClient) -> None:
+    """With an invalid / expired token the /me endpoint returns 401."""
+    response = client.get(
+        "/api/auth/me",
+        headers={"Authorization": "Bearer invalid-token"},
+    )
+    assert response.status_code == 401
+
+
+def test_register_and_me_returns_user(client: TestClient) -> None:
+    """Register a user, then call /me with the returned token to get the profile."""
     email = "ada@example.com"
     name = "Ada Lovelace"
 
-    patcher = _mock_clerk_auth(client.app, clerk_id, email, name)
+    token = _register_and_get_token(client, email, "securepass123", name)
 
-    try:
-        response = client.get(
-            "/api/auth/me",
-            headers={"Authorization": f"Bearer mock-session-token"},
-        )
-    finally:
-        patcher.stop()
+    response = client.get(
+        "/api/auth/me",
+        headers={"Authorization": f"Bearer {token}"},
+    )
 
     assert response.status_code == 200
     user_payload = response.json()
     assert user_payload["email"] == email
     assert user_payload["name"] == name
-    assert user_payload["clerk_id"] == clerk_id
     assert user_payload["is_active"] is True
     assert "password_hash" not in user_payload
+    assert "clerk_id" not in user_payload
+
+
+def test_register_rejects_duplicate_email(client: TestClient) -> None:
+    """Registering the same email twice returns 409."""
+    _register_and_get_token(client, "dup@example.com", "pass123", "First")
+    resp = client.post("/api/auth/register", json={
+        "email": "dup@example.com",
+        "password": "pass123",
+        "name": "Second",
+    })
+    assert resp.status_code == 409
+
+
+def test_login_with_valid_credentials(client: TestClient) -> None:
+    """Login succeeds with the password used at registration."""
+    email = "login@example.com"
+    password = "mypassword"
+    name = "Login User"
+
+    _register_and_get_token(client, email, password, name)
+
+    resp = client.post("/api/auth/login", json={
+        "email": email,
+        "password": password,
+    })
+    assert resp.status_code == 200
+    token = resp.json()["access_token"]
+    assert token is not None
+
+    # Verify /me works with login token
+    me_resp = client.get(
+        "/api/auth/me",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert me_resp.status_code == 200
+    assert me_resp.json()["email"] == email
+
+
+def test_login_with_wrong_password(client: TestClient) -> None:
+    """Login fails with an incorrect password."""
+    email = "wrongpass@example.com"
+    _register_and_get_token(client, email, "correctpass", "User")
+
+    resp = client.post("/api/auth/login", json={
+        "email": email,
+        "password": "wrong",
+    })
+    assert resp.status_code == 401
+
+
+def test_login_with_unknown_email(client: TestClient) -> None:
+    """Login fails for an unregistered email."""
+    resp = client.post("/api/auth/login", json={
+        "email": "ghost@example.com",
+        "password": "whatever",
+    })
+    assert resp.status_code == 401
 
 
 def test_me_idempotent_across_calls(client: TestClient) -> None:
-    """Calling /me twice with the same Clerk user returns the same local User."""
-    clerk_id = "user_mock_456"
+    """Calling /me twice returns the same user."""
     email = "grace@example.com"
     name = "Grace Hopper"
 
-    patcher = _mock_clerk_auth(client.app, clerk_id, email, name)
+    token = _register_and_get_token(client, email, "hopperpass", name)
 
-    try:
-        first = client.get(
-            "/api/auth/me",
-            headers={"Authorization": "Bearer t1"},
-        )
-        second = client.get(
-            "/api/auth/me",
-            headers={"Authorization": "Bearer t2"},
-        )
-    finally:
-        patcher.stop()
+    first = client.get("/api/auth/me", headers={"Authorization": f"Bearer {token}"})
+    second = client.get("/api/auth/me", headers={"Authorization": f"Bearer {token}"})
 
     assert first.status_code == 200
     assert second.status_code == 200
     assert first.json()["id"] == second.json()["id"]
     assert first.json()["email"] == email
+
+
+def test_update_me_onboarding(client: TestClient) -> None:
+    """PATCH /me updates onboarding_completed."""
+    token = _register_and_get_token(client, "update@example.com", "updateme", "Update Me")
+
+    resp = client.patch(
+        "/api/auth/me",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"onboarding_completed": True},
+    )
+    assert resp.status_code == 200
+    assert resp.json()["onboarding_completed"] is True

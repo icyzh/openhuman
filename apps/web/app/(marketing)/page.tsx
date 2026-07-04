@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import Image from "next/image";
-import { useAuth } from "@clerk/nextjs";
+import { useIsSignedIn } from "@/hooks/use-auth";
 import { FlowerDivider } from "@/components/flower-divider";
 import { ArrowDiagonal, ArrowRight } from "@/components/ui/button-arrow";
 import { Bubble, BubbleContent } from "@/components/ui/bubble";
@@ -35,7 +35,7 @@ const steps = [
 ];
 
 export default function Home() {
-  const { isSignedIn, isLoaded } = useAuth();
+  const { isSignedIn, isLoaded } = useIsSignedIn();
 
   return (
     <main className="flex min-h-screen flex-col items-center">

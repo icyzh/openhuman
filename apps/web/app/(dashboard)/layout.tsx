@@ -2,7 +2,7 @@
 
 import { Suspense, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { useAuth } from "@clerk/nextjs";
+import { useIsSignedIn } from "@/hooks/use-auth";
 import { useOrganizationsListOrganizations } from "@repo/api-client";
 import { useOrgStore } from "@/stores/org";
 import { DashboardShell } from "@/app/(dashboard)/_components/dashboard-shell";
@@ -15,7 +15,7 @@ function OrgInitializer({ children }: { children: React.ReactNode }) {
   const orgName = useOrgStore((s) => s.orgName);
   const setOrg = useOrgStore((s) => s.setOrg);
   const clearOrg = useOrgStore((s) => s.clearOrg);
-  const { isSignedIn, isLoaded } = useAuth();
+  const { isSignedIn, isLoaded } = useIsSignedIn();
 
   const {
     data: orgs,

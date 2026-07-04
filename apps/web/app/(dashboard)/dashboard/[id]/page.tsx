@@ -81,8 +81,6 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 
-import { useAuth } from "@clerk/nextjs";
-
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
 function slackInstallUrl(employeeId: string, orgId: string): string {
@@ -152,7 +150,10 @@ export default function EmployeeDetailPage() {
   const router = useRouter();
   const queryClient = useQueryClient();
   const orgId = useOrgStore((s) => s.orgId);
-  const { getToken } = useAuth();
+  const getToken = useCallback(async () => {
+    if (typeof window === "undefined") return null;
+    return localStorage.getItem("oh_token");
+  }, []);
 
   // Dialog visibility states
   const [showDiscordDialog, setShowDiscordDialog] = useState(false);

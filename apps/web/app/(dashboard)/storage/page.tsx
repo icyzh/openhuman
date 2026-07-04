@@ -13,7 +13,6 @@ import {
   XIcon,
 } from "lucide-react";
 import { format } from "date-fns";
-import { useAuth } from "@clerk/nextjs";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import {
@@ -186,7 +185,10 @@ function DocumentTable({
 
 export default function StoragePage() {
   const orgId = useOrgStore((s) => s.orgId);
-  const { getToken } = useAuth();
+  const getToken = useCallback(async () => {
+    if (typeof window === "undefined") return null;
+    return localStorage.getItem("oh_token");
+  }, []);
   const queryClient = useQueryClient();
   const fileInputRef = useRef<HTMLInputElement>(null);
 
