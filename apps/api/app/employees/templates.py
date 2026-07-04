@@ -40,7 +40,7 @@ HR_TEMPLATE = EmployeeTemplate(
         "1. Search team memory before answering policy questions.\n"
         "2. Never disclose salary tables or compensation packages in public channels.\n"
         "3. Be supportive, empathetic, and professional.\n"
-        "4. Use Pitchdeck MCP to generate HR-related content and create_document to save as PDF/PPTX files uploaded to the chat.\n"
+        "4. Use Canva MCP to generate HR-related presentations and create_document to save as PDF/PPTX files uploaded to the chat.\n"
         "Use tools when you need information. Don't use tools for simple greetings or opinions."
     ),
     allowed_tools=[
@@ -49,7 +49,7 @@ HR_TEMPLATE = EmployeeTemplate(
         "escalate_to_human", "escalate_to_human_interactive",
         "create_document",
     ],
-    allowed_mcp_servers=["gmail", "gamma", "pitchdeck", "visualization"],
+    allowed_mcp_servers=["gmail", "gamma", "canva", "visualization"],
     suggested_mcp_servers=["bamboohr", "rippling"],
     guardrail_config={"block_pii": True, "require_citations": False},
     suggested_duties=[
@@ -74,7 +74,7 @@ SALES_TEMPLATE = EmployeeTemplate(
         "1. Use web search to find information about prospect companies and market trends.\n"
         "2. Be energetic, concise, and focused on clear call-to-actions (CTAs).\n"
         "3. Do not negotiate pricing or offer custom discounts without human approval.\n"
-        "4. Use Pitchdeck MCP to generate pitch decks and sales content, then create_document to save as PDF/PPTX files uploaded to the chat.\n"
+        "4. Use Canva MCP to generate pitch decks and sales content, then create_document to save as PDF/PPTX files uploaded to the chat.\n"
         "Use tools when you need information. Don't use tools for simple greetings or opinions."
     ),
     allowed_tools=[
@@ -83,7 +83,7 @@ SALES_TEMPLATE = EmployeeTemplate(
         "escalate_to_human", "escalate_to_human_interactive",
         "create_document",
     ],
-    allowed_mcp_servers=["web_search", "gmail", "gamma", "pitchdeck", "visualization"],
+    allowed_mcp_servers=["web_search", "gmail", "gamma", "canva", "visualization"],
     suggested_mcp_servers=["hubspot", "salesforce", "github"],
     guardrail_config={"block_pii": False, "require_citations": False},
     suggested_duties=[
@@ -115,7 +115,7 @@ SUPPORT_TEMPLATE = EmployeeTemplate(
         "escalate_to_human", "escalate_to_human_interactive",
         "create_document",
     ],
-    allowed_mcp_servers=["web_search", "gmail", "gamma", "pitchdeck", "visualization"],
+    allowed_mcp_servers=["web_search", "gmail", "gamma", "canva", "visualization"],
     suggested_mcp_servers=["github", "zendesk", "intercom", "gmail"],
     guardrail_config={"block_pii": True, "require_citations": False},
     suggested_duties=[
@@ -137,12 +137,12 @@ GENERAL_TEMPLATE = EmployeeTemplate(
         "calculations, and general tasks.\n\n"
         "Available tools:\n"
         "- search_web / calculate / fetch_url for research\n"
-        "- Pitchdeck MCP — generate pitch deck / slide content for any business\n"
+        "- Canva MCP — generate pitch deck / slide content and designs for any business\n"
         "- create_document — save content as .pdf / .pptx / .txt file (uploaded to chat)\n"
         "- search_memory / ingest_memory for team knowledge\n\n"
         "Rules:\n"
         "1. Use web search for current events and facts.\n"
-        "2. Use Pitchdeck MCP to create pitch deck content, then create_document to save as .pptx.\n"
+        "2. Use Canva MCP to create pitch deck content, then create_document to save as .pptx.\n"
         "3. Use create_document to deliver reports and files — uploaded automatically.\n"
         "4. Be concise, helpful, and accurate.\n"
         "Use tools when you need information."
@@ -153,7 +153,7 @@ GENERAL_TEMPLATE = EmployeeTemplate(
         "check_background_task", "cancel_background_task",
         "create_document",
     ],
-    allowed_mcp_servers=["web_search", "gmail", "gamma", "pitchdeck", "visualization"],
+    allowed_mcp_servers=["web_search", "gmail", "gamma", "canva", "visualization"],
     suggested_mcp_servers=["github", "gmail"],
     guardrail_config={"block_pii": False, "require_citations": False},
     suggested_duties=[
@@ -186,7 +186,7 @@ LEGAL_COMPLIANCE_TEMPLATE = EmployeeTemplate(
         "escalate_to_human", "escalate_to_human_interactive",
         "create_document",
     ],
-    allowed_mcp_servers=["web_search", "gmail", "gamma", "pitchdeck", "visualization"],
+    allowed_mcp_servers=["web_search", "gmail", "gamma", "canva", "visualization"],
     suggested_mcp_servers=["docusign", "github", "gmail"],
     guardrail_config={"block_pii": True, "require_citations": True},
     suggested_duties=[

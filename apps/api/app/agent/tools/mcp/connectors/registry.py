@@ -20,7 +20,7 @@ from app.agent.tools.mcp.connectors.notion import NOTION_CONNECTOR  # noqa: E402
 from app.agent.tools.mcp.connectors.vercel import VERCEL_CONNECTOR  # noqa: E402
 from app.agent.tools.mcp.connectors.gmail import GMAIL_CONNECTOR  # noqa: E402
 from app.agent.tools.mcp.connectors.gamma import GAMMA_CONNECTOR  # noqa: E402
-from app.agent.tools.mcp.connectors.pitchdeck import PITCHDECK_CONNECTOR  # noqa: E402
+from app.agent.tools.mcp.connectors.canva import CANVA_CONNECTOR  # noqa: E402
 from app.agent.tools.mcp.connectors.visualization import VISUALIZATION_CONNECTOR  # noqa: E402
 from app.agent.tools.mcp.connectors.web_search import WEB_SEARCH_CONNECTOR  # noqa: E402
 
@@ -32,5 +32,5 @@ REGISTRY: dict[str, ConnectorSpec] = {
     "gmail": GMAIL_CONNECTOR,
     "gamma": GAMMA_CONNECTOR,
     "visualization": VISUALIZATION_CONNECTOR,
-    "pitchdeck": PITCHDECK_CONNECTOR,
+    "canva": CANVA_CONNECTOR,
 }

@@ -1377,9 +1377,9 @@ export default function EmployeeDetailPage() {
               description: "Create scatter plots, 3D graphs, histograms, heatmaps, line charts, and network diagrams — no API key required.",
             },
             {
-              slug: "pitchdeck",
-              name: "Pitch Deck AI",
-              description: "Free AI pitch deck generator — investor-ready slides and fundraising metrics.",
+              slug: "canva",
+              name: "Canva",
+              description: "Generate and export pitch decks and designs — free on every Canva plan.",
             },
           ].map((item) => {
             const isConnected = mcpConnectionsData?.connections?.some(

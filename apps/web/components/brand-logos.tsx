@@ -30,6 +30,7 @@ import {
   SiJira,
   SiLinear,
   SiShopify,
+  SiCanvas,
 } from "react-icons/si";
 import { FaAws, FaSalesforce, FaSlack } from "react-icons/fa6";
 
@@ -89,6 +90,7 @@ export const BRAND_LOGOS: Record<string, React.ComponentType<React.SVGProps<SVGS
   notion: (props) => <SiNotion fill="currentColor" className="text-black dark:text-white" {...props} />,
   vercel: (props) => <SiVercel fill="currentColor" className="text-black dark:text-white" {...props} />,
   gamma: GammaLogo,
+  canva: (props) => <SiCanvas fill="#00C4CC" {...props} />,
   slack: SlackLogo,
   postgres: (props) => <SiPostgresql fill="#4169E1" {...props} />,
   "brave-search": (props) => <SiBrave fill="#FF1B2D" {...props} />,

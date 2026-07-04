@@ -148,6 +148,8 @@ class Settings(BaseSettings):
     vercel_client_secret: str = ""
     github_client_id: str = ""
     github_client_secret: str = ""
+    canva_client_id: str = ""
+    canva_client_secret: str = ""
 
     # The full redirect URI that OAuth providers send the user back to after consent.
     # Must be registered with each provider's OAuth app config.
@@ -187,6 +189,11 @@ class Settings(BaseSettings):
             creds["github"] = {
                 "client_id": ghid,
                 "client_secret": _val(self.github_client_secret, "GITHUB_CLIENT_SECRET"),
+            }
+        if cvid := _val(self.canva_client_id, "CANVA_CLIENT_ID"):
+            creds["canva"] = {
+                "client_id": cvid,
+                "client_secret": _val(self.canva_client_secret, "CANVA_CLIENT_SECRET"),
             }
         return creds
 

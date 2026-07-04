@@ -18,12 +18,6 @@ RUN apt-get update -qq \
  && apt-get install -y -qq --no-install-recommends fonts-dejavu-core git curl ca-certificates \
  && rm -rf /var/lib/apt/lists/*
 
-RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
- && apt-get update -qq \
- && apt-get install -y -qq --no-install-recommends nodejs \
- && npm install -g github:dmytro-ustynov/pptx-generator-mcp \
- && rm -rf /var/lib/apt/lists/*
-
 WORKDIR /app
 
 COPY --from=builder /app/.venv /app/.venv
