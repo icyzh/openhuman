@@ -360,19 +360,37 @@ class BaseSlackBot:
         channel: str,
         files: list[dict],
         thread_ts: str | None = None,
-    ) -> None:
+    ) -> list[str]:
         """Upload agent-generated files (charts, PDFs, etc.) to the Slack channel."""
+        failed_uploads: list[str] = []
         for f in files:
+            filename = f.get("filename", "unknown")
             try:
                 await self.app.client.files_upload_v2(
                     channel=channel,
                     file=base64.b64decode(f["data"]),
-                    filename=f["filename"],
-                    title=f.get("title", f["filename"]),
+                    filename=filename,
+                    title=f.get("title", filename),
                     thread_ts=thread_ts,
                 )
+            except SlackApiError as e:
+                failed_uploads.append(filename)
+                logger.exception(
+                    "Slack rejected file upload %s (channel=%s thread_ts=%s error=%s)",
+                    filename,
+                    channel,
+                    thread_ts,
+                    e.response.get("error") if getattr(e, "response", None) else str(e),
+                )
             except Exception:
-                logger.exception("Failed to upload file %s", f.get("filename", "unknown"))
+                failed_uploads.append(filename)
+                logger.exception(
+                    "Failed to upload file %s (channel=%s thread_ts=%s)",
+                    filename,
+                    channel,
+                    thread_ts,
+                )
+        return failed_uploads
 
     # ------------------------------------------------------------------
     # Phase 6 — interactive escalation button handlers
@@ -506,9 +524,22 @@ class BaseSlackBot:
                 logger.exception("Failed to post escalation response to user thread")
 
         if files and channel_id:
-            await self._send_files(
+            failed_uploads = await self._send_files(
                 channel=channel_id, files=files, thread_ts=thread_ts,
             )
+            if failed_uploads:
+                try:
+                    await client.chat_postMessage(
+                        channel=channel_id,
+                        thread_ts=thread_ts,
+                        text=(
+                            "I created the file, but Slack blocked the attachment upload for: "
+                            + ", ".join(failed_uploads)
+                            + ". Please reconnect the Slack bot and try again."
+                        ),
+                    )
+                except Exception:
+                    logger.exception("Failed to post file upload failure notice")
 
         logger.info(
             "%s escalation resolved: approved=%s by=%s thread=%s",
@@ -676,7 +707,20 @@ class EmployeeSlackBot(BaseSlackBot):
         )
 
         if files:
-            await self._send_files(channel=channel, files=files, thread_ts=thread_ts)
+            failed_uploads = await self._send_files(
+                channel=channel, files=files, thread_ts=thread_ts,
+            )
+            if failed_uploads:
+                await say(
+                    text=(
+                        "I created the file, but Slack blocked the attachment upload for: "
+                        + ", ".join(failed_uploads)
+                        + ". Please reconnect this Slack bot and try again."
+                    ),
+                    channel=channel,
+                    thread_ts=thread_ts,
+                    username=employee_name,
+                )
 
     # ------------------------------------------------------------------
     # Channel allowlist
@@ -848,7 +892,20 @@ class WorkspaceSlackBot(BaseSlackBot):
         )
 
         if files:
-            await self._send_files(channel=channel, files=files, thread_ts=thread_ts)
+            failed_uploads = await self._send_files(
+                channel=channel, files=files, thread_ts=thread_ts,
+            )
+            if failed_uploads:
+                await say(
+                    text=(
+                        "I created the file, but Slack blocked the attachment upload for: "
+                        + ", ".join(failed_uploads)
+                        + ". Please reconnect this Slack bot and try again."
+                    ),
+                    channel=channel,
+                    thread_ts=thread_ts,
+                    username=employee_name,
+                )
 
     # ------------------------------------------------------------------
     # Channel → Employee routing

@@ -8,7 +8,7 @@ from fastapi.testclient import TestClient
 from itsdangerous import URLSafeTimedSerializer
 
 from app.core.config import settings
-from app.gateway.slack_oauth import router as slack_oauth_router
+from app.gateway.slack_oauth import _SLACK_BOT_SCOPES, router as slack_oauth_router
 
 
 def _make_state_token(employee_id: str, org_id: str, redirect_to: str | None = None) -> str:
@@ -30,6 +30,12 @@ def client() -> Generator[TestClient, None, None]:
     test_app.include_router(slack_oauth_router)
     with TestClient(test_app) as test_client:
         yield test_client
+
+
+def test_slack_install_scopes_include_file_uploads() -> None:
+    """Slack installs must request file scopes so generated PDFs can attach in chat."""
+    assert "files:write" in _SLACK_BOT_SCOPES
+    assert "files:read" in _SLACK_BOT_SCOPES
 
 
 @pytest.mark.anyio

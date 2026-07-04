@@ -67,6 +67,8 @@ _SLACK_BOT_SCOPES = [
     "groups:history",
     "chat:write",
     "chat:write.customize",
+    "files:read",
+    "files:write",
     "im:history",
     "im:write",
     "mpim:history",
