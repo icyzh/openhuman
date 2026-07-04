@@ -4,8 +4,8 @@ from app.agent.tools.mcp.connectors.notion import NOTION_CONNECTOR
 from app.agent.tools.mcp.connectors.pitchdeck import PITCHDECK_CONNECTOR
 from app.agent.tools.mcp.connectors.registry import REGISTRY
 from app.agent.tools.mcp.connectors.spec import ConnectorSpec
-from app.agent.tools.mcp.connectors.vega import VEGA_CONNECTOR
 from app.agent.tools.mcp.connectors.vercel import VERCEL_CONNECTOR
+from app.agent.tools.mcp.connectors.visualization import VISUALIZATION_CONNECTOR
 from app.agent.tools.mcp.connectors.web_search import WEB_SEARCH_CONNECTOR
 from app.agent.tools.mcp.connectors.gamma import GAMMA_CONNECTOR
 
@@ -16,8 +16,8 @@ __all__ = [
     "GMAIL_CONNECTOR",
     "NOTION_CONNECTOR",
     "PITCHDECK_CONNECTOR",
-    "VEGA_CONNECTOR",
     "VERCEL_CONNECTOR",
+    "VISUALIZATION_CONNECTOR",
     "WEB_SEARCH_CONNECTOR",
     "GAMMA_CONNECTOR",
 ]

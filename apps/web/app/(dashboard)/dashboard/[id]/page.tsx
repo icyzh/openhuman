@@ -425,7 +425,7 @@ export default function EmployeeDetailPage() {
         slug,
         data: { credential: "", org_wide: false },
       });
-      toast.success(`${slug === "vega" ? "Vega" : slug} connected successfully!`);
+      toast.success(`${slug} connected successfully!`);
       refetchMcpConnections();
     } catch (err: any) {
       toast.error(err?.response?.data?.detail || `Failed to connect ${slug}`);
@@ -1372,9 +1372,9 @@ export default function EmployeeDetailPage() {
               description: "Query search engines for web index answers.",
             },
             {
-              slug: "vega",
-              name: "Vega Charts",
-              description: "Free interactive charts via Vega-Lite — no API key required.",
+              slug: "visualization",
+              name: "Visualization Charts",
+              description: "Create scatter plots, 3D graphs, histograms, heatmaps, line charts, and network diagrams — no API key required.",
             },
             {
               slug: "pitchdeck",

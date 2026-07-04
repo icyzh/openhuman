@@ -545,6 +545,18 @@ class MCPClientManager:
         # stores the more explicit "streamable_http" label.
         transport = "http" if spec.transport == "streamable_http" else spec.transport
 
+        # ── stdio transport ──────────────────────────────────────────
+        if transport == "stdio":
+            config: dict[str, Any] = {
+                "command": spec.command,
+                "args": spec.args,
+                "transport": "stdio",
+                "timeout": spec.request_timeout_seconds,
+            }
+            # stdio has no URL or headers
+            return config
+
+        # ── streamable_http / sse ────────────────────────────────────
         config: dict[str, Any] = {
             "url": spec.base_url,
             "transport": transport,
