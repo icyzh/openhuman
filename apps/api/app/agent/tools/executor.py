@@ -3,6 +3,7 @@ import base64
 import ipaddress
 import logging
 import operator
+import os
 import re
 import socket
 from datetime import UTC, datetime
@@ -317,13 +318,29 @@ def _file_marker(filename: str, content_type: str, data_b64: str, title: str = "
     return f"{_FILE_MARKER_PREFIX}{payload}"
 
 
+def _find_dejavu_font(style: str = "") -> str:
+    filenames = {"": "DejaVuSans.ttf", "B": "DejaVuSans-Bold.ttf"}
+    filename = filenames.get(style, f"DejaVuSans{style}.ttf")
+    search_paths = [
+        "/usr/share/fonts/truetype/dejavu",
+        "/usr/share/fonts/TTF",
+        "/usr/share/fonts/dejavu",
+        "/usr/local/share/fonts",
+    ]
+    for base in search_paths:
+        path = os.path.join(base, filename)
+        if os.path.exists(path):
+            return path
+    raise FileNotFoundError(f"DejaVu font file not found: {filename}")
+
+
 def _generate_pdf(content: str) -> bytes:
     from fpdf import FPDF
     pdf = FPDF()
     pdf.add_page()
     pdf.set_auto_page_break(auto=True, margin=20)
-    pdf.add_font("DejaVu", "", "/usr/share/fonts/TTF/DejaVuSans.ttf", uni=True)
-    pdf.add_font("DejaVu", "B", "/usr/share/fonts/TTF/DejaVuSans-Bold.ttf", uni=True)
+    pdf.add_font("DejaVu", "", _find_dejavu_font(""), uni=True)
+    pdf.add_font("DejaVu", "B", _find_dejavu_font("B"), uni=True)
     pdf.set_font("DejaVu", size=11)
     for line in content.split("\n"):
         line = line.strip()
