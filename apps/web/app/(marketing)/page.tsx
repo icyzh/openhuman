@@ -184,11 +184,22 @@ export default function Home() {
         <h2 className="text-center text-7xl font-base tracking-tight text-foreground">
           The Platform
         </h2>
-        <div className="mt-12 overflow-hidden rounded-xl border border-border bg-card/40 p-1.5">
-          <div className="flex aspect-video w-full items-center justify-center rounded-lg border border-border text-sm text-muted-foreground/40">
-            Platform screenshot placeholder
-          </div>
+        <p className="mx-auto mt-4 max-w-2xl text-center text-base text-muted-foreground">
+          One place to manage every AI employee — deploy, monitor, and scale
+          your team from a single dashboard.
+        </p>
+
+        <div className="mt-12 overflow-hidden rounded-xl border border-border shadow-lg shadow-foreground/5">
+          <Image
+            src="/platform-dashboard.png"
+            alt="OpenHuman platform dashboard showing team management with AI employee cards, sidebar navigation, and agent deployment interface"
+            width={2400}
+            height={1350}
+            className="h-auto w-full"
+            priority
+          />
         </div>
+
         <p className="mx-auto mt-16 max-w-lg text-center text-sm leading-relaxed text-muted-foreground/70">
           OpenHuman uses Cognee to power agent memory — giving each specialist
           persistent context across every conversation, call, and thread.
