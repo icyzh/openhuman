@@ -176,6 +176,151 @@ export default function Home() {
         </p>
       </section>
 
+      <section className="w-full max-w-7xl px-6 pb-24">
+        <h2 className="text-center text-7xl font-base tracking-tight text-foreground">
+          Everything your AI employee can do
+        </h2>
+        <p className="mx-auto mt-4 max-w-2xl text-center text-base text-muted-foreground">
+          Not a chatbot. Not an agent. A full AI teammate with persistent memory,
+          autonomous execution, and real deliverables.
+        </p>
+        <div className="mx-auto mt-12 grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
+          {[
+            {
+              icon: (
+                <svg
+                  width="24"
+                  height="24"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.5"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
+                  <path d="M7 22V11M2 13v7a2 2 0 0 0 2 2h12l3.5-6.5L18 15h-5l1-7a3 3 0 0 0-6 0l-1 5Z" />
+                  <path d="M15 6h1a4 4 0 0 1 4 4v2" />
+                  <path d="M18 4h1a6 6 0 0 1 6 6v3" />
+                  <path d="M20 2h1a8 8 0 0 1 8 8v4" />
+                </svg>
+              ),
+              title: "Memory that sticks",
+              description:
+                "React with a thumbs up to make them remember anything important. Thumbs down to forget it. They automatically surface what's relevant for every conversation. No setup, no training, no config.",
+              color: "#3b82f6",
+            },
+            {
+              icon: (
+                <svg
+                  width="24"
+                  height="24"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.5"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
+                  <path d="M13 2 3 14h9l-1 8 10-12h-9l1-8z" />
+                </svg>
+              ),
+              title: "Autonomous duties",
+              description:
+                "Assign them ongoing responsibilities and they execute automatically. Daily standup summaries, weekly competitive reports, monthly board decks. Set it once and they handle the rest without reminders.",
+              color: "#f59e0b",
+            },
+            {
+              icon: (
+                <svg
+                  width="24"
+                  height="24"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.5"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
+                  <circle cx="12" cy="12" r="10" />
+                  <polyline points="12 6 12 12 16 14" />
+                </svg>
+              ),
+              title: "Works 24/7",
+              description:
+                "Your AI employees never sleep, never take PTO, and never miss a beat. They monitor what matters around the clock, jump in when needed, and keep things moving while your team is offline.",
+              color: "#10b981",
+            },
+            {
+              icon: (
+                <svg
+                  width="24"
+                  height="24"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.5"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
+                  <path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z" />
+                  <polyline points="14 2 14 8 20 8" />
+                  <line x1="16" y1="13" x2="8" y2="13" />
+                  <line x1="16" y1="17" x2="8" y2="17" />
+                  <polyline points="10 9 9 9 8 9" />
+                </svg>
+              ),
+              title: "Deliverables on demand",
+              description:
+                "Pitch decks, board reports, campaign briefs, PRDs — they create polished, professional deliverables from a simple prompt. Every output is backed by your data and their memory of your preferences.",
+              color: "#8b5cf6",
+            },
+            {
+              icon: (
+                <svg
+                  width="24"
+                  height="24"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.5"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
+                  <path d="M12 3c-1.7 0-3.5.6-4.9 1.7-2.6 2-3.8 5.5-2.9 8.9.7 2.8 3.1 5 5.9 5.5 1 .1 1.9.1 2.9-.1 2.5-.5 4.6-2 5.7-4.2.4-.9.7-1.8.8-2.8" />
+                  <path d="M19 3v8h-8" />
+                  <path d="M16.5 6.5 19 3" />
+                </svg>
+              ),
+              title: "Gets smarter over time",
+              description:
+                "Every interaction makes them sharper. They learn your team's communication style, your company's context, and your personal preferences — becoming more valuable and more autonomous with every passing week.",
+              color: "#ec4899",
+            },
+          ].map((feature) => (
+            <div
+              key={feature.title}
+              className="group flex flex-col rounded-xl border border-border bg-card/60 p-6 transition-colors hover:border-foreground/20 hover:bg-card"
+            >
+              <div
+                className="flex h-10 w-10 items-center justify-center rounded-lg"
+                style={{
+                  backgroundColor: `${feature.color}18`,
+                  color: feature.color,
+                }}
+              >
+                {feature.icon}
+              </div>
+              <h3 className="mt-4 text-base font-semibold text-foreground">
+                {feature.title}
+              </h3>
+              <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
+                {feature.description}
+              </p>
+            </div>
+          ))}
+        </div>
+      </section>
+
       <div className="flex w-full justify-center py-12">
         <FlowerDivider width={320} />
       </div>

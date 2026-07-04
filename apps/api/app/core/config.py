@@ -57,6 +57,10 @@ class Settings(BaseSettings):
 
     # Encryption for bot tokens (AES-256-GCM, 32-byte key)
     encryption_key: str = ""
+    encryption_key_previous: str = ""
+    """Comma-separated list of previous encryption keys for key rotation.
+    When the current key fails to decrypt, each previous key is tried as a fallback.
+    Tokens decrypted with an old key should be re-encrypted on next write."""
 
     # Cognee memory (embedded — SQLite + LanceDB + Kuzu)
     cognee_data_dir: str = "/app/cognee_data"
@@ -199,6 +203,23 @@ class Settings(BaseSettings):
                     "encryption_key must be set to a 32-byte (64 hex character) "
                     "string in production"
                 )
+            if self.encryption_key_previous.strip():
+                for i, part in enumerate(self.encryption_key_previous.split(",")):
+                    part = part.strip()
+                    if not part:
+                        continue
+                    try:
+                        key = bytes.fromhex(part)
+                    except ValueError:
+                        raise ValueError(
+                            f"encryption_key_previous entry #{i + 1} {part!r} "
+                            f"is not valid hex"
+                        ) from None
+                    if len(key) != 32:
+                        raise ValueError(
+                            f"encryption_key_previous entry #{i + 1} {part!r} "
+                            f"is not 32 bytes (64 hex chars)"
+                        )
         return self
 
 
