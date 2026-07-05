@@ -28,7 +28,13 @@ import logging
 
 from sqlalchemy import select
 
-from app.channel_assignments.models import ChannelAssignment  # noqa: F401 — registers relationship target
+# Import all model modules FIRST so SQLAlchemy can resolve relationship
+# strings before mapper configuration runs (mirrors app/main.py).
+import app.auth.models  # noqa: F401,E402
+import app.channel_assignments.models  # noqa: F401,E402
+import app.documents.models  # noqa: F401,E402
+import app.organizations.models  # noqa: F401,E402
+
 from app.core.database import async_session_factory
 from app.employees.models import Employee
 from app.employees.service import _build_employee_profile
