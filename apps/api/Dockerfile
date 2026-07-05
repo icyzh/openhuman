@@ -26,6 +26,7 @@ ENV PATH="/app/.venv/bin:$PATH"
 COPY app     /app/app
 COPY alembic /app/alembic
 COPY alembic.ini /app/
+COPY scripts /app/scripts
 
 RUN mkdir -p /app/uploads /app/cognee_data/data /app/cognee_data/system \
                            /app/cognee_data/cache /app/cognee_data/logs
