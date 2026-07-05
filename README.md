@@ -2,6 +2,9 @@
 
 Build your own AI employees. Give them a domain of expertise, feed them your company's knowledge, and they work alongside your team. They remember, they learn over time, and they communicate and actively participate in conversations.
 
+## Architecture
+![alt text](arch.jpeg)
+
 ## What you can build
 
 - **A support engineer** that's read every past ticket, runbook, and postmortem. When an incident hits, it recalls exactly how you fixed it last time.
@@ -25,27 +28,4 @@ They actively communicate through the channels your team already uses: Discord a
 - **Remembers your people.** Your employees know who's who: who led that project, who wrote that doc, who to ask about the payment stack. Org knowledge that doesn't walk out the door.
 - **Infinite power via MCP.** Equip any employee with [Model Context Protocol](https://modelcontextprotocol.io) tools: calendars, CRMs, issue trackers, databases, APIs. They gain the ability to *do*, not just answer. Every tool you connect multiplies what they're capable of.
 
-## Architecture
-![alt text](arch.jpeg)
 
-
-### Setup
-
-```sh
-# Clone and install
-git clone https://github.com/vimzh/openhuman.git
-cd openhuman
-bun install
-make ai-venv
-make ai-sync
-
-# Copy environment variables
-cp .env.example .env
-# Fill in your keys: DISCORD_BOT_TOKEN, SLACK_BOT_TOKEN, DEEPGRAM_API_KEY, DATABASE_URL, etc.
-
-# Start the Python AI service
-make ai-dev
-
-# Start the TypeScript apps
-bun run dev
-```
