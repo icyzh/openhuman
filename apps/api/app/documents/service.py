@@ -256,8 +256,11 @@ async def get_documents_stats(
         select(
             func.count(Document.id).label("total_files"),
             func.coalesce(func.sum(Document.size_bytes), 0).label("total_size_bytes"),
-            func.sum(
-                case((Document.employee_id.is_(None), 1), else_=0)
+            func.coalesce(
+                func.sum(
+                    case((Document.employee_id.is_(None), 1), else_=0)
+                ),
+                0,
             ).label("org_files_count"),
             func.coalesce(
                 func.sum(
@@ -265,8 +268,11 @@ async def get_documents_stats(
                 ),
                 0,
             ).label("org_size_bytes"),
-            func.sum(
-                case((Document.employee_id.isnot(None), 1), else_=0)
+            func.coalesce(
+                func.sum(
+                    case((Document.employee_id.isnot(None), 1), else_=0)
+                ),
+                0,
             ).label("agent_files_count"),
             func.coalesce(
                 func.sum(
