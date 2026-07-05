@@ -28,6 +28,7 @@ import logging
 
 from sqlalchemy import select
 
+from app.channel_assignments.models import ChannelAssignment  # noqa: F401 — registers relationship target
 from app.core.database import async_session_factory
 from app.employees.models import Employee
 from app.employees.service import _build_employee_profile
