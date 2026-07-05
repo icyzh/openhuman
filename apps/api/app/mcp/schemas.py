@@ -17,6 +17,7 @@ class ConnectorStatus(BaseModel):
     auth_type: str
     auth_types: list[str] = []
     docs_url: str = ""
+    requires_custom_server_url: bool = False
     is_connected: bool = False
     connection_count: int = 0
 
@@ -43,6 +44,10 @@ class McpConnectionCreate(BaseModel):
     auth_type: str | None = Field(
         default=None,
         description="Optional auth mode to use for this pasted credential (for example pat_bearer)",
+    )
+    server_url: str | None = Field(
+        default=None,
+        description="Optional per-connection MCP server URL for connectors that require an org-specific endpoint",
     )
     scopes: list[str] | None = None
     org_wide: bool = Field(

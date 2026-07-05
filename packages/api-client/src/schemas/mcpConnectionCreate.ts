@@ -15,6 +15,8 @@ export interface McpConnectionCreate {
   credential: string;
   /** Optional auth mode to use for this pasted credential (for example pat_bearer) */
   auth_type?: string | null;
+  /** Optional per-connection MCP server URL for connectors that require an org-specific endpoint */
+  server_url?: string | null;
   scopes?: McpConnectionCreateScopes;
   /** If True, connection is available to all employees in the org */
   org_wide?: boolean;

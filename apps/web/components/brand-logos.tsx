@@ -87,6 +87,16 @@ export const PitchDeckLogo = (props: React.SVGProps<SVGSVGElement>) => (
   </svg>
 );
 
+// n8n logo-inspired connected nodes mark
+export const N8nLogo = (props: React.SVGProps<SVGSVGElement>) => (
+  <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" {...props}>
+    <path d="M8 8L12 12M12 12L8 16M12 12H16" stroke="#EA4B71" strokeWidth="2" strokeLinecap="round" />
+    <circle cx="8" cy="8" r="3" fill="#FF6D5A" />
+    <circle cx="8" cy="16" r="3" fill="#FF4F64" />
+    <circle cx="16" cy="12" r="3" fill="#D63CF0" />
+  </svg>
+);
+
 // Twilio Logo custom SVG
 export const TwilioLogo = (props: React.SVGProps<SVGSVGElement>) => (
   <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" {...props}>
@@ -101,6 +111,7 @@ export const BRAND_LOGOS: Record<string, React.ComponentType<React.SVGProps<SVGS
   notion: (props) => <SiNotion fill="currentColor" className="text-black dark:text-white" {...props} />,
   vercel: (props) => <SiVercel fill="currentColor" className="text-black dark:text-white" {...props} />,
   gamma: GammaLogo,
+  n8n: N8nLogo,
   canva: (props) => <SiCanvas fill="#00C4CC" {...props} />,
   pitchdeck: PitchDeckLogo,
   slack: SlackLogo,

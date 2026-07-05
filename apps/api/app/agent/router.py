@@ -177,6 +177,7 @@ async def _resolve_mcp_tools(
                 connector=spec,
                 credentials=creds,
                 auth_type=row.auth_type,
+                server_url=row.server_url,
             )
         )
 

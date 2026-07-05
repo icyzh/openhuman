@@ -42,20 +42,16 @@ class ConnectorSpec(BaseModel):
         description="Additional authentication methods users can choose from "
         "(e.g., ``['pat_bearer']`` for connectors that primarily use OAuth2)",
     )
+    requires_custom_server_url: bool = Field(
+        default=False,
+        description="If True, the org must provide a per-connection MCP server URL instead of using a fixed registry base_url",
+    )
 
     # Auth metadata (used by the OAuth router for oauth2 connectors)
-    authorize_url: str | None = Field(
-        default=None, description="OAuth2 authorization endpoint"
-    )
-    token_url: str | None = Field(
-        default=None, description="OAuth2 token exchange endpoint"
-    )
-    default_scopes: list[str] = Field(
-        default_factory=list, description="Recommended OAuth scopes"
-    )
-    docs_url: str = Field(
-        default="", description="Link to developer docs for this MCP server"
-    )
+    authorize_url: str | None = Field(default=None, description="OAuth2 authorization endpoint")
+    token_url: str | None = Field(default=None, description="OAuth2 token exchange endpoint")
+    default_scopes: list[str] = Field(default_factory=list, description="Recommended OAuth scopes")
+    docs_url: str = Field(default="", description="Link to developer docs for this MCP server")
 
     # Tool filtering — restrict tools server-side before they reach the LLM
     default_tool_allow: list[str] | None = Field(
@@ -101,6 +97,8 @@ class ConnectorSpec(BaseModel):
         if self.transport == "stdio":
             if not self.command:
                 raise ValueError("stdio connectors require a command")
-        elif not self.base_url:
-            raise ValueError("HTTP/SSE connectors require a base_url")
+        elif not self.base_url and not self.requires_custom_server_url:
+            raise ValueError(
+                "HTTP/SSE connectors require a base_url unless they require a custom server URL"
+            )
         return self

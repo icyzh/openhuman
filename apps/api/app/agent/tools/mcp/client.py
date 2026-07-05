@@ -243,6 +243,7 @@ class ResolvedConnection:
     connector: ConnectorSpec
     credentials: str | None  # decrypted API key / PAT / access token
     auth_type: str | None = None  # stored connection auth mode; falls back to connector default
+    server_url: str | None = None  # stored per-connection endpoint override for dynamic connectors
 
 
 class MCPClientManager:
@@ -502,10 +503,11 @@ class MCPClientManager:
         if conn.connector.transport not in {"streamable_http", "sse"}:
             return True
 
-        if not conn.connector.base_url:
+        target_url = conn.server_url or conn.connector.base_url
+        if not target_url:
             return False
 
-        host = urlparse(conn.connector.base_url).hostname
+        host = urlparse(target_url).hostname
         if not host:
             return False
 
@@ -542,8 +544,12 @@ class MCPClientManager:
         transport = "http" if spec.transport == "streamable_http" else spec.transport
 
         # ── streamable_http / sse ────────────────────────────────────
+        target_url = conn.server_url or spec.base_url
+        if not target_url:
+            raise ValueError(f"Connector '{spec.slug}' requires a server URL but none was provided")
+
         config: dict[str, Any] = {
-            "url": spec.base_url,
+            "url": target_url,
             "transport": transport,
             "timeout": spec.request_timeout_seconds,
         }

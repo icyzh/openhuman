@@ -172,6 +172,7 @@ export default function EmployeeDetailPage() {
   const [clickupToken, setClickupToken] = useState("");
   const [mcpTokenValue, setMcpTokenValue] = useState("");
   const [mcpTokenSlug, setMcpTokenSlug] = useState("");
+  const [mcpServerUrl, setMcpServerUrl] = useState("");
 
   // Local connection states loaded from localStorage
   const [localDiscordConnected, setLocalDiscordConnected] = useState(false);
@@ -409,6 +410,12 @@ export default function EmployeeDetailPage() {
     const connInfo = connectors?.find((c) => c.slug === mcpTokenSlug);
     const authTypes = connInfo?.auth_types ?? [connInfo?.auth_type ?? ""];
     const selectedAuthType = authTypes.find((t) => t === "pat_bearer" || t === "api_key_header") ?? undefined;
+    const requiresCustomServerUrl = connInfo?.requires_custom_server_url === true;
+
+    if (requiresCustomServerUrl && !mcpServerUrl.trim()) {
+      toast.error("Please enter the MCP server URL");
+      return;
+    }
 
     try {
       await createMcpConnectionMutation.mutateAsync({
@@ -418,18 +425,20 @@ export default function EmployeeDetailPage() {
         data: {
           credential: mcpTokenValue.trim(),
           auth_type: selectedAuthType,
+          server_url: requiresCustomServerUrl ? mcpServerUrl.trim() : undefined,
           org_wide: false,
         },
       });
       setShowMcpTokenDialog(false);
       setMcpTokenValue("");
       setMcpTokenSlug("");
+      setMcpServerUrl("");
       toast.success(`${mcpTokenSlug === "notion" ? "Notion" : mcpTokenSlug} connected successfully!`);
       refetchMcpConnections();
     } catch (err: any) {
       toast.error(err?.response?.data?.detail || `Failed to connect ${mcpTokenSlug}`);
     }
-  }, [orgId, empId, mcpTokenSlug, mcpTokenValue, connectors, createMcpConnectionMutation, refetchMcpConnections]);
+  }, [orgId, empId, mcpTokenSlug, mcpTokenValue, mcpServerUrl, connectors, createMcpConnectionMutation, refetchMcpConnections]);
 
   const handleConnectNoAuth = useCallback(async (slug: string) => {
     if (!orgId || !empId) return;
@@ -1382,6 +1391,11 @@ export default function EmployeeDetailPage() {
               description: "Generate documents, slides, and websites using AI.",
             },
             {
+              slug: "n8n",
+              name: "n8n Workflows",
+              description: "Trigger, inspect, and build workflows on your n8n MCP-enabled instance.",
+            },
+            {
               slug: "web_search",
               name: "Brave Web Search",
               description: "Query search engines for web index answers.",
@@ -1473,6 +1487,7 @@ export default function EmployeeDetailPage() {
                       onClick={() => {
                         setMcpTokenSlug(item.slug);
                         setMcpTokenValue("");
+                        setMcpServerUrl("");
                         setShowMcpTokenDialog(true);
                       }}
                       className="inline-flex h-6 items-center justify-center rounded bg-primary px-2.5 text-[10px] font-bold text-primary-foreground hover:bg-primary/90 shrink-0"
@@ -1612,15 +1627,47 @@ export default function EmployeeDetailPage() {
       </Dialog>
 
       {/* MCP Token Paste Dialog */}
-      <Dialog open={showMcpTokenDialog} onOpenChange={setShowMcpTokenDialog}>
+      <Dialog
+        open={showMcpTokenDialog}
+        onOpenChange={(open) => {
+          setShowMcpTokenDialog(open);
+          if (!open) {
+            setMcpTokenValue("");
+            setMcpTokenSlug("");
+            setMcpServerUrl("");
+          }
+        }}
+      >
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>Connect {mcpTokenSlug === "notion" ? "Notion" : mcpTokenSlug === "vercel" ? "Vercel" : mcpTokenSlug}</DialogTitle>
+            <DialogTitle>
+              Connect {mcpTokenSlug === "notion"
+                ? "Notion"
+                : mcpTokenSlug === "vercel"
+                  ? "Vercel"
+                  : mcpTokenSlug === "n8n"
+                    ? "n8n"
+                    : mcpTokenSlug}
+            </DialogTitle>
             <DialogDescription>
-              Paste your access token to allow {employee?.name} to use this integration.
+              {mcpTokenSlug === "n8n"
+                ? `Paste your n8n MCP server URL and access token to allow ${employee?.name} to use this integration.`
+                : `Paste your access token to allow ${employee?.name} to use this integration.`}
             </DialogDescription>
           </DialogHeader>
           <div className="flex flex-col gap-4 py-4">
+            {connectors?.find((c) => c.slug === mcpTokenSlug)?.requires_custom_server_url ? (
+              <div className="flex flex-col gap-1.5">
+                <Label htmlFor="mcp-server-url">MCP Server URL</Label>
+                <Input
+                  id="mcp-server-url"
+                  type="url"
+                  placeholder="https://your-n8n-instance.com/mcp-server/http"
+                  value={mcpServerUrl}
+                  onChange={(e) => setMcpServerUrl(e.target.value)}
+                />
+              </div>
+            ) : null}
             <div className="flex flex-col gap-1.5">
               <Label htmlFor="mcp-token">Access Token</Label>
               <Input
@@ -1628,8 +1675,12 @@ export default function EmployeeDetailPage() {
                 type="password"
                 placeholder={
                   mcpTokenSlug === "notion"
-                    ? "ntn_..." : mcpTokenSlug === "vercel"
-                      ? "xxxxxxxxxxxx" : "Enter token…"
+                    ? "ntn_..."
+                    : mcpTokenSlug === "vercel"
+                      ? "xxxxxxxxxxxx"
+                      : mcpTokenSlug === "n8n"
+                        ? "n8n_pat_..."
+                        : "Enter token…"
                 }
                 value={mcpTokenValue}
                 onChange={(e) => setMcpTokenValue(e.target.value)}
@@ -1637,7 +1688,7 @@ export default function EmployeeDetailPage() {
             </div>
           </div>
           <DialogFooter>
-            <Button variant="ghost" onClick={() => setShowMcpTokenDialog(false)}>
+            <Button variant="ghost" onClick={() => { setShowMcpTokenDialog(false); setMcpServerUrl(""); }}>
               Cancel
             </Button>
             <Button

@@ -58,7 +58,7 @@ interface McpServer {
   category: Category;
   authType: "OAuth2" | "API Key" | "PAT" | "None";
   url: string;
-  icon: React.ComponentType<any>;
+  icon: React.ComponentType<React.SVGProps<SVGSVGElement>>;
   iconColor: string;
   author: string;
   rating: number;
@@ -127,6 +127,21 @@ const MCP_SERVERS: McpServer[] = [
     tools: ["list_deployments", "get_project_logs", "add_env_variable", "redeploy_project"],
     resources: ["vercel://projects", "vercel://domains"],
     mcpJsonConfig: `{\n  "mcpServers": {\n    "vercel": {\n      "command": "npx",\n      "args": ["-y", "@modelcontextprotocol/server-vercel"]\n    }\n  }\n}`
+  },
+  {
+    id: "n8n",
+    name: "n8n MCP Instance",
+    description: "Search workflows, trigger executions, and build or edit workflows on your own n8n instance.",
+    category: "Productivity",
+    authType: "PAT",
+    url: "https://your-n8n-instance.com/mcp-server/http",
+    icon: Puzzle,
+    iconColor: "from-rose-500 to-fuchsia-600",
+    author: "n8n",
+    rating: 4.8,
+    tools: ["search_workflows", "execute_workflow", "create_workflow", "update_workflow"],
+    resources: ["n8n://workflows", "n8n://projects"],
+    mcpJsonConfig: `{\n  "mcpServers": {\n    "n8n": {\n      "type": "http",\n      "url": "https://your-n8n-instance.com/mcp-server/http",\n      "headers": {\n        "Authorization": "Bearer YOUR_N8N_MCP_ACCESS_TOKEN"\n      }\n    }\n  }\n}`
   },
   {
     id: "gamma",
@@ -610,11 +625,28 @@ const MCP_SERVERS: McpServer[] = [
   }
 ];
 
+const getErrorMessage = (err: unknown): string => {
+  if (typeof err === "object" && err !== null) {
+    const maybeResponse = (err as { response?: { data?: { detail?: string } } }).response;
+    if (typeof maybeResponse?.data?.detail === "string") {
+      return maybeResponse.data.detail;
+    }
+    const maybeMessage = (err as { message?: string }).message;
+    if (typeof maybeMessage === "string") {
+      return maybeMessage;
+    }
+  }
+  return "";
+};
+
 export default function McpMarketplacePage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedCategory, setSelectedCategory] = useState<Category>("All");
   const [selectedServer, setSelectedServer] = useState<McpServer | null>(null);
   const [connectingSlugs, setConnectingSlugs] = useState<Set<string>>(new Set());
+  const [credentialServer, setCredentialServer] = useState<McpServer | null>(null);
+  const [credentialValue, setCredentialValue] = useState("");
+  const [credentialServerUrl, setCredentialServerUrl] = useState("");
 
   const orgId = useOrgStore((s) => s.orgId);
 
@@ -653,7 +685,24 @@ export default function McpMarketplacePage() {
       return;
     }
 
+    const connectorInfo = connectors?.find((c) => c.slug === server.id);
+    const authTypes = connectorInfo?.auth_types ?? [connectorInfo?.auth_type ?? ""];
+    const supportsPaste = authTypes.some((t) => t === "pat_bearer" || t === "api_key_header");
+    const isNoneAuth = connectorInfo?.auth_type === "none";
     const isCurrentlyInstalled = connectedSlugs.has(server.id);
+
+    if (!isCurrentlyInstalled && !connectorInfo) {
+      toast.error(`${server.name} is listed in the directory, but in-app connection is not wired yet.`);
+      return;
+    }
+
+    if (!isCurrentlyInstalled && supportsPaste) {
+      setCredentialServer(server);
+      setCredentialValue("");
+      setCredentialServerUrl("");
+      return;
+    }
+
     setConnectingSlugs((prev) => new Set(prev).add(server.id));
 
     try {
@@ -665,15 +714,13 @@ export default function McpMarketplacePage() {
         });
         await invalidate();
         toast.success(`Revoked access to ${server.name}.`);
-      } else {
-        if (server.authType === "OAuth2") {
-          const token = typeof window !== "undefined" ? localStorage.getItem("oh_token") : null;
-          const apiUrl = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
-          const url = `${apiUrl}/api/organizations/${orgId}/employees/${empId}/mcp-connections/${server.id}/install?token=${encodeURIComponent(token ?? "")}&redirect_to=${encodeURIComponent(window.location.href)}`;
-          window.location.href = url;
-          return;
-        }
-
+      } else if (connectorInfo?.auth_type === "oauth2") {
+        const token = typeof window !== "undefined" ? localStorage.getItem("oh_token") : null;
+        const apiUrl = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
+        const url = `${apiUrl}/api/organizations/${orgId}/employees/${empId}/mcp-connections/${server.id}/install?token=${encodeURIComponent(token ?? "")}&redirect_to=${encodeURIComponent(window.location.href)}`;
+        window.location.assign(url);
+        return;
+      } else if (isNoneAuth) {
         await createMutation.mutateAsync({
           orgId,
           empId,
@@ -687,8 +734,8 @@ export default function McpMarketplacePage() {
         await invalidate();
         toast.success(`Successfully installed and authorized ${server.name}!`);
       }
-    } catch (err: any) {
-      toast.error(`Failed to ${isCurrentlyInstalled ? "disconnect" : "connect"} ${server.name}. ${err?.message ?? ""}`);
+    } catch (err: unknown) {
+      toast.error(`Failed to ${isCurrentlyInstalled ? "disconnect" : "connect"} ${server.name}. ${getErrorMessage(err)}`);
     } finally {
       setConnectingSlugs((prev) => {
         const next = new Set(prev);
@@ -698,6 +745,55 @@ export default function McpMarketplacePage() {
     }
   };
 
+  const handleCredentialConnect = useCallback(async () => {
+    if (!orgId || !empId || !credentialServer) {
+      return;
+    }
+
+    const connectorInfo = connectors?.find((c) => c.slug === credentialServer.id);
+    const authTypes = connectorInfo?.auth_types ?? [connectorInfo?.auth_type ?? ""];
+    const selectedAuthType = authTypes.find((t) => t === "pat_bearer" || t === "api_key_header") ?? undefined;
+    const requiresCustomServerUrl = connectorInfo?.requires_custom_server_url === true;
+
+    if (!credentialValue.trim()) {
+      toast.error("Please enter a credential.");
+      return;
+    }
+    if (requiresCustomServerUrl && !credentialServerUrl.trim()) {
+      toast.error("Please enter the MCP server URL.");
+      return;
+    }
+
+    setConnectingSlugs((prev) => new Set(prev).add(credentialServer.id));
+    try {
+      await createMutation.mutateAsync({
+        orgId,
+        empId,
+        slug: credentialServer.id,
+        data: {
+          credential: credentialValue.trim(),
+          auth_type: selectedAuthType,
+          server_url: requiresCustomServerUrl ? credentialServerUrl.trim() : undefined,
+          scopes: [],
+          org_wide: false,
+        },
+      });
+      await invalidate();
+      toast.success(`Successfully installed and authorized ${credentialServer.name}!`);
+      setCredentialServer(null);
+      setCredentialValue("");
+      setCredentialServerUrl("");
+    } catch (err: unknown) {
+      toast.error(`Failed to connect ${credentialServer.name}. ${getErrorMessage(err)}`);
+    } finally {
+      setConnectingSlugs((prev) => {
+        const next = new Set(prev);
+        next.delete(credentialServer.id);
+        return next;
+      });
+    }
+  }, [orgId, empId, credentialServer, credentialValue, credentialServerUrl, connectors, createMutation, invalidate]);
+
   // Filter servers
   const filteredServers = useMemo(() => {
     return MCP_SERVERS.filter((server) => {
@@ -705,7 +801,7 @@ export default function McpMarketplacePage() {
         server.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
         server.description.toLowerCase().includes(searchQuery.toLowerCase()) ||
         server.author.toLowerCase().includes(searchQuery.toLowerCase());
-      
+
       const matchesCategory = selectedCategory === "All" || server.category === selectedCategory;
 
       return matchesSearch && matchesCategory;
@@ -865,13 +961,58 @@ export default function McpMarketplacePage() {
           <Puzzle className="size-12 text-muted-foreground/40 mb-3 animate-pulse" />
           <h3 className="font-semibold text-lg text-foreground">No MCP servers found</h3>
           <p className="text-sm text-muted-foreground max-w-sm mt-1">
-            We couldn't find any MCP servers matching "{searchQuery}" under the category {selectedCategory}. Try revising your terms.
+            We could not find any MCP servers matching <code>{searchQuery}</code> under the category {selectedCategory}. Try revising your terms.
           </p>
           <Button variant="outline" size="sm" onClick={() => { setSearchQuery(""); setSelectedCategory("All"); }} className="mt-4">
             Reset Filters
           </Button>
         </div>
       )}
+
+      <Dialog open={credentialServer !== null} onOpenChange={(open) => { if (!open) { setCredentialServer(null); setCredentialValue(""); setCredentialServerUrl(""); } }}>
+        {credentialServer ? (
+          <DialogContent className="sm:max-w-md">
+            <DialogHeader>
+              <DialogTitle>Connect {credentialServer.name}</DialogTitle>
+              <DialogDescription>
+                {connectors?.find((c) => c.slug === credentialServer.id)?.requires_custom_server_url
+                  ? "Paste your MCP server URL and access token to connect this integration."
+                  : "Paste your access token or API key to connect this integration."}
+              </DialogDescription>
+            </DialogHeader>
+            <div className="flex flex-col gap-4 py-4">
+              {connectors?.find((c) => c.slug === credentialServer.id)?.requires_custom_server_url ? (
+                <div className="flex flex-col gap-1.5">
+                  <span className="text-sm font-medium">MCP Server URL</span>
+                  <Input
+                    type="url"
+                    placeholder="https://your-n8n-instance.com/mcp-server/http"
+                    value={credentialServerUrl}
+                    onChange={(e) => setCredentialServerUrl(e.target.value)}
+                  />
+                </div>
+              ) : null}
+              <div className="flex flex-col gap-1.5">
+                <span className="text-sm font-medium">Credential</span>
+                <Input
+                  type="password"
+                  placeholder={credentialServer.id === "n8n" ? "n8n_pat_..." : "Enter token…"}
+                  value={credentialValue}
+                  onChange={(e) => setCredentialValue(e.target.value)}
+                />
+              </div>
+            </div>
+            <DialogFooter>
+              <Button variant="ghost" onClick={() => { setCredentialServer(null); setCredentialValue(""); setCredentialServerUrl(""); }}>
+                Cancel
+              </Button>
+              <Button onClick={handleCredentialConnect} disabled={credentialServer ? connectingSlugs.has(credentialServer.id) : false}>
+                {credentialServer && connectingSlugs.has(credentialServer.id) ? "Connecting..." : "Connect"}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        ) : null}
+      </Dialog>
 
       {/* MCP Server Inspector Dialog Modal */}
       <Dialog open={selectedServer !== null} onOpenChange={(open) => !open && setSelectedServer(null)}>

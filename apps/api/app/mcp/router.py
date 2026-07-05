@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from urllib.parse import quote_plus
+from urllib.parse import quote_plus, urlparse
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -34,6 +34,25 @@ from app.mcp.schemas import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+def _normalize_server_url(server_url: str | None) -> str | None:
+    if server_url is None:
+        return None
+
+    normalized = server_url.strip()
+    if not normalized:
+        return None
+
+    parsed = urlparse(normalized)
+    if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="server_url must be a valid http(s) MCP endpoint URL",
+        )
+
+    return normalized.rstrip("/")
+
 
 # -- org/employee-scoped CRUD router -----------------------------------------
 router = APIRouter(prefix="/api/organizations/{org_id}", tags=["mcp"])
@@ -91,6 +110,7 @@ async def list_mcp_connectors(
                 auth_type=spec.auth_type,
                 auth_types=auth_types,
                 docs_url=spec.docs_url,
+                requires_custom_server_url=spec.requires_custom_server_url,
                 is_connected=slug in connected_slugs,
                 connection_count=counts.get(slug, 0),
             )
@@ -213,6 +233,13 @@ async def create_mcp_connection(
                 ),
             )
 
+    normalized_server_url = _normalize_server_url(data.server_url)
+    if spec.requires_custom_server_url and not normalized_server_url:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Connector '{slug}' requires a server_url (for example your n8n MCP endpoint)",
+        )
+
     # Encrypt the credential
     try:
         encrypted = encrypt_token(data.credential)
@@ -235,6 +262,7 @@ async def create_mcp_connection(
     if existing is not None:
         existing.credentials_enc = encrypted
         existing.auth_type = selected_auth_type
+        existing.server_url = normalized_server_url
         existing.scopes = data.scopes
         existing.status = "connected"
         conn = existing
@@ -246,6 +274,7 @@ async def create_mcp_connection(
             connector_slug=slug,
             auth_type=selected_auth_type,
             credentials_enc=encrypted,
+            server_url=normalized_server_url,
             scopes=data.scopes,
             status="connected",
             connected_by_user_id=_current_user.id,
@@ -279,6 +308,7 @@ async def create_mcp_connection(
                 "action": "create" if is_new else "update",
                 "connector_slug": slug,
                 "auth_type": selected_auth_type,
+                "server_url": normalized_server_url,
             },
         )
     except Exception:

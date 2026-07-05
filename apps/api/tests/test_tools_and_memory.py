@@ -530,6 +530,33 @@ class TestMcpClientManager:
         assert config["url"] == "https://mcp.notion.com/mcp"
         assert config["headers"]["Authorization"] == "Bearer ntn_test"
 
+    def test_build_server_config_uses_connection_server_url_override(self):
+        from app.agent.tools.mcp.client import MCPClientManager, ResolvedConnection
+        from app.agent.tools.mcp.connectors.spec import ConnectorSpec
+
+        spec = ConnectorSpec(
+            slug="n8n",
+            name="n8n",
+            description="n8n MCP",
+            transport="streamable_http",
+            auth_type="pat_bearer",
+            requires_custom_server_url=True,
+        )
+
+        mgr = MCPClientManager()
+        config = mgr._build_server_config(  # type: ignore[attr-defined]
+            ResolvedConnection(
+                slug="n8n",
+                connector=spec,
+                credentials="n8n_token",
+                server_url="https://demo.n8n.cloud/mcp-server/http",
+            )
+        )
+
+        assert config["transport"] == "http"
+        assert config["url"] == "https://demo.n8n.cloud/mcp-server/http"
+        assert config["headers"]["Authorization"] == "Bearer n8n_token"
+
     def test_build_server_config_supports_stdio_connectors(self):
         from app.agent.tools.mcp.client import MCPClientManager, ResolvedConnection
         from app.agent.tools.mcp.connectors.spec import ConnectorSpec
