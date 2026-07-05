@@ -157,6 +157,7 @@ async def create_employee(
         employee_type=data.employee_type,
         duties=data.duties,
         memory_policy=data.memory_policy,
+        escalation_policy=data.escalation_policy,
     )
     db.add(emp)
     await db.flush()
