@@ -117,7 +117,12 @@ async def create_system_user(tenant_id: str, admin_id: str) -> dict:
 
 
 async def create_employee_user(tenant_id: str, employee_name: str) -> dict:
-    """Create Cognee user for an AI employee. No parent_user_id.
+    """Idempotent: get-or-create the Cognee user for an AI employee.
+
+    The email is derived deterministically from (tenant_id, employee_name), so
+    re-provisioning an employee with the same name in the same org (e.g. after
+    a prior employee with that name was deleted, or on a retried request)
+    reuses the existing Cognee user instead of raising UserAlreadyExists.
 
     Caller must call add_user_to_tenant() afterwards.
     """
@@ -125,10 +130,12 @@ async def create_employee_user(tenant_id: str, employee_name: str) -> dict:
         r"[^a-z0-9-]", "-", employee_name.lower().replace(" ", "-")
     )[:64]
     email = f"ai-{safe_name}+{tenant_id}@openhuman.internal"
-    user = await _cognee_create_user(
-        email=email,
-        password=secrets.token_urlsafe(69),
-    )
+    user = await _cognee_get_user_by_email(email)
+    if user is None:
+        user = await _cognee_create_user(
+            email=email,
+            password=secrets.token_urlsafe(69),
+        )
     return {"id": str(user.id), "email": user.email}
 
 
