@@ -40,6 +40,10 @@ class McpConnectionCreate(BaseModel):
     """Payload for creating/updating an API-key or PAT MCP connection."""
 
     credential: str = Field(..., description="The API key, PAT, or access token to store")
+    auth_type: str | None = Field(
+        default=None,
+        description="Optional auth mode to use for this pasted credential (for example pat_bearer)",
+    )
     scopes: list[str] | None = None
     org_wide: bool = Field(
         default=False, description="If True, connection is available to all employees in the org"

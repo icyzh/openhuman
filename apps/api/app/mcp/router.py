@@ -1,5 +1,4 @@
-"""MCP management API — list registry, connect/disconnect, OAuth flows.
-"""
+"""MCP management API — list registry, connect/disconnect, OAuth flows."""
 
 from __future__ import annotations
 
@@ -26,7 +25,6 @@ from app.mcp.oauth import (
     _frontend_redirect,
     build_authorize_url,
     exchange_code,
-    refresh_access_token,
 )
 from app.mcp.schemas import (
     ConnectorStatus,
@@ -82,7 +80,9 @@ async def list_mcp_connectors(
 
     output: list[ConnectorStatus] = []
     for slug, spec in REGISTRY.items():
-        auth_types = [spec.auth_type] + [a for a in spec.alternative_auth_types if a != spec.auth_type]
+        auth_types = [spec.auth_type] + [
+            a for a in spec.alternative_auth_types if a != spec.auth_type
+        ]
         output.append(
             ConnectorStatus(
                 slug=slug,
@@ -119,10 +119,7 @@ async def list_employee_mcp_connections(
         select(McpConnection).where(
             McpConnection.org_id == org_id,
             McpConnection.status == "connected",
-            (
-                (McpConnection.employee_id == emp_id)
-                | (McpConnection.employee_id.is_(None))
-            ),
+            ((McpConnection.employee_id == emp_id) | (McpConnection.employee_id.is_(None))),
         )
     )
     rows = list(result.scalars().all())
@@ -171,12 +168,42 @@ async def create_mcp_connection(
         )
 
     supported_for_paste = {"api_key_header", "pat_bearer", "none"}
-    if spec.auth_type not in supported_for_paste:
-        # Check whether the connector lists an alternative auth type that
-        # supports credential paste (PAT / API key).
-        if not any(
-            alt in supported_for_paste for alt in spec.alternative_auth_types
-        ):
+    supported_auth_types = [
+        spec.auth_type,
+        *[alt for alt in spec.alternative_auth_types if alt != spec.auth_type],
+    ]
+    paste_auth_types = [
+        auth_type for auth_type in supported_auth_types if auth_type in supported_for_paste
+    ]
+
+    selected_auth_type = data.auth_type
+    if selected_auth_type:
+        if selected_auth_type not in supported_auth_types:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=(
+                    f"Connector '{slug}' does not support auth_type='{selected_auth_type}'. "
+                    f"Supported auth types: {', '.join(supported_auth_types)}"
+                ),
+            )
+        if selected_auth_type not in supported_for_paste:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=(
+                    f"auth_type='{selected_auth_type}' for connector '{slug}' "
+                    "requires the OAuth install flow."
+                ),
+            )
+    else:
+        if spec.auth_type in supported_for_paste:
+            selected_auth_type = spec.auth_type
+        elif paste_auth_types:
+            # This endpoint is specifically for pasted credentials, so when a
+            # connector's primary auth is OAuth but it supports PAT/API-key
+            # auth as an alternative (for example Notion), default to the first
+            # paste-friendly mode.
+            selected_auth_type = paste_auth_types[0]
+        else:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail=(
@@ -207,7 +234,7 @@ async def create_mcp_connection(
 
     if existing is not None:
         existing.credentials_enc = encrypted
-        existing.auth_type = spec.auth_type
+        existing.auth_type = selected_auth_type
         existing.scopes = data.scopes
         existing.status = "connected"
         conn = existing
@@ -217,7 +244,7 @@ async def create_mcp_connection(
             org_id=org_id,
             employee_id=None if data.org_wide else emp_id,
             connector_slug=slug,
-            auth_type=spec.auth_type,
+            auth_type=selected_auth_type,
             credentials_enc=encrypted,
             scopes=data.scopes,
             status="connected",
@@ -251,7 +278,7 @@ async def create_mcp_connection(
             metadata={
                 "action": "create" if is_new else "update",
                 "connector_slug": slug,
-                "auth_type": spec.auth_type,
+                "auth_type": selected_auth_type,
             },
         )
     except Exception:
@@ -506,11 +533,9 @@ async def mcp_oauth_callback(
     try:
         encrypted_access = encrypt_token(token_data["access_token"])
         encrypted_refresh = (
-            encrypt_token(token_data["refresh_token"])
-            if token_data.get("refresh_token")
-            else None
+            encrypt_token(token_data["refresh_token"]) if token_data.get("refresh_token") else None
         )
-    except Exception as exc:
+    except Exception:
         logger.exception("Failed to encrypt OAuth tokens for %s", connector_slug)
         return _frontend_redirect(
             employee_id,

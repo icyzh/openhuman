@@ -270,10 +270,12 @@ class TestCreateDocument:
         from app.agent.tools.executor import create_document
 
         long_token = "A" * 5000
-        result = create_document.invoke({
-            "content": long_token,
-            "filename": "document.pdf",
-        })
+        result = create_document.invoke(
+            {
+                "content": long_token,
+                "filename": "document.pdf",
+            }
+        )
 
         assert result.startswith("__OPENHUMAN_FILE__")
         assert '"filename": "document.pdf"' in result
@@ -286,10 +288,12 @@ class TestCreateDocument:
 
         monkeypatch.setattr(executor, "_generate_pdf", _boom)
 
-        result = executor.create_document.invoke({
-            "content": "hello world",
-            "filename": "document.pdf",
-        })
+        result = executor.create_document.invoke(
+            {
+                "content": "hello world",
+                "filename": "document.pdf",
+            }
+        )
 
         assert result.startswith("__OPENHUMAN_FILE__")
         assert '"filename": "document.txt"' in result
@@ -391,9 +395,7 @@ class TestFetchUrlSsrF:
     async def test_blocks_metadata_endpoint(self):
         from app.agent.tools.executor import fetch_url
 
-        result = await fetch_url.ainvoke(
-            {"url": "http://169.254.169.254/latest/meta-data"}
-        )
+        result = await fetch_url.ainvoke({"url": "http://169.254.169.254/latest/meta-data"})
         assert "Cannot fetch URL" in result
 
 
@@ -500,6 +502,34 @@ class TestMcpClientManager:
         assert config["url"] == "https://api.githubcopilot.com/mcp/"
         assert config["headers"]["Authorization"] == "Bearer ghp_test"
 
+    def test_build_server_config_uses_connection_auth_type_override(self):
+        from app.agent.tools.mcp.client import MCPClientManager, ResolvedConnection
+        from app.agent.tools.mcp.connectors.spec import ConnectorSpec
+
+        spec = ConnectorSpec(
+            slug="notion",
+            name="Notion",
+            description="Notion MCP",
+            base_url="https://mcp.notion.com/mcp",
+            transport="streamable_http",
+            auth_type="oauth2",
+            alternative_auth_types=["pat_bearer"],
+        )
+
+        mgr = MCPClientManager()
+        config = mgr._build_server_config(  # type: ignore[attr-defined]
+            ResolvedConnection(
+                slug="notion",
+                connector=spec,
+                credentials="ntn_test",
+                auth_type="pat_bearer",
+            )
+        )
+
+        assert config["transport"] == "http"
+        assert config["url"] == "https://mcp.notion.com/mcp"
+        assert config["headers"]["Authorization"] == "Bearer ntn_test"
+
     def test_build_server_config_supports_stdio_connectors(self):
         from app.agent.tools.mcp.client import MCPClientManager, ResolvedConnection
         from app.agent.tools.mcp.connectors.spec import ConnectorSpec
@@ -524,9 +554,10 @@ class TestMcpClientManager:
 
     @pytest.mark.anyio
     async def test_connect_skips_unresolvable_host_before_adapter_startup(self):
+        from unittest.mock import patch
+
         from app.agent.tools.mcp.client import MCPClientManager, ResolvedConnection
         from app.agent.tools.mcp.connectors.spec import ConnectorSpec
-        from unittest.mock import patch
 
         spec = ConnectorSpec(
             slug="pitchdeck",
@@ -539,9 +570,11 @@ class TestMcpClientManager:
 
         mgr = MCPClientManager()
         with patch.object(mgr, "_is_server_reachable", return_value=False):
-            tools = await mgr.connect([
-                ResolvedConnection(slug="pitchdeck", connector=spec, credentials=None),
-            ])
+            tools = await mgr.connect(
+                [
+                    ResolvedConnection(slug="pitchdeck", connector=spec, credentials=None),
+                ]
+            )
 
         assert tools == []
 
@@ -600,9 +633,7 @@ class TestMcpClientManager:
         )
 
         # Mock MultiServerMCPClient to return our tools per server
-        with patch(
-            "app.agent.tools.mcp.client.MultiServerMCPClient"
-        ) as mock_client_cls:
+        with patch("app.agent.tools.mcp.client.MultiServerMCPClient") as mock_client_cls:
             mock_instance = MagicMock()
             mock_instance.get_tools = AsyncMock(
                 side_effect=lambda server_name: {
@@ -612,9 +643,11 @@ class TestMcpClientManager:
             mock_client_cls.return_value = mock_instance
 
             mgr = MCPClientManager()
-            tools = await mgr.connect([
-                ResolvedConnection(slug="github", connector=spec, credentials="ghp_test"),
-            ])
+            tools = await mgr.connect(
+                [
+                    ResolvedConnection(slug="github", connector=spec, credentials="ghp_test"),
+                ]
+            )
 
         # Should have 1 tool from our mock
         assert len(tools) == 1
@@ -653,9 +686,7 @@ class TestMcpClientManager:
             auth_type="none",
         )
 
-        with patch(
-            "app.agent.tools.mcp.client.MultiServerMCPClient"
-        ) as mock_client_cls:
+        with patch("app.agent.tools.mcp.client.MultiServerMCPClient") as mock_client_cls:
             mock_instance = MagicMock()
             mock_instance.get_tools = AsyncMock(
                 side_effect=lambda server_name: {
@@ -666,10 +697,14 @@ class TestMcpClientManager:
             mock_client_cls.return_value = mock_instance
 
             mgr = MCPClientManager()
-            tools = await mgr.connect([
-                ResolvedConnection(slug="github", connector=github_spec, credentials="ghp_test"),
-                ResolvedConnection(slug="web_search", connector=web_spec, credentials=None),
-            ])
+            tools = await mgr.connect(
+                [
+                    ResolvedConnection(
+                        slug="github", connector=github_spec, credentials="ghp_test"
+                    ),
+                    ResolvedConnection(slug="web_search", connector=web_spec, credentials=None),
+                ]
+            )
 
         assert len(tools) == 2
         tool_names = {t.name for t in tools}
@@ -710,23 +745,24 @@ class TestMcpClientManager:
             auth_type="none",
         )
 
-        with patch(
-            "app.agent.tools.mcp.client.MultiServerMCPClient"
-        ) as mock_client_cls:
+        with patch("app.agent.tools.mcp.client.MultiServerMCPClient") as mock_client_cls:
             mock_instance = MagicMock()
             mock_instance.get_tools = AsyncMock(
                 side_effect=lambda server_name: (
-                    [search] if server_name == "good"
+                    [search]
+                    if server_name == "good"
                     else (_ for _ in ()).throw(RuntimeError("connection refused"))
                 )
             )
             mock_client_cls.return_value = mock_instance
 
             mgr = MCPClientManager()
-            tools = await mgr.connect([
-                ResolvedConnection(slug="good", connector=good_spec, credentials=None),
-                ResolvedConnection(slug="bad", connector=bad_spec, credentials=None),
-            ])
+            tools = await mgr.connect(
+                [
+                    ResolvedConnection(slug="good", connector=good_spec, credentials=None),
+                    ResolvedConnection(slug="bad", connector=bad_spec, credentials=None),
+                ]
+            )
 
         # Good server loaded, bad one skipped
         assert len(tools) == 1
@@ -747,9 +783,11 @@ class TestMcpClientManager:
         )
 
         mgr = MCPClientManager()
-        tools = await mgr.connect([
-            ResolvedConnection(slug="unknown", connector=unknown_spec, credentials=None),
-        ])
+        tools = await mgr.connect(
+            [
+                ResolvedConnection(slug="unknown", connector=unknown_spec, credentials=None),
+            ]
+        )
 
         # Should still resolve (the manager doesn't check REGISTRY — that's
         # the router's job). This test verifies we don't crash on any valid
@@ -876,7 +914,6 @@ class TestConnectorRegistry:
                 auth_type=auth,  # type: ignore[arg-type]
             )
             assert spec.auth_type == auth
-
 
 
 # =============================================================================
@@ -1023,9 +1060,7 @@ class TestSearchWeb:
                 "href": "https://learnpython.com",
             },
         ]
-        with patch(
-            "app.agent.tools.executor.DDGS"
-        ) as mock_ddgs:
+        with patch("app.agent.tools.executor.DDGS") as mock_ddgs:
             mock_instance = MagicMock()
             mock_instance.text.return_value = mock_results
             mock_ddgs.return_value.__enter__.return_value = mock_instance
@@ -1033,6 +1068,7 @@ class TestSearchWeb:
             # search_web is sync-wrapped as langchain tool, invoke runs the
             # async function inside the tool's event-loop handling
             import asyncio
+
             result = asyncio.run(search_web.ainvoke({"query": "python"}))
 
         assert "Python Programming" in result
@@ -1041,14 +1077,13 @@ class TestSearchWeb:
     def test_no_results(self):
         from app.agent.tools.executor import search_web
 
-        with patch(
-            "app.agent.tools.executor.DDGS"
-        ) as mock_ddgs:
+        with patch("app.agent.tools.executor.DDGS") as mock_ddgs:
             mock_instance = MagicMock()
             mock_instance.text.return_value = []
             mock_ddgs.return_value.__enter__.return_value = mock_instance
 
             import asyncio
+
             result = asyncio.run(search_web.ainvoke({"query": "xyznonexistent"}))
         assert result == "No results found."
 
@@ -1060,6 +1095,7 @@ class TestSearchWeb:
             side_effect=RuntimeError("network error"),
         ):
             import asyncio
+
             result = asyncio.run(search_web.ainvoke({"query": "test"}))
         assert "Error performing web search" in result
 

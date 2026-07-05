@@ -13,6 +13,8 @@ import type { McpConnectionCreateScopes } from './mcpConnectionCreateScopes';
 export interface McpConnectionCreate {
   /** The API key, PAT, or access token to store */
   credential: string;
+  /** Optional auth mode to use for this pasted credential (for example pat_bearer) */
+  auth_type?: string | null;
   scopes?: McpConnectionCreateScopes;
   /** If True, connection is available to all employees in the org */
   org_wide?: boolean;

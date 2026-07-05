@@ -242,6 +242,7 @@ class ResolvedConnection:
     slug: str
     connector: ConnectorSpec
     credentials: str | None  # decrypted API key / PAT / access token
+    auth_type: str | None = None  # stored connection auth mode; falls back to connector default
 
 
 class MCPClientManager:
@@ -317,9 +318,7 @@ class MCPClientManager:
                     continue
                 server_configs[conn.slug] = self._build_server_config(conn)
             except Exception:
-                logger.exception(
-                    "Failed to build config for MCP connector '%s'", conn.slug
-                )
+                logger.exception("Failed to build config for MCP connector '%s'", conn.slug)
                 cb.record_failure()
 
         if skipped_circuits:
@@ -362,9 +361,7 @@ class MCPClientManager:
                 cb.record_failure()
                 continue
             except Exception:
-                logger.exception(
-                    "Failed to load tools from MCP server '%s'", slug
-                )
+                logger.exception("Failed to load tools from MCP server '%s'", slug)
                 cb.record_failure()
                 continue
 
@@ -373,9 +370,7 @@ class MCPClientManager:
                 try:
                     renamed = raw.model_copy(update={"name": new_name})
                 except Exception:
-                    logger.warning(
-                        "Could not copy/rename tool '%s' — skipping", raw.name
-                    )
+                    logger.warning("Could not copy/rename tool '%s' — skipping", raw.name)
                     continue
 
                 # Wrap with structured logging + rate limiting + timeout
@@ -433,21 +428,17 @@ class MCPClientManager:
         # Capture the original coroutine method before we replace it.
         original_ainvoke = tool.ainvoke
 
-        async def guarded_ainvoke(
-            input: Any, config: Any = None, **kwargs: Any
-        ) -> Any:
+        async def guarded_ainvoke(input: Any, config: Any = None, **kwargs: Any) -> Any:
             # -- circuit breaker gate (per-invocation) -------------------
             if cb.is_open:
                 raise RuntimeError(
-                    f"MCP server '{slug}' is temporarily unavailable "
-                    f"(circuit breaker open)"
+                    f"MCP server '{slug}' is temporarily unavailable (circuit breaker open)"
                 )
 
             # -- rate limiter gate ---------------------------------------
             if not rl.is_allowed:
                 raise RuntimeError(
-                    f"Rate limit exceeded for MCP server '{slug}' "
-                    f"({max_rpm} calls/min)"
+                    f"Rate limit exceeded for MCP server '{slug}' ({max_rpm} calls/min)"
                 )
 
             rl.record_call()
@@ -559,9 +550,10 @@ class MCPClientManager:
 
         # Headers / auth
         headers: dict[str, str] = {}
-        if spec.auth_type in ("pat_bearer", "oauth2") and conn.credentials:
+        auth_type = conn.auth_type or spec.auth_type
+        if auth_type in ("pat_bearer", "oauth2") and conn.credentials:
             headers["Authorization"] = f"Bearer {conn.credentials}"
-        elif spec.auth_type == "api_key_header":
+        elif auth_type == "api_key_header":
             if conn.credentials:
                 headers["X-API-Key"] = conn.credentials
 

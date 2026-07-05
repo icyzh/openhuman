@@ -79,9 +79,7 @@ async def get_graph_for_employee(
     # Resolve MCP tools
     mcp_tools: list = []
     if org_id is not None and template.allowed_mcp_servers:
-        mcp_tools = await _resolve_mcp_tools(
-            db, org_id, employee_id, template.allowed_mcp_servers
-        )
+        mcp_tools = await _resolve_mcp_tools(db, org_id, employee_id, template.allowed_mcp_servers)
 
     all_tools = list(BUILT_IN_TOOLS) + mcp_tools
     tool_names = frozenset(t.name for t in all_tools)
@@ -115,10 +113,7 @@ async def _resolve_mcp_tools(
         select(McpConnection).where(
             McpConnection.org_id == org_id,
             McpConnection.status == "connected",
-            (
-                (McpConnection.employee_id == employee_id)
-                | (McpConnection.employee_id.is_(None))
-            ),
+            ((McpConnection.employee_id == employee_id) | (McpConnection.employee_id.is_(None))),
         )
     )
     rows: list[McpConnection] = list(result.scalars().all())
@@ -130,10 +125,7 @@ async def _resolve_mcp_tools(
     resolved: list[ResolvedConnection] = []
     for row in rows:
         # Template gate
-        if (
-            "*" not in allowed_mcp_servers
-            and row.connector_slug not in allowed_mcp_servers
-        ):
+        if "*" not in allowed_mcp_servers and row.connector_slug not in allowed_mcp_servers:
             continue
 
         spec = REGISTRY.get(row.connector_slug)
@@ -163,8 +155,7 @@ async def _resolve_mcp_tools(
                     )
             except Exception:
                 logger.debug(
-                    "Token refresh not attempted / failed for %s — "
-                    "using existing token",
+                    "Token refresh not attempted / failed for %s — using existing token",
                     row.connector_slug,
                 )
 
@@ -180,9 +171,14 @@ async def _resolve_mcp_tools(
                 )
                 continue
 
-        resolved.append(ResolvedConnection(
-            slug=row.connector_slug, connector=spec, credentials=creds,
-        ))
+        resolved.append(
+            ResolvedConnection(
+                slug=row.connector_slug,
+                connector=spec,
+                credentials=creds,
+                auth_type=row.auth_type,
+            )
+        )
 
     if not resolved:
         return []
@@ -218,6 +214,7 @@ async def run_agent(
     in-process.
     """
     import time
+
     employee_id = data.employee_id
     thread_key = f"{data.platform}:{employee_id}:{data.channel_id}"
 
@@ -370,12 +367,14 @@ async def run_agent(
                     employee_name=employee_name,
                     platform=data.platform,
                     status="failed" if error else "succeeded",
-                    description=json.dumps({
-                        "response": response_text[:500] if response_text else None,
-                        "tool_rounds": tool_rounds,
-                        "error": error,
-                        "channel_id": data.channel_id,
-                    }),
+                    description=json.dumps(
+                        {
+                            "response": response_text[:500] if response_text else None,
+                            "tool_rounds": tool_rounds,
+                            "error": error,
+                            "channel_id": data.channel_id,
+                        }
+                    ),
                     metadata={
                         "tool_rounds": tool_rounds,
                         "user_id": data.user_id,

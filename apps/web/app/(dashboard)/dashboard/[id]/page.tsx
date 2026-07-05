@@ -405,12 +405,21 @@ export default function EmployeeDetailPage() {
       toast.error("Please enter an access token");
       return;
     }
+
+    const connInfo = connectors?.find((c) => c.slug === mcpTokenSlug);
+    const authTypes = connInfo?.auth_types ?? [connInfo?.auth_type ?? ""];
+    const selectedAuthType = authTypes.find((t) => t === "pat_bearer" || t === "api_key_header") ?? undefined;
+
     try {
       await createMcpConnectionMutation.mutateAsync({
         orgId,
         empId,
         slug: mcpTokenSlug,
-        data: { credential: mcpTokenValue.trim(), org_wide: false },
+        data: {
+          credential: mcpTokenValue.trim(),
+          auth_type: selectedAuthType,
+          org_wide: false,
+        },
       });
       setShowMcpTokenDialog(false);
       setMcpTokenValue("");
@@ -420,7 +429,7 @@ export default function EmployeeDetailPage() {
     } catch (err: any) {
       toast.error(err?.response?.data?.detail || `Failed to connect ${mcpTokenSlug}`);
     }
-  }, [orgId, empId, mcpTokenSlug, mcpTokenValue, createMcpConnectionMutation, refetchMcpConnections]);
+  }, [orgId, empId, mcpTokenSlug, mcpTokenValue, connectors, createMcpConnectionMutation, refetchMcpConnections]);
 
   const handleConnectNoAuth = useCallback(async (slug: string) => {
     if (!orgId || !empId) return;

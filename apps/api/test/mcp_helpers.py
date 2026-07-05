@@ -47,15 +47,12 @@ async def list_mcp_connectors(
     ]
     if employee_id is not None:
         clauses.append(
-            (McpConnection.employee_id == employee_id)
-            | (McpConnection.employee_id.is_(None))
+            (McpConnection.employee_id == employee_id) | (McpConnection.employee_id.is_(None))
         )
     else:
         clauses.append(McpConnection.employee_id.is_(None))
 
-    result = await session.execute(
-        select(McpConnection).where(*clauses)
-    )
+    result = await session.execute(select(McpConnection).where(*clauses))
     connections: dict[str, McpConnection] = {
         row.connector_slug: row for row in result.scalars().all()
     }
@@ -63,18 +60,20 @@ async def list_mcp_connectors(
     rows: list[dict] = []
     for slug, spec in REGISTRY.items():
         conn = connections.get(slug)
-        rows.append({
-            "slug": slug,
-            "name": spec.name,
-            "description": spec.description,
-            "auth_type": spec.auth_type,
-            "docs_url": spec.docs_url,
-            "is_connected": conn is not None,
-            "connection_id": str(conn.id) if conn else None,
-            "connection_status": conn.status if conn else "not_connected",
-            "scopes": conn.scopes if conn else None,
-            "requires_manual_approval": spec.requires_manual_approval,
-        })
+        rows.append(
+            {
+                "slug": slug,
+                "name": spec.name,
+                "description": spec.description,
+                "auth_type": spec.auth_type,
+                "docs_url": spec.docs_url,
+                "is_connected": conn is not None,
+                "connection_id": str(conn.id) if conn else None,
+                "connection_status": conn.status if conn else "not_connected",
+                "scopes": conn.scopes if conn else None,
+                "requires_manual_approval": spec.requires_manual_approval,
+            }
+        )
 
     return rows
 
@@ -173,10 +172,7 @@ async def get_mcp_connections_for_employee(
         select(McpConnection).where(
             McpConnection.org_id == org_id,
             McpConnection.status == "connected",
-            (
-                (McpConnection.employee_id == employee_id)
-                | (McpConnection.employee_id.is_(None))
-            ),
+            ((McpConnection.employee_id == employee_id) | (McpConnection.employee_id.is_(None))),
         )
     )
     return list(result.scalars().all())
@@ -209,10 +205,7 @@ async def resolve_mcp_tools(
     resolved: list[ResolvedConnection] = []
     for row in rows:
         # Template gate
-        if (
-            "*" not in allowed_mcp_servers
-            and row.connector_slug not in allowed_mcp_servers
-        ):
+        if "*" not in allowed_mcp_servers and row.connector_slug not in allowed_mcp_servers:
             continue
 
         spec = REGISTRY.get(row.connector_slug)
@@ -255,7 +248,10 @@ async def resolve_mcp_tools(
 
         resolved.append(
             ResolvedConnection(
-                slug=row.connector_slug, connector=spec, credentials=creds
+                slug=row.connector_slug,
+                connector=spec,
+                credentials=creds,
+                auth_type=row.auth_type,
             )
         )
 
