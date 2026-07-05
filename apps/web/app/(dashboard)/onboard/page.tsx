@@ -284,7 +284,11 @@ export default function OnboardPage() {
     const success = await saveDutiesAndUploadFiles();
     if (!success) return;
 
-    const installUrl = `${API_URL}/api/slack/install?employee_id=${encodeURIComponent(createdEmpId)}&org_id=${encodeURIComponent(orgId)}`;
+    // Always bounce back to whichever domain the user is actually on
+    // (e.g. the Railway-generated domain vs. a custom domain), instead of
+    // relying on the API's static FRONTEND_URL fallback.
+    const redirectTo = `${window.location.origin}/dashboard/${createdEmpId}`;
+    const installUrl = `${API_URL}/api/slack/install?employee_id=${encodeURIComponent(createdEmpId)}&org_id=${encodeURIComponent(orgId)}&redirect_to=${encodeURIComponent(redirectTo)}`;
     window.location.href = installUrl;
   }, [orgId, createdEmpId, saveDutiesAndUploadFiles]);
 

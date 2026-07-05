@@ -84,7 +84,13 @@ import {
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
 function slackInstallUrl(employeeId: string, orgId: string): string {
-  return `${API_URL}/api/slack/install?employee_id=${encodeURIComponent(employeeId)}&org_id=${encodeURIComponent(orgId)}`;
+  const base = `${API_URL}/api/slack/install?employee_id=${encodeURIComponent(employeeId)}&org_id=${encodeURIComponent(orgId)}`;
+  if (typeof window === "undefined") return base;
+  // Always bounce back to whichever domain the user is actually on
+  // (e.g. the Railway-generated domain vs. a custom domain), instead of
+  // relying on the API's static FRONTEND_URL fallback.
+  const redirectTo = `${window.location.origin}${window.location.pathname}`;
+  return `${base}&redirect_to=${encodeURIComponent(redirectTo)}`;
 }
 
 function formatSize(bytes: number | null | undefined): string {
