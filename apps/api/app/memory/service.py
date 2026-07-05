@@ -29,6 +29,9 @@ from cognee.modules.users.methods import (
     get_user as _cognee_get_user,
     get_user_by_email as _cognee_get_user_by_email,
 )
+from cognee.infrastructure.databases.exceptions.exceptions import (
+    EntityAlreadyExistsError,
+)
 from cognee.modules.users.permissions.methods import (
     authorized_give_permission_on_datasets as _cognee_authorized_give_permission_on_datasets,
 )
@@ -89,12 +92,19 @@ async def create_tenant(name: str, owner_id: str) -> dict:
 async def add_user_to_tenant(
     user_id: str, tenant_id: str, owner_id: str
 ) -> None:
-    """Add a user to a tenant. owner_id must be the tenant owner."""
-    await _cognee_add_user_to_tenant(
-        user_id=UUID(user_id),
-        tenant_id=UUID(tenant_id),
-        owner_id=UUID(owner_id),
-    )
+    """Idempotent: add a user to a tenant. owner_id must be the tenant owner.
+
+    A reused Cognee user (see create_employee_user) may already belong to the
+    tenant from a prior provisioning attempt — that's not an error here.
+    """
+    try:
+        await _cognee_add_user_to_tenant(
+            user_id=UUID(user_id),
+            tenant_id=UUID(tenant_id),
+            owner_id=UUID(owner_id),
+        )
+    except EntityAlreadyExistsError:
+        pass
 
 
 # ---------------------------------------------------------------------------

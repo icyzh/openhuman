@@ -81,6 +81,7 @@ async def backfill(dry_run: bool) -> None:
         admin = await get_or_create_admin()
 
         for emp, org in broken:
+            emp_id, emp_name = emp.id, emp.name  # snapshot before any rollback expires emp
             try:
                 cognee_user = await create_employee_user(org.cognee_tenant_id, emp.name)
                 await add_user_to_tenant(
@@ -103,11 +104,11 @@ async def backfill(dry_run: bool) -> None:
                 emp.cognee_dataset_id = dataset["id"]
                 emp.cognee_dataset_name = dataset["name"]
                 await db.commit()
-                print(f"  fixed: {emp.name} ({emp.id})")
+                print(f"  fixed: {emp_name} ({emp_id})")
             except Exception:
                 await db.rollback()
-                logger.exception("Backfill failed for employee %s", emp.id)
-                print(f"  FAILED: {emp.name} ({emp.id}) — see logs")
+                logger.exception("Backfill failed for employee %s", emp_id)
+                print(f"  FAILED: {emp_name} ({emp_id}) — see logs")
 
 
 def main() -> None:
