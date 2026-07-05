@@ -143,12 +143,17 @@ async def create_employee(
             emp_name = fixed_bot.name
             emp_role = fixed_bot.role
 
+    # `get_template()` resolves prompts/tools/duties by `specialization`, not
+    # `employee_type`. Default it from `employee_type` (their slugs match the
+    # template registry keys) so employees created without an explicit
+    # specialization still load the correct template instead of silently
+    # falling back to GENERAL_TEMPLATE.
     emp = Employee(
         org_id=org_id,
         name=emp_name,
         role=emp_role,
         personality=data.personality,
-        specialization=data.specialization,
+        specialization=data.specialization or data.employee_type,
         employee_type=data.employee_type,
         duties=data.duties,
         memory_policy=data.memory_policy,

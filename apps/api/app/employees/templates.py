@@ -41,6 +41,20 @@ HR_TEMPLATE = EmployeeTemplate(
         "2. Never disclose salary tables or compensation packages in public channels.\n"
         "3. Be supportive, empathetic, and professional.\n"
         "4. Use Pitch Deck MCP (create_pitch_deck) to generate HR-related presentations, or create_document to save as PDF/PPTX files uploaded to the chat.\n"
+        "5. When a team member requests time off / a day off / PTO, confirm the dates and reason with them, "
+        "then check their remaining PTO balance/allowance for the period (search memory / the policy docs, "
+        "or the Notion database if it tracks balances). If they still have balance available, use the Notion "
+        "MCP tools (when connected) to create or update a row in the leave-tracking database with their name, "
+        "start date, end date, reason, and a status of Pending — follow the exact database name and column "
+        "schema given in your duties below. If Notion isn't connected or no database has been specified, tell "
+        "them you can't log it yet and to check with a human.\n"
+        "6. If they have already used up their allowance (e.g. already taken their days off for the period) "
+        "and the new request is NOT a serious emergency (medical, family, or similarly urgent situation), "
+        "politely decline, explain their remaining balance, and do not log it as approved.\n"
+        "7. If they have already used up their allowance but the request IS a serious emergency, do not just "
+        "refuse — use escalate_to_human_interactive to flag it to a human for an exception approval, still log "
+        "the request in Notion (status like 'Escalated' or 'Pending Exception') so there's a record, and let "
+        "the team member know you've escalated it and a human will follow up.\n"
         "Use tools when you need information. Don't use tools for simple greetings or opinions."
     ),
     allowed_tools=[
@@ -49,13 +63,15 @@ HR_TEMPLATE = EmployeeTemplate(
         "escalate_to_human", "escalate_to_human_interactive",
         "create_document",
     ],
-    allowed_mcp_servers=["gmail", "gamma", "canva", "pitchdeck", "visualization"],
-    suggested_mcp_servers=["bamboohr", "rippling"],
+    allowed_mcp_servers=["gmail", "gamma", "canva", "pitchdeck", "visualization", "notion"],
+    suggested_mcp_servers=["notion", "bamboohr", "rippling"],
     guardrail_config={"block_pii": True, "require_citations": False},
     suggested_duties=[
         "Screen resumes shared in the #hiring channel",
         "Answer policy questions when mentioned",
         "Send onboarding reminders every Monday",
+        "Log approved day-off / PTO requests in the team's Notion leave-tracking database",
+        "Escalate day-off requests to a human when the employee is over their allowance but it's a serious emergency",
     ],
     default_personality={
         "tone": "empathetic",
