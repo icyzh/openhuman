@@ -26,33 +26,8 @@ They actively communicate through the channels your team already uses: Discord a
 - **Infinite power via MCP.** Equip any employee with [Model Context Protocol](https://modelcontextprotocol.io) tools: calendars, CRMs, issue trackers, databases, APIs. They gain the ability to *do*, not just answer. Every tool you connect multiplies what they're capable of.
 
 ## Architecture
+![alt text](arch.jpeg)
 
-```
-Discord/Slack  ──→  Platform Connectors (apps/bot, apps/slack-bot)  ──→  AI Service (services/ai)
-                           │                                            │
-                           ▼                                            ▼
-                      API (apps/api)  ←──  Web Dashboard (apps/web)   Cognee
-                           │
-                           ▼
-                     PostgreSQL
-```
-
-- **Platform connectors**: Discord.js and Slack Bolt apps for platform events, slash commands, and delivery.
-- **AI Service**: FastAPI + LangGraph + LangChain orchestration, tool execution, guardrails, and Cognee-backed memory access.
-- **API**: Hono server with Better Auth, Drizzle ORM, and PostgreSQL. Powers the web dashboard and memory CRUD.
-- **Web**: Next.js 16 dashboard for configuring your AI employees, exploring the memory graph, and managing team settings.
-- **Shared packages**: TypeScript types, constants, and API contracts used across all TypeScript apps.
-
-## Getting Started
-
-### Prerequisites
-
-- [Bun](https://bun.sh) ≥ 1.3
-- [Python](https://www.python.org) ≥ 3.11
-- [`uv`](https://github.com/astral-sh/uv) for Python environment and dependency management
-- [PostgreSQL](https://www.postgresql.org) ≥ 15
-- An app token from [Discord](https://discord.com/developers/applications) or [Slack](https://api.slack.com/apps) (or both)
-- [Deepgram API key](https://deepgram.com) for voice transcription
 
 ### Setup
 
@@ -74,14 +49,3 @@ make ai-dev
 # Start the TypeScript apps
 bun run dev
 ```
-
-## Deployment
-
-### Vercel (Web Dashboard)
-
-You can easily deploy the Next.js web dashboard to Vercel. Vercel will automatically configure this Turborepo to build the `apps/web` project.
-
-[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2Fvimzh%2Fopenhuman&project-name=openhuman-web&repository-name=openhuman&root-directory=apps%2Fweb&env=NEXT_PUBLIC_API_URL,AI_SERVICE_URL)
-
-Make sure to set `NEXT_PUBLIC_API_URL` and `AI_SERVICE_URL` to point to your deployed API and AI services.
-
